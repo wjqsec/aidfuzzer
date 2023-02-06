@@ -11,8 +11,10 @@
 #include "qemu/guest-random.h"
 #include "qemu/main-loop.h"
 #include "hw/core/cpu.h"
+#include "tcg/tcg.h"
 #include "xxfuzzer.h"
-bool xxfuzzer_allowed;
+extern bool tcg_allowed;
+//extern TCGContext *tcg_ctx;
 #define TYPE_XXFUZZER_ACCEL ACCEL_CLASS_NAME("xxfuzzer")
 
 static void xxfuzzer_accel_instance_init(Object *obj)
@@ -23,10 +25,17 @@ static void xxfuzzer_accel_instance_init(Object *obj)
 
 static int xxfuzzer_init_machine(MachineState *ms)
 {
-    xxfuzzer_allowed = true;
+    tcg_allowed = true;
     page_init();
     tb_htable_init();
     tcg_init(0, -1, 1);
+    #if defined(CONFIG_SOFTMMU)
+    /*
+     * There's no guest base to take into account, so go ahead and
+     * initialize the prologue now.
+     */
+    tcg_prologue_init(tcg_ctx);
+    #endif
     return 0;
 }
 
@@ -35,7 +44,7 @@ static void xxfuzzer_accel_class_init(ObjectClass *oc, void *data)
     AccelClass *ac = ACCEL_CLASS(oc);
     ac->name = "xxfuzzer";
     ac->init_machine = xxfuzzer_init_machine;
-    ac->allowed = &xxfuzzer_allowed;
+    ac->allowed = &tcg_allowed;
 }
 
 static void xxfuzzer_accel_ops_init(AccelOpsClass *ops)
