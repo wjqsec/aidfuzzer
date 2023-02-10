@@ -28,7 +28,7 @@ static void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
 }
 
 
-void xxfuzzer_vcpu_thread()
+void xxfuzzer_thread_loop(bool debug)
 {
     CPUState *cpu = qemu_get_cpu(0);
     static bool init = false; 
@@ -45,45 +45,52 @@ void xxfuzzer_vcpu_thread()
         init = true;
     }
     qemu_mutex_unlock_iothread();
-    printf("start loop\n");
     while(!cpu->stop && !cpu->exit_request)
     {
         if(!cpu_work_list_empty(cpu))
 	    process_queued_cpu_work(cpu);
-	    printf("2 %d %d %d\n",cpu->stop,cpu->stopped,runstate_is_running());
+	if(debug)
+	    main_loop_wait(false);
 	if(cpu_can_run(cpu))
 	{
 	    cpu_exec_start(cpu);
 	    CPUClass *cc = CPU_GET_CLASS(cpu);
-	    printf("aa  %d\n",cc->tcg_ops);
 	    int r = cpu_exec(cpu);
 	    cpu_exec_end(cpu);
 	    switch (r)
 	    {
 		    case EXCP_INTERRUPT:
-			    printf("ex interrupt\n");
+			    //printf("ex interrupt\n");
 			    break;
 	            case EXCP_HLT:
-			    printf("hlt\n");
+			    //printf("hlt\n");
 			    break;
 	            case EXCP_DEBUG:
-			    printf("debug\n");
+			    cpu_handle_guest_debug(cpu);
+			    runstate_set(RUN_STATE_DEBUG);
+			    vm_state_notify(0,RUN_STATE_DEBUG);
+			    //printf("debug\n");
                             break;
 		    case EXCP_HALTED:
-			    printf("halted\n");
+			    //printf("halted\n");
                             break;
 		    case EXCP_YIELD:
-			    printf("yield\n");
+			    //printf("yield\n");
                             break;
 		    case EXCP_ATOMIC:
-			    printf("atomic\n");
+			    cpu_exec_step_atomic(cpu);
+			    //printf("atomic\n");
                             break;
+	            default:
+			    exit(0);
+			    break;
+
 	    }
 	    
 	}
-	else if(1)
+	else if(debug)
 	{
-	    
+	    main_loop_wait(false);
 	}
 	else
 	{

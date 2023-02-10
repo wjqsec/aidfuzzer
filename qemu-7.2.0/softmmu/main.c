@@ -29,11 +29,9 @@
 #ifdef CONFIG_SDL
 #include <SDL.h>
 #endif
-void xxfuzzer_vcpu_thread();
 int qemu_default_main(void)
 {
     int status;
-    xxfuzzer_vcpu_thread();
     status = qemu_main_loop();
     qemu_cleanup();
 

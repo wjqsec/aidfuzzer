@@ -14,6 +14,16 @@
 #include "tcg/tcg.h"
 #include "xxfuzzer.h"
 extern bool tcg_allowed;
+int xxfuzzer_cpu_type;
+
+int get_xxfuzzer_cpu_type()
+{
+    return xxfuzzer_cpu_type;
+}
+void set_xxfuzzer_cpu_type(int type)
+{
+    xxfuzzer_cpu_type = type;
+}
 //extern TCGContext *tcg_ctx;
 #define TYPE_XXFUZZER_ACCEL ACCEL_CLASS_NAME("xxfuzzer")
 

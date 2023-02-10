@@ -3478,7 +3478,7 @@ foreach target : target_dirs
       'sources': files('softmmu/main.c'),
       'dependencies': []
     }]
-        shared_library('qemu-system-' + target_name,
+      shared_library('qemu-system-' + target_name,
       c_args: c_args,
       dependencies: arch_deps + deps,
       objects: lib.extract_all_objects(recursive: true),
