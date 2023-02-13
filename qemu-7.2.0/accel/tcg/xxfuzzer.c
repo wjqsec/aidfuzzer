@@ -57,6 +57,12 @@ static void xxfuzzer_accel_class_init(ObjectClass *oc, void *data)
     ac->allowed = &tcg_allowed;
 }
 
+
+bool tcg_supports_guest_debug(void);
+void tcg_remove_all_breakpoints(CPUState *cpu);
+int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
+int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
+
 static void xxfuzzer_accel_ops_init(AccelOpsClass *ops)
 {
     ops->create_vcpu_thread = xxfuzzer_start_vcpu_thread;
@@ -64,6 +70,11 @@ static void xxfuzzer_accel_ops_init(AccelOpsClass *ops)
     ops->handle_interrupt = xxfuzzer_icount_handle_interrupt;
     ops->get_virtual_clock = xxfuzzer_icount_get;
     ops->get_elapsed_ticks = xxfuzzer_icount_get;
+
+    ops->supports_guest_debug = tcg_supports_guest_debug;
+    ops->insert_breakpoint = tcg_insert_breakpoint;
+    ops->remove_breakpoint = tcg_remove_breakpoint;
+    ops->remove_all_breakpoints = tcg_remove_all_breakpoints;
 }
 
 static void xxfuzzer_accel_ops_class_init(ObjectClass *oc, void *data)

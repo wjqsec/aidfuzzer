@@ -93,7 +93,7 @@ void tcg_handle_interrupt(CPUState *cpu, int mask)
     }
 }
 
-static bool tcg_supports_guest_debug(void)
+bool tcg_supports_guest_debug(void)
 {
     return true;
 }
@@ -116,7 +116,7 @@ static inline int xlat_gdb_type(CPUState *cpu, int gdbtype)
     return cputype;
 }
 
-static int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len)
+int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len)
 {
     CPUState *cpu;
     int err = 0;
@@ -147,7 +147,7 @@ static int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len
     }
 }
 
-static int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len)
+int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len)
 {
     CPUState *cpu;
     int err = 0;
@@ -178,7 +178,7 @@ static int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len
     }
 }
 
-static inline void tcg_remove_all_breakpoints(CPUState *cpu)
+void tcg_remove_all_breakpoints(CPUState *cpu)
 {
     cpu_breakpoint_remove_all(cpu, BP_GDB);
     cpu_watchpoint_remove_all(cpu, BP_GDB);

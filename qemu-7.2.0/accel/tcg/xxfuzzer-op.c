@@ -44,7 +44,7 @@ void xxfuzzer_thread_loop(bool debug)
 	//set_do_interrupt_hook
         init = true;
     }
-    qemu_mutex_unlock_iothread();
+    //qemu_mutex_unlock_iothread();
     while(!cpu->stop && !cpu->exit_request)
     {
         if(!cpu_work_list_empty(cpu))
