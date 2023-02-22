@@ -1030,37 +1030,6 @@ void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length)
     }
 }
 
-void xx_mem()
-{
-    ram_addr_t start = 0xfffffff0;
-    ram_addr_t length = 4096;
-    DirtyMemoryBlocks *blocks;
-    unsigned long end, page, start_page;
-    RAMBlock *ramblock;
-
-    end = TARGET_PAGE_ALIGN(start + length) >> TARGET_PAGE_BITS;
-    start_page = start >> TARGET_PAGE_BITS;
-    page = start_page;
-
-    WITH_RCU_READ_LOCK_GUARD() {
-
-    blocks = qatomic_rcu_read(&ram_list.dirty_memory[1]);
-    //ramblock = qemu_get_ram_block(start);
-    //assert(start >= ramblock->offset &&
-          //     start + length <= ramblock->offset + ramblock->used_length);
-    
-    while (page < end) {
-            unsigned long idx = page / DIRTY_MEMORY_BLOCK_SIZE;
-            unsigned long offset = page % DIRTY_MEMORY_BLOCK_SIZE;
-            unsigned long num = MIN(end - page,
-                                    DIRTY_MEMORY_BLOCK_SIZE - offset);
-            printf("dirty:%x\n",*(blocks->blocks[idx]));
-            page += num;
-        }
-    }
-}
-
-
 
 /* Note: start and end must be within the same ram block.  */
 bool cpu_physical_memory_test_and_clear_dirty(ram_addr_t start,
