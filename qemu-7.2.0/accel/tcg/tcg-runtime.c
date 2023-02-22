@@ -33,6 +33,14 @@
 
 /* 32-bit helpers */
 
+typedef void (*exec_bbl_cb)(); 
+extern exec_bbl_cb exec_bbl_func;
+void HELPER(xx)(void)
+{
+    if(exec_bbl_func)
+        exec_bbl_func();
+}
+
 int32_t HELPER(div_i32)(int32_t arg1, int32_t arg2)
 {
     return arg1 / arg2;

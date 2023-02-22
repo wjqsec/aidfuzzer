@@ -30,10 +30,8 @@
 #include <SDL.h>
 #endif
 
-void xxfuzzer_thread_loop(bool debug);
 int qemu_default_main(void)
 {
-    xxfuzzer_thread_loop(true);
     int status;
     status = qemu_main_loop();
     qemu_cleanup();

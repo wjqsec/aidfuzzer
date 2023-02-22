@@ -657,7 +657,7 @@ static void microvm_class_init(ObjectClass *oc, void *data)
 
     /* Avoid relying too much on kernel components */
     mc->default_kernel_irqchip_split = true;
-
+    return;
     /* Machine class handlers */
     mc->reset = microvm_machine_reset;
 

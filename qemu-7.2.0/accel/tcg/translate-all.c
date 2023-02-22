@@ -63,6 +63,12 @@
 #include "tb-context.h"
 #include "internal.h"
 
+#include "qemu/osdep.h"
+#include "exec/exec-all.h"
+#include "tcg/tcg.h"
+#include "tcg/tcg-op.h"
+#include "tcg/tcg-mo.h"
+#include "exec/plugin-gen.h"
 /* make various TB consistency checks */
 
 /**
@@ -749,7 +755,7 @@ void page_collection_unlock(struct page_collection *set)
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
-{
+{  
     int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(ret != 0)) {
         return ret;
@@ -758,6 +764,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
+    gen_helper_xx();
     gen_intermediate_code(env_cpu(env), tb, *max_insns, pc, host_pc);
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;

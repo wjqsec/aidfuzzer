@@ -972,15 +972,13 @@ int cpu_exec(CPUState *cpu)
     while (!cpu_handle_exception(cpu, &ret)) {
         TranslationBlock *last_tb = NULL;
         int tb_exit = 0;
-
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
             target_ulong cs_base, pc;
             uint32_t flags, cflags;
 
             cpu_get_tb_cpu_state(cpu->env_ptr, &pc, &cs_base, &flags);
-
-            /*
+	    /*
              * When requested, use an exact setting for cflags for the next
              * execution.  This is used for icount, precise smc, and stop-
              * after-access watchpoints.  Since this request should never
@@ -1036,7 +1034,6 @@ int cpu_exec(CPUState *cpu)
             align_clocks(&sc, cpu);
         }
     }
-
     cpu_exec_exit(cpu);
     rcu_read_unlock();
 

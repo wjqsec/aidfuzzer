@@ -3565,7 +3565,6 @@ void qemu_init(int argc, char **argv)
      * Accelerator compat props: object_set_accelerator_compat_props(),
      * called from do_configure_accelerator().
      */
-
     machine_class = MACHINE_GET_CLASS(current_machine);
     if (!qtest_enabled() && machine_class->deprecation_reason) {
         warn_report("Machine type '%s' is deprecated: %s",
@@ -3603,5 +3602,5 @@ void qemu_init(int argc, char **argv)
     qemu_init_displays();
     accel_setup_post(current_machine);
     os_setup_post();
-    resume_mux_open();
+    //resume_mux_open();
 }
