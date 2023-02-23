@@ -72,7 +72,16 @@ void set_x86_cpu_state(struct X86_CPU_STATE *state)
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
 {
     struct Simulator *ret = malloc(sizeof(struct Simulator));
-    void *handle = dlopen("../libqemu-system-x86_64.so", RTLD_NOW);
+    void *handle = NULL;
+    switch (cpu_type)
+    {
+        case X86:
+        handle = dlopen("../libqemu-system-x86_64.so", RTLD_NOW);
+        break;
+        case ARM:
+        handle = dlopen("../libqemu-system-arm.so", RTLD_NOW);
+        break;
+    }
     if (!handle) {
         fprintf(stderr, "%s\n", dlerror());
         exit(EXIT_FAILURE);
@@ -91,15 +100,24 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     xx_register_exec_bbl_hook = dlsym(handle, "xx_register_exec_bbl_hook");
     
 
-    if(cpu_type == X86)
+    switch (cpu_type)
     {
-        register_x86_cpu_do_interrupt_hook = main_loop_wait = dlsym(handle, "register_x86_cpu_do_interrupt_hook");
-        register_x86_cpu_exec_interrupt_hook = main_loop_wait = dlsym(handle, "register_x86_cpu_exec_interrupt_hook");
-        register_x86_cpu_do_unaligned_access_hook = main_loop_wait = dlsym(handle, "register_x86_cpu_do_unaligned_access_hook");
-        xx_get_x86_cpu_state = main_loop_wait = dlsym(handle, "xx_get_x86_cpu_state");
-        xx_set_x86_cpu_state = main_loop_wait = dlsym(handle, "xx_set_x86_cpu_state");
+        case X86:
+        register_x86_cpu_do_interrupt_hook = dlsym(handle, "register_x86_cpu_do_interrupt_hook");
+        register_x86_cpu_exec_interrupt_hook = dlsym(handle, "register_x86_cpu_exec_interrupt_hook");
+        register_x86_cpu_do_unaligned_access_hook = dlsym(handle, "register_x86_cpu_do_unaligned_access_hook");
+        xx_get_x86_cpu_state = dlsym(handle, "xx_get_x86_cpu_state");
+        xx_set_x86_cpu_state = dlsym(handle, "xx_set_x86_cpu_state");
+        break;
+        case ARM:
+
+        break;
     }
-    if(!(qemu_init && xx_thread_loop && get_xx_cpu_type && xx_ram_rw && xx_add_ram_regions && xx_add_mmio_regions && main_loop_should_exit && main_loop_wait))
+
+
+    if(!(qemu_init && xx_thread_loop && get_xx_cpu_type && set_xx_cpu_type && xx_ram_rw && xx_add_ram_regions && xx_add_mmio_regions && main_loop_should_exit && main_loop_wait
+        && xx_clear_dirty_mem && xx_get_dirty_pages && xx_register_exec_bbl_hook
+    ))
     {
         printf("symbol not found\n");
         exit(0);
@@ -203,19 +221,33 @@ void exec_bbl()
 {
     printf("bbl start\n");
 }
+
+void load_file(char *filename,hwaddr addr)
+{
+    int size;
+    FILE *fptr = fopen(filename,"rb");
+    fseek(fptr, 0L, SEEK_END);
+    size = ftell(fptr);
+    fseek(fptr, 0L, SEEK_SET);
+    char *tmp = (char *)malloc(size);
+    fread(tmp,size,1,fptr);
+    write_ram(addr,size,tmp);
+    free(tmp);
+}
 int main(int argc, char ** argv)
 {
     struct Simulator *simulator;
     if(argc == 2)
-        simulator = create_simulator(X86,true);
+        simulator = create_simulator(ARM,true);
     else
-        simulator = create_simulator(X86,false);
+        simulator = create_simulator(ARM,false);
     
-    add_ram_region("bios",0xfffff000, 0x1000);
-    register_post_exec_hook(post_exec);
+    add_ram_region("firmware",0x0, 0x80000);
+    //add_ram_region("firmware",0xfffff000, 0x1000);
+    //register_post_exec_hook(post_exec);
     //register_x86_cpu_do_interrupt_hook(x86_cpu_do_interrupt_hook);
     init_simulator(simulator);
-    
+    //load_file("./mbed-os-example-blinky-baremetal.bin",0);
 //     char buf[0x100] = {
 // 0x31, 0xC0, 0x67, 0x8B, 0x00, 0xEB, 0xF9, 0x90  // xor eax,eax; mov eax,[eax] ; jmp head
 // };
@@ -226,14 +258,14 @@ int main(int argc, char ** argv)
 // 0x48, 0x31, 0xC0, 0xFF, 0xD0, 0xEB, 0xF9, 0x90  //xor rax,rax; call rax; jmp head
 // };
     // char buf[0x100] = {0xeb, 0xfe};  //jmp self
-    char buf[0x100] = {
-0x90, 0xEB, 0x01, 0x90, 0x90, 0xEB, 0x01, 0x90, 0x90, 0xEB, 0xF5, 0x90, 0x00, 0x00, 0x00, 0x00  // nop jmp1 nop; nop jmp2 nop; nop jmp head nop;
-};
-    write_ram(0xfffff000,0x10,buf);   
-    struct X86_CPU_STATE state;
-    state.eip = 0xf000;
-    set_x86_cpu_state(&state);
-    register_exec_bbl_hook(exec_bbl);
+//     char buf[0x100] = {
+// 0x90, 0xEB, 0x01, 0x90, 0x90, 0xEB, 0x01, 0x90, 0x90, 0xEB, 0xF5, 0x90, 0x00, 0x00, 0x00, 0x00  // nop jmp1 nop; nop jmp2 nop; nop jmp head nop;
+// };
+//     write_ram(0xfffff000,0x10,buf);   
+//     struct X86_CPU_STATE state;
+//     state.eip = 0xf000;
+//     set_x86_cpu_state(&state);
+//     register_exec_bbl_hook(exec_bbl);
     // clear_dirty_mem(0xfffff000,0x1000);
     // unsigned long dirty[1000];
     // memset(dirty, 0x12, sizeof(dirty));
