@@ -31,7 +31,7 @@
 #include "exec/ramblock.h"
 #include "qemu/osdep.h"
 #include <sys/param.h>
-
+#include "hw/core/tcg-cpu-ops.h"
 #include <sys/resource.h>
 #include <sys/shm.h>
 
@@ -239,8 +239,16 @@ void xx_init_mem(MachineState *machine)
         printf("add mmio %p-%p %s\n",xx_mmio_regions[i].start, xx_mmio_regions[i].start+xx_mmio_regions[i].size, xx_mmio_regions[i].name);
     }
 }
-
-
+void xx_do_interrupt(CPUState *cpu)
+{
+    printf("xx do interrupt\n");
+}
+void xx_register_do_interrupt_hook()
+{
+    CPUState *cpu = qemu_get_cpu(0);
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+    cc->tcg_ops->do_interrupt = xx_do_interrupt;
+}
 
 
 

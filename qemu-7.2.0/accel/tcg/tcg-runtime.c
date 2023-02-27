@@ -35,10 +35,11 @@
 
 typedef void (*exec_bbl_cb)(); 
 extern exec_bbl_cb exec_bbl_func;
-void HELPER(xx)(void)
+uint64_t HELPER(xx)(uint64_t arg1)
 {
-    if(exec_bbl_func)
-        exec_bbl_func();
+    printf("bbl addr:%p\n",arg1);
+    return 1;
+	//exec_bbl_func();
 }
 
 int32_t HELPER(div_i32)(int32_t arg1, int32_t arg2)

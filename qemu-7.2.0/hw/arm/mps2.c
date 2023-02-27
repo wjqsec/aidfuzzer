@@ -221,7 +221,6 @@ static void mps2_common_init(MachineState *machine)
     default:
         g_assert_not_reached();
     }
-
     object_initialize_child(OBJECT(mms), "armv7m", &mms->armv7m, TYPE_ARMV7M);
     armv7m = DEVICE(&mms->armv7m);
     switch (mmc->fpga_type) {
@@ -243,7 +242,6 @@ static void mps2_common_init(MachineState *machine)
     object_property_set_link(OBJECT(&mms->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     sysbus_realize(SYS_BUS_DEVICE(&mms->armv7m), &error_fatal);
-
     create_unimplemented_device("zbtsmram mirror", 0x00400000, 0x00400000);
     create_unimplemented_device("RESERVED 1", 0x00800000, 0x00800000);
     create_unimplemented_device("Block RAM", 0x01000000, 0x00010000);
@@ -451,6 +449,7 @@ static void mps2_common_init(MachineState *machine)
 
     armv7m_load_kernel(ARM_CPU(first_cpu), machine->kernel_filename,
                        0, 0x400000);
+    return;
 }
 
 static void mps2_class_init(ObjectClass *oc, void *data)

@@ -34,7 +34,6 @@ void exec_simulator(struct Simulator *s);
 
 
 void register_pre_exec_hook(pre_exec_cb cb);
-void register_exec_ins_hook(exec_ins_cb cb);
 void register_exec_bbl_hook(exec_bbl_cb cb);
 void register_post_exec_hook(post_exec_cb cb);
 
@@ -49,6 +48,7 @@ void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_re
 void clear_dirty_mem(hwaddr start, hwaddr size);
 void get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
 
+void load_file(char *filename,hwaddr addr);
 //----------------x86
 struct X86_CPU_STATE
 {
@@ -61,4 +61,12 @@ typedef void (*x86_cpu_do_unaligned_access_cb)();
 
 void get_x86_cpu_state(struct X86_CPU_STATE *state);
 void set_x86_cpu_state(struct X86_CPU_STATE *state);
+
+//===================arm
+struct ARM_CPU_STATE
+{
+    regval eip;
+};
+void get_arm_cpu_state(struct ARM_CPU_STATE *state);
+void set_arm_cpu_state(struct ARM_CPU_STATE *state);
 
