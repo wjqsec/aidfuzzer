@@ -16,13 +16,14 @@ struct Simulator
 };
 
 
-typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr,unsigned size);
-typedef void (*mmio_write_cb)(void *opaque,hwaddr addr,uint64_t data,unsigned size);
+typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
+typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
 typedef void (*pre_exec_cb)(); 
 typedef void (*exec_ins_cb)(); 
-typedef void (*exec_bbl_cb)(); 
+typedef void (*exec_bbl_cb)(regval pc); 
 typedef void (*post_exec_cb)(int exec_ret);
+typedef void (*do_interrupt_cb)();
 
 
 
@@ -36,6 +37,7 @@ void exec_simulator(struct Simulator *s);
 void register_pre_exec_hook(pre_exec_cb cb);
 void register_exec_bbl_hook(exec_bbl_cb cb);
 void register_post_exec_hook(post_exec_cb cb);
+void register_do_interrupt_hook(do_interrupt_cb cb);
 
 
 

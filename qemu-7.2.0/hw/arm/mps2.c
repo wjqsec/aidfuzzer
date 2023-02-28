@@ -449,7 +449,6 @@ static void mps2_common_init(MachineState *machine)
 
     armv7m_load_kernel(ARM_CPU(first_cpu), machine->kernel_filename,
                        0, 0x400000);
-    return;
 }
 
 static void mps2_class_init(ObjectClass *oc, void *data)

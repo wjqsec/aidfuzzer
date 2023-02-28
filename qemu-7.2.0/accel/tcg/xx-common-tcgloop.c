@@ -34,14 +34,21 @@
 #include "hw/core/tcg-cpu-ops.h"
 #include <sys/resource.h>
 #include <sys/shm.h>
-
+#include <stdio.h>
+#include <unistd.h>
 enum XX_CPU_TYPE 
 {
     X86,
     ARM
 };
-typedef void (*exec_bbl_cb)(); 
+typedef void (*exec_bbl_cb)(uint64_t pc); 
 exec_bbl_cb exec_bbl_func;
+
+typedef void (*do_interrupt_ptr)(CPUState *cpu);
+do_interrupt_ptr old_do_interrupt;
+
+typedef void (*do_interrupt_cb)();
+do_interrupt_cb do_interrupt_func;
 
 struct DirtyBitmapSnapshot {
     ram_addr_t start;
@@ -206,6 +213,8 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 
 void xx_init_mem(MachineState *machine)
 {
+
+                
     MemoryRegion *ram_space = get_system_memory();
     MemoryRegion *mmio_space = get_system_io();
     int i;
@@ -213,45 +222,49 @@ void xx_init_mem(MachineState *machine)
     {
         MemoryRegion *mr = g_new0(MemoryRegion, 1);
         memory_region_init_ram(mr,NULL,xx_ram_regions[i].name,xx_ram_regions[i].size,0);
+        memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
+        memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
         memory_region_add_subregion(ram_space,xx_ram_regions[i].start,mr);
         xx_ram_regions[i].mr = mr;
-        printf("add ram %p-%p %s\n",xx_ram_regions[i].start, xx_ram_regions[i].start+xx_ram_regions[i].size, xx_ram_regions[i].name);
+        printf("add ram %x-%x %s\n",xx_ram_regions[i].start, xx_ram_regions[i].start+xx_ram_regions[i].size, xx_ram_regions[i].name);
     }
     for(i=0; i < xx_num_mmio_regions;i++)
     {
-        struct MemoryRegionOps ops;
-        ops.read = xx_mmio_regions[i].read_cb;
-        ops.write = xx_mmio_regions[i].write_cb;
-        ops.read_with_attrs = 0;
-        ops.write_with_attrs = 0;
-        ops.endianness = DEVICE_NATIVE_ENDIAN;
-        ops.valid.min_access_size = 1;
-        ops.valid.max_access_size = 8;
-        ops.valid.unaligned = true;
-        ops.valid.accepts = NULL;
-        ops.impl.min_access_size = 1;
-        ops.impl.max_access_size = 8;
-        ops.impl.unaligned = true;
+        struct MemoryRegionOps *ops = g_new0(MemoryRegionOps, 1);
+        ops->read = xx_mmio_regions[i].read_cb;
+        ops->write = xx_mmio_regions[i].write_cb;
+        ops->read_with_attrs = 0;
+        ops->write_with_attrs = 0;
+        ops->endianness = DEVICE_NATIVE_ENDIAN;
+        ops->valid.min_access_size = 1;
+        ops->valid.max_access_size = 8;
+        ops->valid.unaligned = true;
+        ops->valid.accepts = NULL;
+        ops->impl.min_access_size = 1;
+        ops->impl.max_access_size = 8;
+        ops->impl.unaligned = true;
         MemoryRegion *mr = g_new0(MemoryRegion, 1);
-        memory_region_init_io(mr,NULL,&ops,NULL,xx_mmio_regions[i].name,xx_mmio_regions[i].size);
-	    memory_region_add_subregion(mmio_space,xx_mmio_regions[i].start,mr);
+        memory_region_init_io(mr,NULL,ops,NULL,xx_mmio_regions[i].name,xx_mmio_regions[i].size);
+	    //memory_region_add_subregion(mmio_space,xx_mmio_regions[i].start,mr);
+        // memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
+        // memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
+        memory_region_add_subregion(ram_space,xx_mmio_regions[i].start,mr);
         xx_mmio_regions[i].mr = mr;
-        printf("add mmio %p-%p %s\n",xx_mmio_regions[i].start, xx_mmio_regions[i].start+xx_mmio_regions[i].size, xx_mmio_regions[i].name);
+
+        printf("add mmio %x-%x %s\n",xx_mmio_regions[i].start, xx_mmio_regions[i].start+xx_mmio_regions[i].size, xx_mmio_regions[i].name);
     }
 }
 void xx_do_interrupt(CPUState *cpu)
 {
-    printf("xx do interrupt\n");
+    if(do_interrupt_func)
+        do_interrupt_func();
+    old_do_interrupt(cpu);
 }
-void xx_register_do_interrupt_hook()
+
+void xx_register_do_interrupt_hook(do_interrupt_cb cb)
 {
-    CPUState *cpu = qemu_get_cpu(0);
-    CPUClass *cc = CPU_GET_CLASS(cpu);
-    cc->tcg_ops->do_interrupt = xx_do_interrupt;
+    do_interrupt_func = cb;
 }
-
-
-
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
@@ -270,7 +283,12 @@ int xx_thread_loop(bool debug)
         
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
-		//set_do_interrupt_hook
+		CPUClass *cc = CPU_GET_CLASS(cpu);
+        old_do_interrupt = cc->tcg_ops->do_interrupt;
+
+        mprotect((uint64_t)(&cc->tcg_ops->do_interrupt)  & ~(getpagesize()-1), getpagesize(), PROT_WRITE);
+        cc->tcg_ops->do_interrupt = xx_do_interrupt;
+        mprotect((uint64_t)(&cc->tcg_ops->do_interrupt)  & ~(getpagesize()-1), getpagesize(), PROT_READ);
         init = true;
     }
     //qemu_mutex_unlock_iothread();
@@ -323,6 +341,7 @@ static void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
     uint32_t cflags = cpu->cluster_index << CF_CLUSTER_SHIFT;
     cflags |= parallel ? CF_PARALLEL : 0;
     cflags |= icount_enabled() ? CF_USE_ICOUNT : 0;
+    cflags |= CF_SINGLE_STEP;
     cpu->tcg_cflags = cflags;
 }
 
@@ -343,6 +362,7 @@ static void xx_start_vcpu_thread(CPUState *cpu)
     //cpu->thread_id = first_cpu->thread_id;
     cpu->can_do_io = 1;
     cpu->created = true;
+    
 }
 
 

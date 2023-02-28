@@ -30,14 +30,14 @@ void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
-    state->eip = env->pc;  
+    state->eip = env->regs[15];  
 }
 void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
-    env->pc = state->eip;
+    env->regs[15] = state->eip;
     
 }
 void xx_reset_arm_reg()
@@ -66,7 +66,7 @@ static void machine_xx_arm_init(MachineState *mch)
     MachineClass *mc = MACHINE_GET_CLASS(mch);
     DeviceState *armv7m;
     MemoryRegion *system_memory = get_system_memory();
-
+    xx_init_mem(mch);
     mms->sysclk = clock_new(OBJECT(mch), "SYSCLK");
     clock_set_hz(mms->sysclk, SYSCLK_FRQ);
     mms->refclk = clock_new(OBJECT(mch), "REFCLK");
@@ -82,7 +82,7 @@ static void machine_xx_arm_init(MachineState *mch)
     object_property_set_link(OBJECT(&mms->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     sysbus_realize(SYS_BUS_DEVICE(&mms->armv7m), &error_fatal);
-    xx_init_mem(mch);
+    
 }
 static void xx_arm_machine_reset(MachineState *machine, ShutdownCause reason)
 {
@@ -99,7 +99,7 @@ static void machine_xx_arm_class_init(ObjectClass *oc, void *data)
     mc->init = machine_xx_arm_init;
     mc->reset = xx_arm_machine_reset;
     mc->max_cpus = 1;
-    mc->ignore_memory_transaction_failures = true;
+    //mc->ignore_memory_transaction_failures = true;
     mc->default_ram_id = "xx.mem";
     mc->default_ram_size = 0xffffffff;
 

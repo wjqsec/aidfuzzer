@@ -33,13 +33,12 @@
 
 /* 32-bit helpers */
 
-typedef void (*exec_bbl_cb)(); 
+typedef void (*exec_bbl_cb)(uint64_t pc); 
 extern exec_bbl_cb exec_bbl_func;
-uint64_t HELPER(xx)(uint64_t arg1)
+uint64_t HELPER(xx)(uint64_t arg0)
 {
-    printf("bbl addr:%p\n",arg1);
+    exec_bbl_func(arg0);
     return 1;
-	//exec_bbl_func();
 }
 
 int32_t HELPER(div_i32)(int32_t arg1, int32_t arg2)

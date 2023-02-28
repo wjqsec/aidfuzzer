@@ -46,7 +46,7 @@ xx_get_dirty_pages_ptr xx_get_dirty_pages;
 typedef void (*xx_register_exec_bbl_hook_ptr)(exec_bbl_cb cb);
 xx_register_exec_bbl_hook_ptr xx_register_exec_bbl_hook;
 
-typedef void (*xx_register_do_interrupt_hook_ptr)();
+typedef void (*xx_register_do_interrupt_hook_ptr)(do_interrupt_cb cb);
 xx_register_do_interrupt_hook_ptr xx_register_do_interrupt_hook;
 //------------------------x86
 typedef void (*register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
@@ -175,6 +175,10 @@ void register_post_exec_hook(post_exec_cb cb)
 {
     post_exec_func = cb;
 }
+void register_do_interrupt_hook(do_interrupt_cb cb)
+{
+    xx_register_do_interrupt_hook(cb);
+}
 void register_exec_bbl_hook(exec_bbl_cb cb)
 {
     xx_register_exec_bbl_hook(cb);
@@ -247,23 +251,38 @@ void x86_cpu_do_interrupt_hook()
     printf("hook get eip:%p\n",state.eip);
 }
 
-void arm_exec_bbl()
+void arm_cpu_do_interrupt_hook()
 {
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    printf("start bbl:%p\n",state.eip);
+    printf("do interrupt get eip:%p\n",state.eip);
+
 }
-void x86_exec_bbl()
+
+void arm_exec_bbl(regval pc)
 {
-    struct X86_CPU_STATE state;
-    get_x86_cpu_state(&state);
-    printf("start bbl:%p\n",state.eip);
+
+    printf("start bbl:%p\n",pc);
+
+    
+}
+void x86_exec_bbl(regval pc)
+{
+    
+    printf("start bbl:%p\n",pc);
 }
 void arm_post_exec(int exec_ret)
 {
     printf("exec exit:%d\n",exec_ret);
 }
-
+uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
+{
+    printf("mmio read:%x\n",addr_offset);
+}
+void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
+{
+    printf("write\n");
+}
 int main(int argc, char ** argv)
 {
     // struct Simulator *simulator;
@@ -313,8 +332,11 @@ int main(int argc, char ** argv)
         simulator = create_simulator(ARM,false);
     add_ram_region("firmware",0x0, 0x80000);
     add_ram_region("on-chip-ram",0x10000000, 0x8000);
-    register_exec_bbl_hook(arm_exec_bbl);
+    //add_mmio_region("mmio", 0x40000000, 0x20000000, mmio_read, mmio_write);
+    
+    //register_exec_bbl_hook(arm_exec_bbl);
     //register_post_exec_hook(arm_post_exec);
+    register_do_interrupt_hook(arm_cpu_do_interrupt_hook);
     init_simulator(simulator);
     load_file("./mbed-os-example-blinky-baremetal.bin",0);
     //xx_register_do_interrupt_hook();
