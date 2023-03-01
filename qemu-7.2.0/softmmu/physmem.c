@@ -1090,7 +1090,7 @@ DirtyBitmapSnapshot *cpu_physical_memory_snapshot_and_clear_dirty
     ram_addr_t last  = QEMU_ALIGN_UP(start + length, align);
     DirtyBitmapSnapshot *snap;
     unsigned long page, end, dest;
-
+    
     snap = g_malloc0(sizeof(*snap) +
                      ((last - first) >> (TARGET_PAGE_BITS + 3)));
     snap->start = first;

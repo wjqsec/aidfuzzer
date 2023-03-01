@@ -13,7 +13,7 @@
 #include "hw/core/cpu.h"
 #include "tcg/tcg.h"
 #include "exec/exec-all.h"
-
+#include "exec/cpu-all.h"
 #include "qemu/osdep.h"
 
 #include "hw/remote/machine.h"
@@ -47,7 +47,7 @@ exec_bbl_cb exec_bbl_func;
 typedef void (*do_interrupt_ptr)(CPUState *cpu);
 do_interrupt_ptr old_do_interrupt;
 
-typedef void (*do_interrupt_cb)();
+typedef bool (*do_interrupt_cb)();
 do_interrupt_cb do_interrupt_func;
 
 struct DirtyBitmapSnapshot {
@@ -126,7 +126,7 @@ static bool check_mem_overlap(hwaddr start, hwaddr size)
 }
 static bool check_mem_addr_and_size(hwaddr start, hwaddr size)
 {
-    hwaddr page_size = qemu_target_page_size() ? qemu_target_page_size() : 0x1000;
+    hwaddr page_size = TARGET_PAGE_BITS == 0 ? 4 << 10 : 1 << TARGET_PAGE_BITS;
     if(start & (page_size -1) != 0 || size & (page_size - 1) != 0)
     {
         return false;
@@ -194,20 +194,25 @@ void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
     memory_region_clear_dirty_bitmap(mr, 0, size);
     printf("clear dirty pages %p-%p\n",addr,addr+size);
 }
+int xx_target_pagesize()
+{
+    return 1 << TARGET_PAGE_BITS;
+}
 void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 {
     int num_page_in_byte = 0;
+    hwaddr page_size = TARGET_PAGE_BITS == 0 ? 4 << 10 : 1 << TARGET_PAGE_BITS;
     if(!check_mem_addr_and_size(addr,size))
         return;
     MemoryRegion *mr = find_mr_by_addr(addr,size);
     if(!mr)
         return;
     DirtyBitmapSnapshot * snap = memory_region_snapshot_and_clear_dirty(mr,addr - mr->addr , size, DIRTY_MEMORY_VGA);
-    num_page_in_byte = ((size / qemu_target_page_size()) / 8) + ((size / qemu_target_page_size()) % 8) ? 1 : 0 ;
+    num_page_in_byte = ((size / page_size) / 8) + (((size / page_size) % 8) ? 1 : 0) ;
 
     memcpy(dirty,snap->dirty,num_page_in_byte);
     g_free(snap);
-    printf("get dirty pages %p-%p\n",addr,addr+size);
+    printf("get dirty pages %p-%p totally :%d byte\n",addr,addr+size,num_page_in_byte);
 }
 
 
@@ -256,9 +261,11 @@ void xx_init_mem(MachineState *machine)
 }
 void xx_do_interrupt(CPUState *cpu)
 {
+    bool should_continue = true;
     if(do_interrupt_func)
-        do_interrupt_func();
-    old_do_interrupt(cpu);
+        should_continue = do_interrupt_func();
+    if(should_continue)
+        old_do_interrupt(cpu);
 }
 
 void xx_register_do_interrupt_hook(do_interrupt_cb cb)

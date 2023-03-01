@@ -23,28 +23,74 @@ void xx_init_mem(MachineState *machine);
 
 struct ARM_CPU_STATE
 {
-    regval eip;
+    uint32_t regs[16];
+    uint64_t xregs[32];
 };
-void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
+
+void xx_insert_nvic_intc(int irq, bool secure)
 {
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
-    state->eip = env->regs[15];  
+    //qemu_mutex_lock_iothread();
+    if(armv7m_nvic_get_ready_status(env->nvic, irq, secure))
+    {
+        armv7m_nvic_set_pending(env->nvic, irq, secure);
+        qemu_mutex_unlock_iothread();
+    }
+        
+}
+void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
+{
+    int i;
+    CPUState *cs = qemu_get_cpu(0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+    for(i = 0 ;i < 16 ; i++)
+    {
+        state->regs[i] = env->regs[i];
+    }
+    for(i = 0 ; i < 32 ; i++)
+    {
+        state->xregs[i] = env->xregs[i];
+    }
 }
 void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
+    int i;
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
-    env->regs[15] = state->eip;
-    
+    for(i = 0 ;i < 16 ; i++)
+    {
+        env->regs[i] = state->regs[i];
+    }
+    for(i = 0 ; i < 32 ; i++)
+    {
+        env->xregs[i] = state->xregs[i];
+    }
 }
 void xx_reset_arm_reg()
 {
-    // armv7m_load_kernel(ARM_CPU(first_cpu), 0,0, 0);
-    // qemu_devices_reset(SHUTDOWN_CAUSE_NONE);
     cpu_reset(ARM_CPU(first_cpu));
+}
+void* xx_save_arm_ctx_state()
+{
+    CPUARMState *env = g_new0(CPUARMState,1);
+    CPUState *cs = qemu_get_cpu(0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    memcpy(env,&cpu->env,offsetof(CPUARMState, end_reset_fields));
+    return env;
+}
+void xx_restore_arm_ctx_state(void* state)
+{
+    CPUState *cs = qemu_get_cpu(0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    memcpy(&cpu->env,state,offsetof(CPUARMState, end_reset_fields));
+}
+void xx_delete_arm_ctx_state(void* state)
+{
+    g_free(state);
 }
 struct XXARMMachineClass {
     MachineClass parent;

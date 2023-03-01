@@ -19,11 +19,10 @@ struct Simulator
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
-typedef void (*pre_exec_cb)(); 
-typedef void (*exec_ins_cb)(); 
+typedef void (*pre_thread_exec_cb)(); 
 typedef void (*exec_bbl_cb)(regval pc); 
-typedef void (*post_exec_cb)(int exec_ret);
-typedef void (*do_interrupt_cb)();
+typedef void (*post_thread_exec_cb)(int exec_ret);
+typedef bool (*do_interrupt_cb)();
 
 
 
@@ -34,9 +33,9 @@ void exec_simulator(struct Simulator *s);
 
 
 
-void register_pre_exec_hook(pre_exec_cb cb);
+void register_pre_thread_exec_hook(pre_thread_exec_cb cb);
 void register_exec_bbl_hook(exec_bbl_cb cb);
-void register_post_exec_hook(post_exec_cb cb);
+void register_post_thread_exec_hook(post_thread_exec_cb cb);
 void register_do_interrupt_hook(do_interrupt_cb cb);
 
 
@@ -49,7 +48,7 @@ void add_ram_region(char *name,hwaddr start, hwaddr size);
 void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb);
 void clear_dirty_mem(hwaddr start, hwaddr size);
 void get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
-
+int target_pagesize();
 void load_file(char *filename,hwaddr addr);
 //----------------x86
 struct X86_CPU_STATE
@@ -67,8 +66,15 @@ void set_x86_cpu_state(struct X86_CPU_STATE *state);
 //===================arm
 struct ARM_CPU_STATE
 {
-    regval eip;
+    uint32_t regs[16];
+    uint64_t xregs[32];
 };
 void get_arm_cpu_state(struct ARM_CPU_STATE *state);
 void set_arm_cpu_state(struct ARM_CPU_STATE *state);
+
+void *save_arm_ctx_state();
+void restore_arm_ctx_state(void* state);
+void delete_arm_ctx_state(void* state);
+
+void insert_nvic_intc(int irq, bool secure);
 

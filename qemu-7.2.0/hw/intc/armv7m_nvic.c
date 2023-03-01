@@ -620,7 +620,6 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
          */
         int running = nvic_exec_prio(s);
         bool escalate = false;
-
         if (exc_group_prio(s, vec->prio, secure) >= running) {
             trace_nvic_escalate_prio(irq, vec->prio, running);
             escalate = true;
