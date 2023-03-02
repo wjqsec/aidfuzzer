@@ -59,7 +59,7 @@ bool tcg_supports_guest_debug(void);
 void tcg_remove_all_breakpoints(CPUState *cpu);
 int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
 int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
-
+int tcg_gdbstub_supported_sstep_flags(void);
 
 extern bool tcg_allowed;
 
@@ -409,6 +409,7 @@ static void xx_accel_class_init(ObjectClass *oc, void *data)
     ac->name = "xx";
     ac->init_machine = xx_init_machine;
     ac->allowed = &tcg_allowed;
+    ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
 }
 
 static void xx_accel_ops_init(AccelOpsClass *ops)

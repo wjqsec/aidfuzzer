@@ -208,7 +208,7 @@ static void tcg_set_splitwx(Object *obj, bool value, Error **errp)
     s->splitwx_enabled = value;
 }
 
-static int tcg_gdbstub_supported_sstep_flags(void)
+int tcg_gdbstub_supported_sstep_flags(void)
 {
     /*
      * In replay mode all events will come from the log and can't be

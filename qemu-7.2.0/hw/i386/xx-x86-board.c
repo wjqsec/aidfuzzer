@@ -24,6 +24,7 @@ void xx_init_mem(MachineState *machine);
 
 struct X86_CPU_STATE
 {
+    regval regs[8];
     regval eip;
 };
 void xx_get_x86_cpu_state(struct X86_CPU_STATE *state)
@@ -31,16 +32,42 @@ void xx_get_x86_cpu_state(struct X86_CPU_STATE *state)
     CPUState *cs = qemu_get_cpu(0);
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env = &cpu->env;
-    state->eip = env->eip;  
+    for(int i = 0; i < 8 ;i ++)
+    {
+        state->regs[i] = env->regs[i];
+    }
+    state->eip = env->eip;
 }
 void xx_set_x86_cpu_state(struct X86_CPU_STATE *state)
 {
     CPUState *cs = qemu_get_cpu(0);
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env = &cpu->env;
+    for(int i = 0; i < 8 ;i ++)
+    {
+        env->regs[i] = state->regs[i];
+    }
     env->eip = state->eip;
-    
 }
+void* xx_save_x86_ctx_state()
+{
+    CPUX86State *env = g_new0(CPUX86State,1);
+    CPUState *cs = qemu_get_cpu(0);
+    X86CPU *cpu = X86_CPU(cs);
+    memcpy(env,&cpu->env,offsetof(CPUX86State, end_reset_fields));
+    return env;
+}
+void xx_restore_x86_ctx_state(void* state)
+{
+    CPUState *cs = qemu_get_cpu(0);
+    X86CPU *cpu = X86_CPU(cs);
+    memcpy(&cpu->env,state,offsetof(CPUX86State, end_reset_fields));
+}
+void xx_delete_x86_ctx_state(void* state)
+{
+    g_free(state);
+}
+
 
 struct XXX86MachineClass {
     X86MachineClass parent;

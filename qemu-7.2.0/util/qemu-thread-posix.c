@@ -82,6 +82,7 @@ void qemu_mutex_destroy(QemuMutex *mutex)
 
 void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, const int line)
 {
+    /*
     int err;
 
     assert(mutex->initialized);
@@ -90,10 +91,12 @@ void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, const int line)
     if (err)
         error_exit(err, __func__);
     qemu_mutex_post_lock(mutex, file, line);
+    */
 }
 
 int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, const int line)
 {
+    /*
     int err;
 
     assert(mutex->initialized);
@@ -106,10 +109,12 @@ int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, const int line)
         error_exit(err, __func__);
     }
     return -EBUSY;
+    */
 }
 
 void qemu_mutex_unlock_impl(QemuMutex *mutex, const char *file, const int line)
 {
+    /*
     int err;
 
     assert(mutex->initialized);
@@ -117,6 +122,7 @@ void qemu_mutex_unlock_impl(QemuMutex *mutex, const char *file, const int line)
     err = pthread_mutex_unlock(&mutex->lock);
     if (err)
         error_exit(err, __func__);
+    */
 }
 
 void qemu_rec_mutex_init(QemuRecMutex *mutex)

@@ -201,7 +201,7 @@ typedef struct KVMCapabilityInfo {
 
 struct KVMState;
 
-#define TYPE_KVM_ACCEL ACCEL_CLASS_NAME("kvm")
+#define TYPE_KVM_ACCEL ACCEL_CLASS_NAME("kvmm")
 typedef struct KVMState KVMState;
 DECLARE_INSTANCE_CHECKER(KVMState, KVM_STATE,
                          TYPE_KVM_ACCEL)

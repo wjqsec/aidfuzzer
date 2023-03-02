@@ -247,6 +247,7 @@ static inline void qemu_spin_destroy(const QemuSpin *spin)
 
 static inline void qemu_spin_lock(QemuSpin *spin)
 {
+/*
 #ifdef CONFIG_TSAN
     __tsan_mutex_pre_lock(spin, 0);
 #endif
@@ -258,10 +259,12 @@ static inline void qemu_spin_lock(QemuSpin *spin)
 #ifdef CONFIG_TSAN
     __tsan_mutex_post_lock(spin, 0, 0);
 #endif
+*/
 }
 
 static inline bool qemu_spin_trylock(QemuSpin *spin)
 {
+/*
 #ifdef CONFIG_TSAN
     __tsan_mutex_pre_lock(spin, __tsan_mutex_try_lock);
 #endif
@@ -272,15 +275,19 @@ static inline bool qemu_spin_trylock(QemuSpin *spin)
     __tsan_mutex_post_lock(spin, flags, 0);
 #endif
     return busy;
+*/
+    return false;
 }
 
 static inline bool qemu_spin_locked(QemuSpin *spin)
 {
-    return qatomic_read(&spin->value);
+    //return qatomic_read(&spin->value);
+    return false;
 }
 
 static inline void qemu_spin_unlock(QemuSpin *spin)
 {
+    /*
 #ifdef CONFIG_TSAN
     __tsan_mutex_pre_unlock(spin, 0);
 #endif
@@ -288,6 +295,7 @@ static inline void qemu_spin_unlock(QemuSpin *spin)
 #ifdef CONFIG_TSAN
     __tsan_mutex_post_unlock(spin, 0);
 #endif
+    */
 }
 
 struct QemuLockCnt {
