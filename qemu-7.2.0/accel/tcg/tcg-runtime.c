@@ -33,11 +33,11 @@
 
 /* 32-bit helpers */
 
-typedef void (*exec_bbl_cb)(uint64_t pc); 
+typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 extern exec_bbl_cb exec_bbl_func;
-uint64_t HELPER(xx)(uint64_t arg0)
+uint64_t HELPER(xx)(uint64_t pc,uint32_t id)
 {
-    exec_bbl_func(arg0);
+    exec_bbl_func(pc,id);
     return 1;
 }
 

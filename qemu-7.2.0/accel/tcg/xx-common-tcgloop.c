@@ -41,7 +41,7 @@ enum XX_CPU_TYPE
     X86,
     ARM
 };
-typedef void (*exec_bbl_cb)(uint64_t pc); 
+typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 exec_bbl_cb exec_bbl_func;
 
 typedef void (*do_interrupt_ptr)(CPUState *cpu);
@@ -111,14 +111,14 @@ static bool check_mem_overlap(hwaddr start, hwaddr size)
     for(i=0; i < xx_num_ram_regions;i++)
     {
         if(
-            !(start > xx_ram_regions[i].start + xx_ram_regions[i].size || end < xx_ram_regions[i].start)
+            !(start >= xx_ram_regions[i].start + xx_ram_regions[i].size || end <= xx_ram_regions[i].start)
         )
         return true;
     }
     for(i=0; i < xx_num_mmio_regions;i++)
     {
         if(
-            !(start > xx_mmio_regions[i].start + xx_mmio_regions[i].size || end < xx_mmio_regions[i].start)
+            !(start >= xx_mmio_regions[i].start + xx_mmio_regions[i].size || end <= xx_mmio_regions[i].start)
         )
         return true;
     }
@@ -333,11 +333,13 @@ int xx_thread_loop(bool debug)
                 exit(0);
                 break;
 			}
+            goto end;
 		} else if(debug)
         {
             main_loop_wait(true);
         }
 	}
+    end:
     cpu->exit_request = false;
     return r;
 }
