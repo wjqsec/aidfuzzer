@@ -285,4 +285,5 @@ DEF_HELPER_FLAGS_4(gvec_leu32, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
 DEF_HELPER_FLAGS_4(gvec_leu64, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
 
 DEF_HELPER_FLAGS_5(gvec_bitsel, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, ptr, i32)
-DEF_HELPER_2(xx, i64,i64,i32)
+DEF_HELPER_2(xx_bbl, i64,i64,i32)
+DEF_HELPER_5(xx_icmp_ins, i64, i64 ,i64,i64,s32,s32)

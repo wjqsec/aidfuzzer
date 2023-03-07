@@ -756,21 +756,8 @@ typedef void (*exec_bbl_cb)(uint64_t pc);
 extern exec_bbl_cb exec_bbl_func;
 static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
 {
-	uint64_t hash = val;
-	uint64_t n = hash;
-	n <<= 18;
-	hash -= n;
-	n <<= 33;
-	hash -= n;
-	n <<= 3;
-	hash += n;
-	n <<= 3;
-	hash -= n;
-	n <<= 4;
-	hash += n;
-	n <<= 2;
-	hash += n;
-	return hash >> (64 - bits);
+#define GOLDEN_RATIO_64 0x61C8864680B583EBull
+	return val * GOLDEN_RATIO_64 >> (64 - bits);
 }
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
@@ -787,10 +774,11 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     if (exec_bbl_func)
     {
         TCGv_i64 arg0_pc = tcg_const_i64(pc);
-	TCGv_i32 arg1_id = tcg_const_i32(pc % (1 << 16));//tcg_const_i32(hash_64(pc,32) % (1 << 16));
+
+	TCGv_i32 arg1_id = tcg_const_i32(hash_64(pc,32) % (1 << 16));
         //TCGv_i32 arg1_id = tcg_const_i32(pc % (1 << 16));
         TCGv_i64 ret_1 = tcg_const_i64(1);
-        gen_helper_xx(ret_1,arg0_pc,arg1_id);
+        gen_helper_xx_bbl(ret_1,arg0_pc,arg1_id);
 	tcg_temp_free_i64(arg0_pc);
 	tcg_temp_free_i64(ret_1);
 	tcg_temp_free_i32(arg1_id);

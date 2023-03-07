@@ -52,6 +52,8 @@ xx_register_do_interrupt_hook_ptr xx_register_do_interrupt_hook;
 typedef int (*xx_target_pagesize_ptr)();
 xx_target_pagesize_ptr xx_target_pagesize;
 
+typedef void (*xx_register_exec_ins_icmp_hook_ptr)(exec_ins_icmp_cb cb);
+xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
 //------------------------x86
 typedef void (*register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
 register_x86_cpu_do_interrupt_hook_ptr register_x86_cpu_do_interrupt_hook;
@@ -167,7 +169,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     xx_register_exec_bbl_hook = dlsym(handle, "xx_register_exec_bbl_hook");
     xx_register_do_interrupt_hook = dlsym(handle, "xx_register_do_interrupt_hook");
     xx_target_pagesize = dlsym(handle, "xx_target_pagesize");
-
+    xx_register_exec_ins_icmp_hook = dlsym(handle, "xx_register_exec_ins_icmp_hook");
     switch (cpu_type)
     {
         case X86:
@@ -250,6 +252,10 @@ int target_pagesize()
 {
     return xx_target_pagesize();
 }
+void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
+{
+    xx_register_exec_ins_icmp_hook(cb);
+}
 void load_file(char *filename,hwaddr addr)
 {
     int size;
@@ -300,92 +306,3 @@ void init_simulator(struct Simulator * s)
     }
     qemu_init(argc, args_qemu);
 }
-
-//-------------------------------------test
-/*
-void x86_cpu_do_interrupt_hook()
-{
-    struct X86_CPU_STATE state;
-    get_x86_cpu_state(&state);
-    printf("hook get eip:%p\n",state.eip);
-}
-
-bool arm_cpu_do_interrupt_hook()
-{
-    
-    return true;
-
-}
-
-void arm_exec_bbl(regval pc)
-{
-    static int i = 0;
-    // if(i == 3)
-    // {
-    //     insert_nvic_intc(5,false);
-    // }
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
-    // if(i < 1000)
-    //     printf("pc:%p r0:%x r1:%x r2:%x r3:%x\n",state.regs[15],state.regs[0],state.regs[1],state.regs[2],state.regs[3]);
-    // i++;
-    if(i < 1000)
-        printf("pc:%p r0:%x r1:%x r2:%x r3:%x\n",state.regs[15],state.regs[0],state.regs[1],state.regs[2],state.regs[3]);
-    i++;
-}
-void x86_exec_bbl(regval pc)
-{  
-    printf("start bbl:%p\n",pc);
-}
-void arm_post_exec(int exec_ret)
-{
-    printf("exec exit:%d\n",exec_ret);
-}
-uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
-{
-    printf("mmio read:%x\n",addr_offset);
-}
-void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
-{
-    printf("write\n");
-}
-int main(int argc, char ** argv)
-{
-
-    struct Simulator *simulator;
-    if(argc == 2)
-        simulator = create_simulator(ARM,true);
-    else
-        simulator = create_simulator(ARM,false);
-    add_ram_region("firmware",0x0, 0x80000);
-    add_ram_region("on-chip-ram",0x10000000, 0x8000);
-    add_ram_region("unknown",0x40000000, 0x10000000);
-
-    //add_mmio_region("mmio", 0x40000000, 0x20000000, mmio_read, mmio_write);
-    
-    register_exec_bbl_hook(arm_exec_bbl);
-    //register_post_exec_hook(arm_post_exec);
-    register_do_interrupt_hook(arm_cpu_do_interrupt_hook);
-    init_simulator(simulator);
-    load_file("./mbed-os-example-blinky-baremetal.bin",0);
-
-    reset_arm_reg();
-
-    exec_simulator(simulator);
-
-
-//     struct Simulator *simulator;
-//     if(argc == 2)
-//         simulator = create_simulator(X86,true);
-//     else
-//         simulator = create_simulator(X86,false);
-//     add_ram_region("firmware",0xfffff000, 0x1000);
-//     register_exec_bbl_hook(x86_exec_bbl);
-//     init_simulator(simulator);
-//     char buf[0x100] = {
-// 0x90, 0xEB, 0x01, 0x90, 0x90, 0xEB, 0x01, 0x90, 0x90, 0xEB, 0xF5, 0x90, 0x00, 0x00, 0x00, 0x00  // nop jmp1 nop; nop jmp2 nop; nop jmp head nop;
-// };
-//     write_ram(0xfffff000,0x10,buf);
-//     exec_simulator(simulator);
-}
-*/

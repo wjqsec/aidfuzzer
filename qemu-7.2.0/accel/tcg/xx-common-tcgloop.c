@@ -44,6 +44,9 @@ enum XX_CPU_TYPE
 typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 exec_bbl_cb exec_bbl_func;
 
+typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index);
+exec_ins_icmp_cb exec_ins_icmp_func;
+
 typedef void (*do_interrupt_ptr)(CPUState *cpu);
 do_interrupt_ptr old_do_interrupt;
 
@@ -276,6 +279,12 @@ void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
 }
+void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
+{
+    exec_ins_icmp_func = cb;
+}
+
+
 int xx_thread_loop(bool debug)
 {
     int r;

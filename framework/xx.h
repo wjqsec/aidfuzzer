@@ -15,12 +15,19 @@ struct Simulator
     bool enable_gdb_dbg;
 };
 
+#define EXCP_INTERRUPT 	0x10000 /* async interruption */
+#define EXCP_HLT        0x10001 /* hlt instruction reached */
+#define EXCP_DEBUG      0x10002 /* cpu stopped after a breakpoint or singlestep */
+#define EXCP_HALTED     0x10003 /* cpu is halted (waiting for external event) */
+#define EXCP_YIELD      0x10004 /* cpu wants to yield timeslice to another */
+#define EXCP_ATOMIC     0x10005 /* stop-the-world and emulate atomic */
 
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
 typedef void (*pre_thread_exec_cb)(); 
-typedef void (*exec_bbl_cb)(regval pc,uint32_t id); 
+typedef void (*exec_bbl_cb)(regval pc,uint32_t id);
+typedef void (*exec_ins_icmp_cb)(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
 typedef bool (*do_interrupt_cb)();
 
@@ -35,6 +42,7 @@ void exec_simulator(struct Simulator *s);
 
 void register_pre_thread_exec_hook(pre_thread_exec_cb cb);
 void register_exec_bbl_hook(exec_bbl_cb cb);
+void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb);
 void register_post_thread_exec_hook(post_thread_exec_cb cb);
 void register_do_interrupt_hook(do_interrupt_cb cb);
 

@@ -9730,7 +9730,6 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
             arm_skip_unless(dc, cond);
         }
     }
-
     if (is_16bit) {
         disas_thumb_insn(dc, insn);
     } else {
