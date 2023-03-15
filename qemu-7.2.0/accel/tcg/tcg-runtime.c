@@ -35,16 +35,21 @@
 
 typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 extern exec_bbl_cb exec_bbl_func;
-typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index);
+typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 extern exec_ins_icmp_cb exec_ins_icmp_func;
 uint64_t HELPER(xx_bbl)(uint64_t pc,uint32_t id)
 {
     exec_bbl_func(pc,id);
     return 1;
 }
-uint64_t HELPER(xx_icmp_ins)(uint64_t pc,uint64_t val1,uint64_t val2, int32_t used_bits, int32_t immediate_index)
+uint64_t HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)
 {
-    exec_ins_icmp_func(pc,val1,val2,used_bits,immediate_index);
+    exec_ins_icmp_func(val1,val2,32);
+    return 1;
+}
+uint64_t HELPER(xx_icmp64_ins)(uint64_t val1,uint64_t val2)
+{
+    exec_ins_icmp_func(val1,val2,64);
     return 1;
 }
 

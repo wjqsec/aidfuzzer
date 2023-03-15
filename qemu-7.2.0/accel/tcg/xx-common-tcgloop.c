@@ -44,7 +44,7 @@ enum XX_CPU_TYPE
 typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 exec_bbl_cb exec_bbl_func;
 
-typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index);
+typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 exec_ins_icmp_cb exec_ins_icmp_func;
 
 typedef void (*do_interrupt_ptr)(CPUState *cpu);

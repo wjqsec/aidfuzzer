@@ -246,6 +246,9 @@ void tcg_gen_setcond_i32(TCGCond cond, TCGv_i32 ret,
     } else if (cond == TCG_COND_NEVER) {
         tcg_gen_movi_i32(ret, 0);
     } else {
+	TCGv_i64 a1 = tcg_const_i64(1);
+	gen_helper_xx_icmp32_ins(a1,arg1,arg2);
+	tcg_temp_free_i64(a1);
         tcg_gen_op4i_i32(INDEX_op_setcond_i32, ret, arg1, arg2, cond);
     }
 }
@@ -1489,6 +1492,10 @@ void tcg_gen_setcond_i64(TCGCond cond, TCGv_i64 ret,
     } else if (cond == TCG_COND_NEVER) {
         tcg_gen_movi_i64(ret, 0);
     } else {
+	
+        TCGv_i64 a1 = tcg_const_i64(1);
+        gen_helper_xx_icmp64_ins(a1,arg1,arg2);
+        tcg_temp_free_i64(a1);
         if (TCG_TARGET_REG_BITS == 32) {
             tcg_gen_op6i_i32(INDEX_op_setcond2_i32, TCGV_LOW(ret),
                              TCGV_LOW(arg1), TCGV_HIGH(arg1),

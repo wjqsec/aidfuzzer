@@ -43,7 +43,7 @@ void __afl_map_shm(void) {
 }
 uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
 {
-    uint64_t ret = 0;
+    uint64_t ret = rand();
     #ifdef DBG
 
     struct ARM_CPU_STATE state;
@@ -122,10 +122,10 @@ void post_thread_exec(int exec_ret)
     //     read(122,&tmp,4);
     // }
 }
-void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
+void exec_ins_icmp(uint64_t val1,uint64_t val2, int used_bits)
 {
     #ifdef DBG
-    fprintf(file,"ins icmp pc:%p\n",pc);
+    fprintf(file,"ins icmp pc:arg1:%x  arg2:%x\n",val1,val2);
     #endif
 }
 int main(int argc, char **argv)
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
     register_post_thread_exec_hook(post_thread_exec);
     register_exec_ins_icmp_hook(exec_ins_icmp);
     init_simulator(simulator);
-    load_file("/home/w/Desktop/qemu/qemu-7.2.0/build/framework/mbed-os-example-blinky.bin",0);
+    load_file("./mbed-os-example-blinky.bin",0);
     reset_arm_reg();
     #ifdef AFL
     read(122,&tmp,4);
