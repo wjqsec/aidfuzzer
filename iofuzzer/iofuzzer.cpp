@@ -38,6 +38,22 @@ typedef int64_t  s64;
 using namespace std;
 
 
+#define EXIT_NONE 0
+#define EXIT_TIMEOUT 1
+#define EXIT_CRASH 2
+
+struct __attribute__((__packed__)) Data_protocol
+{
+  #define FUZZ_REQ 0x1
+  #define CMP_VAL 0x2
+  #define FUZZ_OUTPUT 0x3
+  #define ACK 0x4
+  u8 type;
+  s32 len; // -1 means no more data
+  u32 bbl_id;
+  u8 data[];
+};
+
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
 
@@ -136,7 +152,6 @@ struct input_stream
     u8 *data;
     s32 len;
     s32 used;
-    set<s32> *interesting_vals;
 };
 
 struct queue_entry
@@ -146,6 +161,7 @@ struct queue_entry
     s32 depth;
     map<u32,struct input_stream *> *streams;
     vector<u32> *stream_order;
+    
 };
 struct FuzzState
 {
@@ -153,16 +169,18 @@ struct FuzzState
     u8 *virgin_bits;
     u8 *trace_bits;
 
-
     int fd_ctl_toserver;
     int fd_ctl_fromserver;
     int fd_data_toserver;
     int fd_data_fromserver;
     struct pollfd pfds[2];
 
-    s32 cur_pid;
+    u32 total_exec;
+    u32 total_edges;
 
     vector<struct queue_entry*> *entries;
+
+    set<s32> *interesting_vals;
 };
 
 
@@ -175,15 +193,12 @@ void fatal(const char *msg)
 }
 
 
-void add_stream(struct queue_entry* entry, u32 id, char *file, set<s32> * interesting_vals)
+struct input_stream * new_stream(u32 id, char *file)
 {
   struct input_stream *stream = (struct input_stream *)malloc(sizeof(struct input_stream));
   stream->id = id;
   stream->used = 0;
-  if(!interesting_vals)
-    stream->interesting_vals = new set<s32>();
-  else
-    stream->interesting_vals = interesting_vals;
+
   if(file)
   {
     struct stat st;
@@ -204,6 +219,7 @@ void add_stream(struct queue_entry* entry, u32 id, char *file, set<s32> * intere
     stream->data = (u8*)malloc(0x100);
     stream->len = 0x100;
   }
+  return stream;
 }
 struct queue_entry* copy_queue(struct queue_entry* q)
 {
@@ -216,12 +232,12 @@ struct queue_entry* copy_queue(struct queue_entry* q)
     stream->backup_file = 0;
     stream->id = it->second->id;
     stream->len = it->second->len;
-    stream->used = it->second->used;
-    stream->interesting_vals = it->second->interesting_vals;
+    stream->used = 0;
     stream->data = (u8*)malloc(stream->len);
     memcpy(stream->data,it->second->data,stream->len);
     (*entry->streams)[it->first] = stream;
   }
+  entry->stream_order = new vector<u32>(*q->stream_order);
   return entry;
 }
 
@@ -325,7 +341,7 @@ void fuzzer_init(struct FuzzState *state, u32 map_size)
     char shm_str[PATH_MAX];
     state->map_size = map_size;
     state->virgin_bits = (u8*)malloc(state->map_size);
-    memset(state->virgin_bits, 255, state->map_size);
+    memset(state->virgin_bits, 0xff, state->map_size);
     s32 shm_id = shmget(IPC_PRIVATE, state->map_size, IPC_CREAT | IPC_EXCL | 0600);
     if (shm_id < 0) 
         fatal("shmget() failed");
@@ -345,6 +361,9 @@ void fuzzer_init(struct FuzzState *state, u32 map_size)
     state->fd_data_toserver = todata_pipe[1];
     state->fd_data_fromserver = fromdata_pipe[0];
     state->entries = new vector<struct queue_entry*>();
+    state->interesting_vals = new set<s32>();
+    state->total_exec = 0;
+    state->total_edges = 0;
 
     state->pfds[0].fd = state->fd_ctl_fromserver;
     state->pfds[0].events = POLLIN;
@@ -360,16 +379,17 @@ void fork_server_up(struct FuzzState *state)
     read(state->fd_ctl_fromserver, &tmp,4);
     printf("fork server is up\n");
 }
-void fork_server_runonce(struct FuzzState *state)
+inline void fork_server_runonce(struct FuzzState *state)
 {
     s32 tmp;
     write(state->fd_data_toserver, &tmp,4);
+    printf("run once\n");
 }
 // void fork_server_getpid(struct FuzzState *state)
 // {
 //     read(state->fd_fromserver, &state->cur_pid, 4);
 // }
-s32 fork_server_getexit(struct FuzzState *state)
+inline s32 fork_server_getexit(struct FuzzState *state)
 {
     s32 tmp;
     read(state->fd_ctl_fromserver, &tmp,4);
@@ -392,20 +412,67 @@ void run_controlled_process(int argc,char *old_argv[])
 	}
 }
 
-void init_defualt_queue(struct FuzzState *state)
+void dispatch_req(struct FuzzState *state,struct queue_entry* entry)
 {
-  struct queue_entry *entry = (struct queue_entry *)malloc(sizeof(struct queue_entry));
-  entry->depth = 0;
-  entry->streams = new map<u32,struct input_stream *>();
-  state->entries->push_back(entry);
-}
+  u8 type_recv;
+  s32 len_recv;
+  u32 bbl_id_recv;
 
+  u8 type_send;
+  s32 len_send;
+  u32 bbl_id_send;
+
+  read(state->fd_data_fromserver, &type_recv, 1);
+  read(state->fd_data_fromserver, &len_recv, 4);
+  read(state->fd_data_fromserver, &bbl_id_recv, 4);
+
+  bbl_id_send = bbl_id_recv;
+
+  struct input_stream *stream;
+  if(entry->streams->find(bbl_id_recv) == entry->streams->end())
+  {
+    stream = new_stream(bbl_id_recv, 0);
+    (*entry->streams)[bbl_id_recv] = stream;
+    entry->stream_order->push_back(bbl_id_recv);
+  }
+  stream = (*entry->streams)[bbl_id_recv];
+
+  if(type_recv == FUZZ_REQ)
+  { 
+    type_send = FUZZ_OUTPUT;
+    if(len_recv > stream->len - stream->used)
+    {
+      len_send = -1;
+      write(state->fd_data_toserver,&type_send, 1);
+      write(state->fd_data_toserver,&len_send, 4);
+    }
+    else
+    {
+      len_send = len_recv;
+      write(state->fd_data_toserver,&type_send, 1);
+      write(state->fd_data_toserver,&len_send, 4);
+      write(state->fd_data_toserver,&bbl_id_send, 4);
+      write(state->fd_data_toserver,stream->data + stream->used, len_send);
+      stream->used += len_send;
+    }
+  }
+  else if(type_recv == CMP_VAL)
+  {
+    type_send = ACK;
+
+  }
+  else
+  {
+    fatal("type error\n");
+  }
+}
 inline void fuzz_one(struct FuzzState *state, struct queue_entry* entry)
 {
     
-  int exit_code;
-  
+  s32 exit_code;
+
   u64 start_time = get_cur_time();
+  memset(state->trace_bits,0,state->map_size);
   fork_server_runonce(state);
 
   while(1)
@@ -420,13 +487,13 @@ inline void fuzz_one(struct FuzzState *state, struct queue_entry* entry)
     }
     if(state->pfds[1].revents & POLLIN)
     {
-      
+      dispatch_req(state,entry);
     }
   }
   u64 end_time = get_cur_time();
   classify_counts((u64*)state->trace_bits,state->map_size);
   int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size); 
-  if(r)
+  if(unlikely(r))
   {
     struct queue_entry* q = copy_queue(entry);
     q->exec_time = end_time - start_time;
@@ -435,11 +502,23 @@ inline void fuzz_one(struct FuzzState *state, struct queue_entry* entry)
   }
   if(exit_code > 3)
   {
-
+    fatal("crash!\n");
   }
-
+  state->total_exec ++; 
 }
-
+void perform_init_run(struct FuzzState *state)
+{
+  struct queue_entry *entry = (struct queue_entry *)malloc(sizeof(struct queue_entry));
+  entry->depth = 0;
+  entry->streams = new map<u32,struct input_stream *>();
+  entry->stream_order = new vector<u32>();
+  fuzz_one(state,entry);
+  if(!state->entries->size())
+  {
+    fatal("init run error\n");
+  }
+  //memory leak here
+}
 void mutate(int type, struct input_stream* stream, int offset)
 {
   switch(type)
@@ -449,8 +528,10 @@ void mutate(int type, struct input_stream* stream, int offset)
 }
 void fuzz_loop(struct FuzzState *state)
 { 
+    printf("wait for fork server\n");
     fork_server_up(state);
-
+    perform_init_run(state);
+    return;
     while (1)
     {
       int count = state->entries->size();
@@ -458,28 +539,20 @@ void fuzz_loop(struct FuzzState *state)
       {
         struct queue_entry* entry = (*state->entries)[i];
         int num_streams = entry->stream_order->size();
-        if(num_streams == 0)
+        for(int j = 0; j < num_streams; j ++)
         {
-          fuzz_one(state,entry);
-        }
-        else
-        {
-          for(int j = 0; j < num_streams; j ++)
+          u32 id = (*entry->stream_order)[j];
+          struct input_stream *stream = (*entry->streams)[id];
+          s32 len = stream->len;
+          for(int k = 0; k < len ; k++)
           {
-            u32 id = (*entry->stream_order)[j];
-            struct input_stream *stream = (*entry->streams)[id];
-            s32 len = stream->len;
-            for(int k = 0; k < len ; k++)
-            {
-              u8 org[8];
-              memcpy(org,stream->data+k,8);
-              mutate(1, stream, k);
-              fuzz_one(state,entry);
-              memcpy(stream->data+k, org, 8);
-            }
+            u8 org[8];
+            memcpy(org,stream->data+k,8);
+            mutate(1, stream, k);
+            fuzz_one(state,entry);
+            memcpy(stream->data+k, org, 8);
           }
         }
-        
       }
 
     }
@@ -488,9 +561,8 @@ void fuzz_loop(struct FuzzState *state)
 int main(int argc, char **argv)
 {
   struct FuzzState state;
-  run_controlled_process(argc,argv);
   fuzzer_init(&state,1 << 16);
-  init_defualt_queue(&state);
-  //fuzz_loop(&state);
+  run_controlled_process(argc,argv);
+  fuzz_loop(&state);
 }
 

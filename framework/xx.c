@@ -145,10 +145,10 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     switch (cpu_type)
     {
         case X86:
-        handle = dlopen("../qemu-7.2.0/build/libqemu-system-x86_64.so", RTLD_NOW);
+        handle = dlopen("/root/fuzzer/xxfuzzer/qemu-7.2.0/build/libqemu-system-x86_64.so", RTLD_NOW);
         break;
         case ARM:
-        handle = dlopen("../qemu-7.2.0/build/libqemu-system-arm.so", RTLD_NOW);
+        handle = dlopen("/root/fuzzer/xxfuzzer/qemu-7.2.0/build/libqemu-system-arm.so", RTLD_NOW);
         break;
     }
     if (!handle) {
@@ -306,3 +306,4 @@ void init_simulator(struct Simulator * s)
     }
     qemu_init(argc, args_qemu);
 }
+

@@ -27,7 +27,7 @@ typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsi
 
 typedef void (*pre_thread_exec_cb)(); 
 typedef void (*exec_bbl_cb)(regval pc,uint32_t id);
-typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits); 
+typedef void (*exec_ins_icmp_cb)(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
 typedef bool (*do_interrupt_cb)();
 
@@ -88,4 +88,6 @@ void *save_arm_ctx_state();
 void restore_arm_ctx_state(void* state);
 void delete_arm_ctx_state(void* state);
 void insert_nvic_intc(int irq, bool secure);
+void reset_arm_reg();
+
 

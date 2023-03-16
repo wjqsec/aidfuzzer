@@ -7,51 +7,85 @@
 #include <sys/types.h>
 #include <sys/shm.h>
 #include <unistd.h>
+
+#include <string.h>
 #include "xx.h"
 
-#define DBG
-//#define AFL
+//#define DBG
+#define AFL
+
+#define FORKSRV_CTLFD          198
+#define FORKSRV_DATAFD          200
+
+struct __attribute__((__packed__)) Data_protocol
+{
+  #define FUZZ_REQ 0x1
+  #define CMP_VAL 0x2
+  #define FUZZ_OUTPUT 0x3
+  #define ACK 0x4
+  uint8_t type;
+  int32_t len; // -1 means no more data
+  uint32_t bbl_id;
+  uint8_t data[];
+};
 
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
-int status = 0;
-int tmp;
+
+
 FILE *file;
 
-uint64_t count = 0;
+uint64_t execed_bbl_count = 0;
+uint32_t cur_bbl_id;
+
 void __afl_map_shm(void) {
 
   char *id_str = getenv("__AFL_SHM_ID");
-
   if (id_str) {
     uint32_t shm_id = atoi(id_str);
-
     __afl_area_ptr = shmat(shm_id, NULL, 0);
-
-    /* Whooooops. */
-    
     if (__afl_area_ptr == (void *)-1) _exit(1);
-    
-    
-    /* Write something into the bitmap so that even with low AFL_INST_RATIO,
-       our parent doesn't give up on us. */
-
-    __afl_area_ptr[0] = 1;
-
   }
 
 }
+
 uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
 {
-    uint64_t ret = rand();
-    #ifdef DBG
+    uint64_t ret = 0;
 
+    #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
     fprintf(file,"mmio read loc:%p\n",state.regs[15]);
     #endif
+
     #ifdef AFL
-    read(124,&ret,size);
+    static uint8_t buf[32];
+    uint8_t  type_recv;
+    int32_t len_recv;
+    uint32_t bbl_id_recv;
+
+    uint8_t  type_send;
+    int32_t len_send;
+    uint32_t bbl_id_send;
+    
+    buf[0] = FUZZ_REQ;
+    len_send = size;
+    memcpy(buf+1, &len_send, 4);
+    memcpy(buf+5, &cur_bbl_id,4);
+    write(FORKSRV_DATAFD+1 , buf, 9);
+
+    read(FORKSRV_DATAFD,&type_recv,1);
+    if(type_recv != FUZZ_OUTPUT)
+    {
+
+    }
+    read(FORKSRV_DATAFD,&len_recv,1);
+    if(len_recv == -1)
+    {
+        
+    }
+    read(FORKSRV_DATAFD,&ret,len_send);
     #endif
     return ret;
 }
@@ -65,9 +99,12 @@ void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
 }
 void arm_exec_bbl(regval pc,uint32_t id)
 {
+
     #ifdef AFL
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
     __afl_prev_loc = id >> 1;
+    execed_bbl_count++;
+    cur_bbl_id = id;
     #endif
     // count ++;
     // if(count > 1000000 )
@@ -94,9 +131,9 @@ bool arm_cpu_do_interrupt_hook()
     #endif
 
     #ifdef AFL
-    write(123,&status,4);
-    reset_arm_reg();
-    read(122,&tmp,4);
+    // write(123,&status,4);
+    // reset_arm_reg();
+    // read(122,&tmp,4);
     #endif
     return false;
 }
@@ -122,20 +159,22 @@ void post_thread_exec(int exec_ret)
     //     read(122,&tmp,4);
     // }
 }
-void exec_ins_icmp(uint64_t val1,uint64_t val2, int used_bits)
+void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
 {
     #ifdef DBG
-    fprintf(file,"ins icmp pc:arg1:%x  arg2:%x\n",val1,val2);
+    fprintf(file,"ins icmp pc:%p\n",pc);
     #endif
 }
 int main(int argc, char **argv)
 {
+    uint32_t tmp; 
     file = fopen("/tmp/a.txt","w");
     setbuf(file,0);
     #ifdef AFL
     __afl_map_shm();
-    #endif
     __afl_prev_loc = 0;
+    #endif
+    
     struct Simulator *simulator;
     simulator = create_simulator(ARM,false);
     
@@ -153,10 +192,12 @@ int main(int argc, char **argv)
     register_post_thread_exec_hook(post_thread_exec);
     register_exec_ins_icmp_hook(exec_ins_icmp);
     init_simulator(simulator);
-    load_file("./mbed-os-example-blinky.bin",0);
+    load_file("/root/fuzzer/xxfuzzer/framework/mbed-os-example-blinky.bin",0);
     reset_arm_reg();
+    
     #ifdef AFL
-    read(122,&tmp,4);
+    write(FORKSRV_CTLFD+1 , &tmp,4);
+    read(FORKSRV_CTLFD,&tmp,4);
     #endif
     exec_simulator(simulator);
 }
