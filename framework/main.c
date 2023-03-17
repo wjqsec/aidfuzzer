@@ -17,6 +17,11 @@
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
 
+#define EXIT_NONE 0
+#define EXIT_TIMEOUT 1
+#define EXIT_CRASH 2
+
+
 struct __attribute__((__packed__)) Data_protocol
 {
   #define FUZZ_REQ 0x1
@@ -78,14 +83,20 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     read(FORKSRV_DATAFD,&type_recv,1);
     if(type_recv != FUZZ_OUTPUT)
     {
-
+        printf("error type_recv\n");
+        exit(0);
     }
-    read(FORKSRV_DATAFD,&len_recv,1);
+    read(FORKSRV_DATAFD,&len_recv,4);
     if(len_recv == -1)
     {
-        
+        int32_t exit_code = EXIT_TIMEOUT;
+        write(FORKSRV_CTLFD+1 , &exit_code,4);
+        reset_arm_reg();
+        execed_bbl_count = 0;
     }
+    read(FORKSRV_DATAFD,&bbl_id_recv,4);
     read(FORKSRV_DATAFD,&ret,len_send);
+    printf("read end\n");
     #endif
     return ret;
 }
@@ -104,7 +115,14 @@ void arm_exec_bbl(regval pc,uint32_t id)
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
     __afl_prev_loc = id >> 1;
     execed_bbl_count++;
-    cur_bbl_id = id;
+    cur_bbl_id = pc;
+    if(execed_bbl_count > 10000)
+    {
+        int32_t exit_code = EXIT_TIMEOUT;
+        write(FORKSRV_CTLFD+1 , &exit_code,4);
+        reset_arm_reg();
+        execed_bbl_count = 0;
+    }
     #endif
     // count ++;
     // if(count > 1000000 )
@@ -130,11 +148,14 @@ bool arm_cpu_do_interrupt_hook()
     fprintf(file,"interrupt bbl pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, sp:%x\n",state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[13]);
     #endif
 
+
     #ifdef AFL
-    // write(123,&status,4);
-    // reset_arm_reg();
-    // read(122,&tmp,4);
+    int32_t exit_code = EXIT_CRASH;
+    write(FORKSRV_CTLFD+1 , &exit_code,4);
+    reset_arm_reg();
+    execed_bbl_count = 0;
     #endif
+
     return false;
 }
 void post_thread_exec(int exec_ret)
@@ -147,6 +168,12 @@ void post_thread_exec(int exec_ret)
     //     }
     // }
     // fprintf(file,"post thread\n");
+    #ifdef AFL
+    int32_t exit_code = EXIT_NONE;
+    write(FORKSRV_CTLFD+1 , &exit_code,4);
+    reset_arm_reg();
+    execed_bbl_count = 0;
+    #endif
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
@@ -183,14 +210,14 @@ int main(int argc, char **argv)
     // add_ram_region("on-chip-ram",0x10000000, 0x8000);
     add_ram_region("stack",0x20000000, 0x10000000);
     
-    // add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read, mmio_write);
+    add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read, mmio_write);
     add_mmio_region("APB0",0x40000000, 0x80000, mmio_read, mmio_write);
     add_mmio_region("APB1",0x40080000, 0x80000, mmio_read, mmio_write);
     add_mmio_region("AHB",0x50000000, 0x200000, mmio_read, mmio_write);
     register_exec_bbl_hook(arm_exec_bbl);
     register_do_interrupt_hook(arm_cpu_do_interrupt_hook);
     register_post_thread_exec_hook(post_thread_exec);
-    register_exec_ins_icmp_hook(exec_ins_icmp);
+    //register_exec_ins_icmp_hook(exec_ins_icmp);
     init_simulator(simulator);
     load_file("/root/fuzzer/xxfuzzer/framework/mbed-os-example-blinky.bin",0);
     reset_arm_reg();
