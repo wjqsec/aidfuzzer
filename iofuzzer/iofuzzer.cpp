@@ -10,9 +10,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
-
+#include <algorithm>
 #include <fcntl.h>            /* Definition of AT_* constants */
-
+#include <random>
 #include <sys/syscall.h>      /* Definition of SYS_* constants */
 
 #include <sys/time.h>
@@ -106,9 +106,19 @@ struct __attribute__((__packed__)) Data_protocol
    100663045,    /* Large positive number (endian-agnostic) */ \
    2147483647    /* Overflow signed 32-bit when incremented */
 
+static s8  interesting_8[]  = { INTERESTING_8 };
+static s16 interesting_16[] = { INTERESTING_8, INTERESTING_16 };
+static s32 interesting_32[] = { INTERESTING_8, INTERESTING_16, INTERESTING_32 };
 u8 count_class_lookup8[256];
 
 u16 count_class_lookup16[65536];
+
+void fatal(const char *msg)
+{
+    printf("%s",msg);
+    exit(0);
+}
+
 void init_count_class16(void) {
   count_class_lookup8[0] = 0;
   count_class_lookup8[1] = 1;
@@ -266,7 +276,26 @@ inline u32 count_non_255_bytes(u8* mem, u32 size) {
   return ret;
 
 }
+inline u32 UR(u32 limit) {
 
+  #define RESEED_RNG          10000
+  static u32 rand_cnt = 0;
+  if (unlikely(!rand_cnt--)) {
+
+    u32 seed[2];
+
+    FILE *f = fopen("/dev/urandom","rb");
+    if(!f)
+      fatal("open random file error\n");
+    fread(seed,sizeof(seed),1,f);
+    fclose(f);
+    srandom(seed[0]);
+    rand_cnt = (RESEED_RNG / 2) + (seed[1] % RESEED_RNG);
+  }
+
+  return random() % limit;
+
+}
 
 static u64 get_cur_time(void) {
 
@@ -295,7 +324,7 @@ struct queue_entry
     s32 depth;
     map<u32,struct input_stream *> *streams;
     vector<u32> *stream_order;
-    
+    bool fuzzed;
 };
 struct FuzzState
 {
@@ -314,17 +343,14 @@ struct FuzzState
 
     vector<struct queue_entry*> *entries;
 
-    set<s32> *interesting_vals;
+    set<u32> *interesting_vals;
+
+    s32 random_fd;
 };
 
 
 
 
-void fatal(const char *msg)
-{
-    printf("%s",msg);
-    exit(0);
-}
 
 
 struct input_stream * new_stream(u32 id, char *file)
@@ -372,6 +398,7 @@ struct queue_entry* copy_queue(struct queue_entry* q)
     (*entry->streams)[it->first] = stream;
   }
   entry->stream_order = new vector<u32>(*q->stream_order);
+  entry->fuzzed = false;
   return entry;
 }
 
@@ -402,7 +429,7 @@ void fuzzer_init(struct FuzzState *state, u32 map_size)
     state->fd_data_toserver = todata_pipe[1];
     state->fd_data_fromserver = fromdata_pipe[0];
     state->entries = new vector<struct queue_entry*>();
-    state->interesting_vals = new set<s32>();
+    state->interesting_vals = new set<u32>();
     state->total_exec = 0;
     state->total_edges = 0;
 
@@ -509,7 +536,7 @@ void dispatch_req(struct FuzzState *state,struct queue_entry* entry)
 void show_stat(struct FuzzState *state)
 {
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
-  printf("%stotal exec times:%d edges:%d\n",KNRM, state->total_exec,edges);
+  printf("total exec times:%d edges:%d\n", state->total_exec,edges);
 }
 void save_crash(struct queue_entry* entry)
 {
@@ -583,11 +610,100 @@ void perform_init_run(struct FuzzState *state)
   }
   //memory leak here
 }
-void mutate(int type, struct input_stream* stream, int offset)
+#define FLIP_BIT(_ar, _b) do { \
+    u8* _arf = (u8*)(_ar); \
+    u32 _bf = (_b); \
+    _arf[(_bf) >> 3] ^= (128 >> ((_bf) & 7)); \
+  } while (0)
+void havoc(struct FuzzState *state, struct input_stream* stream)
 {
-  switch(type)
+  #define HAVOC_STACK 8
+  #define HAVOC_TOKEN 20
+  #define ARITH_MAX   35
+  u32 use_stacking = 1 + UR(HAVOC_STACK);
+  s32 len = stream->len;
+  u8 *data = stream->data;
+  for (s32 i = 0; i < use_stacking; i++) 
   {
-
+    switch (UR(HAVOC_TOKEN))
+    {
+      case 0:
+      {
+        FLIP_BIT(data,UR(len));
+        break;
+      }
+      case 1:
+      {
+        ((s8*)data)[UR(len)] = interesting_8[UR(sizeof(interesting_8))];
+        break;
+      }
+      case 2:
+      {
+        ((s16*)data)[UR(len - 1)] = interesting_16[UR(sizeof(interesting_16) >> 1)];
+        break;
+      }
+      case 3:
+      {
+        ((s32*)data)[UR(len - 3)] = interesting_32[UR(sizeof(interesting_32) >> 2)];
+        break;
+      }
+      case 4:
+      {
+        data[UR(len)] ^= 0xff;
+        break;
+      }
+      case 5:
+      {
+        data[UR(len)] -= 1 + UR(ARITH_MAX);
+        break;
+      }
+      case 6:
+      {
+        data[UR(len)] += 1 + UR(ARITH_MAX);
+        break;
+      }
+      case 7:
+      {
+        ((s16*)data)[UR(len - 1)] -= 1 + UR(ARITH_MAX);
+        break;
+      }
+      case 8:
+      {
+        ((s16*)data)[UR(len - 1)] += 1 + UR(ARITH_MAX);
+        break;
+      }
+      case 9:
+      {
+        ((s32*)data)[UR(len - 3)] -= 1 + UR(ARITH_MAX);
+        break;
+      }
+      case 10:
+      {
+        ((s32*)data)[UR(len - 3)] += 1 + UR(ARITH_MAX);
+        break;
+      }
+      case 11:
+      {
+        ((s8*)data)[UR(len)] = UR(0x100);
+        break;
+      }
+      case 12:
+      {
+        ((s16*)data)[UR(len - 1)] = UR(0x100);
+        break;
+      }
+      case 13:
+      {
+        ((s32*)data)[UR(len - 3)] = UR(0x100);
+        break;
+      }
+      case 14 ... 20:
+      {
+        auto it = state->interesting_vals->begin();
+        std::advance(it, UR(state->interesting_vals->size()));
+        ((s32*)data)[UR(len - 3)] = *it;
+      }
+    }
   }
 }
 void fuzz_loop(struct FuzzState *state)
@@ -596,30 +712,30 @@ void fuzz_loop(struct FuzzState *state)
     fork_server_up(state);
     perform_init_run(state);
     show_stat(state);
-    return;
     while (1)
     {
       int count = state->entries->size();
       for(int i = 0; i < count; i ++)
       {
         struct queue_entry* entry = (*state->entries)[i];
+        if(entry->fuzzed)
+          continue;
         int num_streams = entry->stream_order->size();
+        
         for(int j = 0; j < num_streams; j ++)
         {
           u32 id = (*entry->stream_order)[j];
           struct input_stream *stream = (*entry->streams)[id];
           s32 len = stream->len;
-          for(int k = 0; k < len ; k++)
-          {
-            u8 org[8];
-            memcpy(org,stream->data+k,8);
-            mutate(1, stream, k);
-            fuzz_one(state,entry);
-            memcpy(stream->data+k, org, 8);
-          }
+          u8 *org_buf = (u8 *)malloc(len);
+          memcpy(org_buf, stream->data, len);
+          havoc(state, stream);
+          memcpy(stream->data, org_buf, len); 
         }
+        
+        entry->fuzzed = true;
       }
-
+      show_stat(state);
     }
 }
 
