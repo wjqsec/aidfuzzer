@@ -1,1 +1,1 @@
-gcc -ldl main.c xx.c
+gcc -ldl main.c xx.c -O3

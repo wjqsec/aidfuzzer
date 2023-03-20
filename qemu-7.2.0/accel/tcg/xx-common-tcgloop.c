@@ -195,7 +195,7 @@ void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
 
     tlb_reset_dirty_range_all(addr, size);
     memory_region_clear_dirty_bitmap(mr, 0, size);
-    printf("clear dirty pages %p-%p\n",addr,addr+size);
+    //printf("clear dirty pages %p-%p\n",addr,addr+size);
 }
 int xx_target_pagesize()
 {
@@ -215,7 +215,7 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 
     memcpy(dirty,snap->dirty,num_page_in_byte);
     g_free(snap);
-    printf("get dirty pages %p-%p totally :%d byte\n",addr,addr+size,num_page_in_byte);
+    //printf("get dirty pages %p-%p totally :%d byte\n",addr,addr+size,num_page_in_byte);
 }
 
 

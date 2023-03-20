@@ -433,7 +433,7 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
         log_cpu_exec(log_pc(cpu, itb), cpu, itb);
     }
-
+    
     qemu_thread_jit_execute();
     ret = tcg_qemu_tb_exec(env, tb_ptr);
     cpu->can_do_io = 1;
@@ -976,7 +976,6 @@ int cpu_exec(CPUState *cpu)
             TranslationBlock *tb;
             target_ulong cs_base, pc;
             uint32_t flags, cflags;
-
             cpu_get_tb_cpu_state(cpu->env_ptr, &pc, &cs_base, &flags);
 	    /*
              * When requested, use an exact setting for cflags for the next
