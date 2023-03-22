@@ -26,7 +26,11 @@ struct ARM_CPU_STATE
     uint32_t regs[16];
     uint64_t xregs[32];
 };
-
+struct ARM_NVIC_ALL_STATE
+{
+    CPUARMState *env;
+    struct NVICState *nvic;
+};
 void xx_insert_nvic_intc(int irq, bool secure)
 {
     CPUState *cs = qemu_get_cpu(0);
@@ -76,21 +80,31 @@ void xx_reset_arm_reg()
 }
 void* xx_save_arm_ctx_state()
 {
+    struct ARM_NVIC_ALL_STATE *ret = g_new0(struct ARM_NVIC_ALL_STATE,1);
     CPUARMState *env = g_new0(CPUARMState,1);
+    struct NVICState *nvic = g_new0(struct NVICState,1);
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
     memcpy(env,&cpu->env,offsetof(CPUARMState, end_reset_fields));
-    return env;
+    memcpy(nvic,cpu->env.nvic,sizeof(struct NVICState));
+    ret->env = env;
+    ret->nvic = nvic;
+    return ret;
 }
 void xx_restore_arm_ctx_state(void* state)
 {
+    struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
-    memcpy(&cpu->env,state,offsetof(CPUARMState, end_reset_fields));
+    memcpy(&cpu->env,ret->env,offsetof(CPUARMState, end_reset_fields));
+    memcpy(cpu->env.nvic,ret->nvic,sizeof(struct NVICState));
 }
 void xx_delete_arm_ctx_state(void* state)
 {
-    g_free(state);
+    struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
+    g_free(ret->env);
+    g_free(ret->nvic);
+    g_free(ret);
 }
 struct XXARMMachineClass {
     MachineClass parent;

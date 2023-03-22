@@ -344,12 +344,14 @@ static inline int nvic_exec_prio(NVICState *s)
 
     if (env->v7m.basepri[M_REG_NS] > 0) {
         running = exc_group_prio(s, env->v7m.basepri[M_REG_NS], M_REG_NS);
+	    printf("c%d\n",running);
     }
 
     if (env->v7m.basepri[M_REG_S] > 0) {
         int basepri = exc_group_prio(s, env->v7m.basepri[M_REG_S], M_REG_S);
         if (running > basepri) {
             running = basepri;
+	    printf("d%d\n",running);
         }
     }
 
@@ -370,6 +372,7 @@ static inline int nvic_exec_prio(NVICState *s)
     if (env->v7m.faultmask[M_REG_NS]) {
         if (env->v7m.aircr & R_V7M_AIRCR_BFHFNMINS_MASK) {
             running = -1;
+	    printf("b%d\n",running);
         } else {
             if (env->v7m.aircr & R_V7M_AIRCR_PRIS_MASK) {
                 if (running > NVIC_NS_PRIO_LIMIT) {
@@ -383,10 +386,11 @@ static inline int nvic_exec_prio(NVICState *s)
 
     if (env->v7m.faultmask[M_REG_S]) {
         running = (env->v7m.aircr & R_V7M_AIRCR_BFHFNMINS_MASK) ? -3 : -1;
+	printf("a%d\n",running);
     }
 
     /* consider priority of active handler */
-    return MIN(running, s->exception_prio);
+    return  MIN(running, s->exception_prio);
 }
 
 bool armv7m_nvic_neg_prio_requested(void *opaque, bool secure)
@@ -627,7 +631,6 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
             trace_nvic_escalate_disabled(irq);
             escalate = true;
         }
-
         if (escalate) {
 
             /* We need to escalate this exception to a synchronous HardFault.

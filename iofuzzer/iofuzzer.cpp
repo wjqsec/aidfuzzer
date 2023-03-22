@@ -41,7 +41,8 @@ using namespace std;
 
 #define EXIT_NONE 0
 #define EXIT_TIMEOUT 1
-#define EXIT_CRASH 2
+#define EXIT_OUTOFSEED 2
+#define EXIT_CRASH 3
 
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
@@ -52,6 +53,7 @@ using namespace std;
 #define ACK 0x4
 
 #define DEFAULT_STREAM_LEN 0x100
+#define MAX_STREAM_LEN 0x1000
 /*
 struct __attribute__((__packed__)) Data_protocol
 {
@@ -333,6 +335,7 @@ struct FuzzState
     u32 total_edges;
 
     u32 exit_none;
+    u32 exit_outofseed;
     u32 exit_timeout;
     u32 exit_crash;
 
@@ -361,9 +364,10 @@ inline input_stream *new_stream(u32 id, char *file)
       fatal("unable to access backup file\n");
     }
     FILE *fd = fopen("file","rb");
-    stream->data = (u8*)malloc(st.st_size);
-    stream->len = st.st_size;
-    fread(stream->data,st.st_size,1,fd);
+    stream->len = st.st_size > MAX_STREAM_LEN ? MAX_STREAM_LEN : st.st_size;
+    stream->data = (u8*)malloc(stream->len);
+    
+    fread(stream->data,stream->len,1,fd);
     fclose(fd);
   }
   else
@@ -427,6 +431,7 @@ void fuzzer_init(FuzzState *state, u32 map_size)
     state->total_exec = 0;
     state->total_edges = 0;
     state->exit_none = 0;
+    state->exit_outofseed = 0;
     state->exit_timeout = 0;
     state->exit_crash = 0;
     state->pfds[0].fd = state->fd_ctl_fromserver;
@@ -497,7 +502,7 @@ inline void dispatch_req(FuzzState *state,queue_entry* entry)
     //entry->stream_order->push_back(bbl_id_recv);
   }
   stream = (*entry->streams)[bbl_id_recv];
-  printf("dispatch\n");
+
   if(type_recv == FUZZ_REQ)
   { 
     type_send = FUZZ_OUTPUT;
@@ -514,8 +519,6 @@ inline void dispatch_req(FuzzState *state,queue_entry* entry)
       write(state->fd_data_toserver,&len_send, 4);
       write(state->fd_data_toserver,&bbl_id_send, 4);
 
-      uint32_t *tt = (uint32_t *)(stream->data + stream->used);
-      printf("send:%x\n",*tt);
       write(state->fd_data_toserver,stream->data + stream->used, len_send);
       stream->used += len_send;
     }
@@ -534,10 +537,11 @@ inline void dispatch_req(FuzzState *state,queue_entry* entry)
 void show_stat(FuzzState *state)
 {
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
-  printf("total exec times:%d exit_none:%d exit_timeout:%d exit_crash:%d edges:%d\n", state->total_exec, state->exit_none, state->exit_timeout, state->exit_crash,edges);
+  printf("[%d] total exec times:%d exit_none:%d exit_outofseed:%d exit_timeout:%d exit_crash:%d edges:%d\n",get_cur_time() / 1000, state->total_exec, state->exit_none,state->exit_outofseed, state->exit_timeout, state->exit_crash,edges);
 }
 void save_crash(queue_entry* entry)
 {
+  return;
   static int crash_index = 1;
   char crash_filename[PATH_MAX];
   char crash_folder[PATH_MAX];
@@ -563,7 +567,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
   u64 start_time = get_cur_time();
   memset(state->trace_bits,0,state->map_size);
   fork_server_runonce(state);
-  printf("fuzz once\n");
+
   while(1)
   {
     int ready = poll(state->pfds, 2, -1);
@@ -579,7 +583,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
       dispatch_req(state,entry);
     }
   }
-  printf("fuzz over\n");
+
   u64 end_time = get_cur_time();
   classify_counts((u64*)state->trace_bits,state->map_size);
   int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size); 
@@ -599,8 +603,17 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
     state->exit_none++;
   if(exit_code == EXIT_TIMEOUT)
     state->exit_timeout++;
+  if(exit_code == EXIT_OUTOFSEED)
+    state->exit_outofseed++;
   
   state->total_exec ++; 
+}
+void reset_queue(queue_entry* q)
+{
+  for (auto it = q->streams->begin(); it != q->streams->end(); it++)
+  {
+    it->second->used = 0;
+  }
 }
 void perform_init_run(FuzzState *state)
 {
@@ -635,7 +648,7 @@ void perform_init_run(FuzzState *state)
 inline void havoc(FuzzState *state, input_stream* stream)
 {
   #define HAVOC_STACK 8
-  #define HAVOC_TOKEN 20
+  #define HAVOC_TOKEN 14//20
   #define ARITH_MAX   35
   u32 use_stacking = 1 + UR(HAVOC_STACK);
   s32 len = stream->len;
@@ -750,6 +763,7 @@ void fuzz_loop(FuzzState *state)
     fork_server_up(state);
     perform_init_run(state);
     show_stat(state);
+    u8 *org_buf = (u8 *)malloc(MAX_STREAM_LEN);
     while (1)
     {
       int count = state->entries->size();
@@ -765,16 +779,23 @@ void fuzz_loop(FuzzState *state)
         for(input_stream *stream : tmp_streams)
         {
           s32 len = stream->len;
-          u8 *org_buf = (u8 *)malloc(len);
+          
           memcpy(org_buf, stream->data, len);
           havoc(state, stream);
           fuzz_one(state,entry);
           memcpy(stream->data, org_buf, len); 
+          reset_queue(entry);
+          if((state->total_exec % 3000) == 0)
+          {
+            show_stat(state);
+          }
+          
         }
+        
         entry->fuzzed = true;
       }
-      // if(state->total_exec % 5000 == 0)
-        show_stat(state);
+      
+        
     }
 }
 

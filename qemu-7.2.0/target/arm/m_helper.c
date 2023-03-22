@@ -35,6 +35,13 @@
 #include "semihosting/common-semi.h"
 #endif
 
+typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
+do_arm_interrupt_cb do_arm_interrupt_func;
+void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
+{
+    do_arm_interrupt_func = cb;
+}
+
 static void v7m_msr_xpsr(CPUARMState *env, uint32_t mask,
                          uint32_t reg, uint32_t val)
 {
@@ -2192,7 +2199,11 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     CPUARMState *env = &cpu->env;
     uint32_t lr;
     bool ignore_stackfaults;
-
+    bool should_continue = true;
+    if(do_arm_interrupt_func)
+	    should_continue = do_arm_interrupt_func(cs->exception_index);
+    if(!should_continue)
+	    return;
     arm_log_exception(cs);
 
     /*

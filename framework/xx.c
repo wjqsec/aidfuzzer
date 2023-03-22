@@ -46,21 +46,18 @@ xx_get_dirty_pages_ptr xx_get_dirty_pages;
 typedef void (*xx_register_exec_bbl_hook_ptr)(exec_bbl_cb cb);
 xx_register_exec_bbl_hook_ptr xx_register_exec_bbl_hook;
 
-typedef void (*xx_register_do_interrupt_hook_ptr)(do_interrupt_cb cb);
-xx_register_do_interrupt_hook_ptr xx_register_do_interrupt_hook;
-
 typedef int (*xx_target_pagesize_ptr)();
 xx_target_pagesize_ptr xx_target_pagesize;
 
 typedef void (*xx_register_exec_ins_icmp_hook_ptr)(exec_ins_icmp_cb cb);
 xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
 //------------------------x86
-typedef void (*register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
-register_x86_cpu_do_interrupt_hook_ptr register_x86_cpu_do_interrupt_hook;
-typedef void (*register_x86_cpu_exec_interrupt_hook_ptr)(x86_cpu_exec_interrupt_cb cb);
-register_x86_cpu_exec_interrupt_hook_ptr register_x86_cpu_exec_interrupt_hook;
-typedef void (*register_x86_cpu_do_unaligned_access_hook_ptr)(x86_cpu_do_unaligned_access_cb cb);
-register_x86_cpu_do_unaligned_access_hook_ptr register_x86_cpu_do_unaligned_access_hook;
+typedef void (*xx_register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
+xx_register_x86_cpu_do_interrupt_hook_ptr xx_register_x86_cpu_do_interrupt_hook;
+typedef void (*xx_register_x86_cpu_exec_interrupt_hook_ptr)(x86_cpu_exec_interrupt_cb cb);
+xx_register_x86_cpu_exec_interrupt_hook_ptr xx_register_x86_cpu_exec_interrupt_hook;
+typedef void (*xx_register_x86_cpu_do_unaligned_access_hook_ptr)(x86_cpu_do_unaligned_access_cb cb);
+xx_register_x86_cpu_do_unaligned_access_hook_ptr xx_register_x86_cpu_do_unaligned_access_hook;
 typedef void (*xx_get_x86_cpu_state_ptr)(struct X86_CPU_STATE *state);
 xx_get_x86_cpu_state_ptr xx_get_x86_cpu_state;
 typedef void (*xx_set_x86_cpu_state_ptr)(struct X86_CPU_STATE *state);
@@ -93,6 +90,18 @@ void delete_x86_ctx_state(void* state)
 {
     xx_delete_x86_ctx_state(state);
 }
+void register_x86_cpu_do_interrupt_hook(x86_cpu_do_interrupt_cb cb)
+{
+    xx_register_x86_cpu_do_interrupt_hook(cb);
+}
+void register_x86_cpu_exec_interrupt_hook(x86_cpu_exec_interrupt_cb cb)
+{
+    xx_register_x86_cpu_exec_interrupt_hook(cb);
+}
+void register_x86_cpu_do_unaligned_access_hook(x86_cpu_do_unaligned_access_cb cb)
+{
+    xx_register_x86_cpu_do_unaligned_access_hook(cb);
+}
 //--------------------------arm
 typedef void (*xx_get_arm_cpu_state_ptr)(struct ARM_CPU_STATE *state);
 xx_get_arm_cpu_state_ptr xx_get_arm_cpu_state;
@@ -108,6 +117,8 @@ typedef void (*xx_delete_arm_ctx_state_ptr)(void* state);
 xx_delete_arm_ctx_state_ptr xx_delete_arm_ctx_state;
 typedef void (*xx_insert_nvic_intc_ptr)(int irq, bool secure);
 xx_insert_nvic_intc_ptr xx_insert_nvic_intc;
+typedef void (*xx_register_arm_do_interrupt_hook_ptr)(do_arm_interrupt_cb cb);
+xx_register_arm_do_interrupt_hook_ptr xx_register_arm_do_interrupt_hook;
 
 void get_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
@@ -136,6 +147,10 @@ void delete_arm_ctx_state(void* state)
 void insert_nvic_intc(int irq, bool secure)
 {
     xx_insert_nvic_intc(irq,secure);
+}
+void register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
+{
+    xx_register_arm_do_interrupt_hook(cb);
 }
 //---------------common
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
@@ -167,15 +182,14 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     xx_clear_dirty_mem = dlsym(handle, "xx_clear_dirty_mem");
     xx_get_dirty_pages = dlsym(handle, "xx_get_dirty_pages");
     xx_register_exec_bbl_hook = dlsym(handle, "xx_register_exec_bbl_hook");
-    xx_register_do_interrupt_hook = dlsym(handle, "xx_register_do_interrupt_hook");
     xx_target_pagesize = dlsym(handle, "xx_target_pagesize");
     xx_register_exec_ins_icmp_hook = dlsym(handle, "xx_register_exec_ins_icmp_hook");
     switch (cpu_type)
     {
         case X86:
-        register_x86_cpu_do_interrupt_hook = dlsym(handle, "register_x86_cpu_do_interrupt_hook");
-        register_x86_cpu_exec_interrupt_hook = dlsym(handle, "register_x86_cpu_exec_interrupt_hook");
-        register_x86_cpu_do_unaligned_access_hook = dlsym(handle, "register_x86_cpu_do_unaligned_access_hook");
+        xx_register_x86_cpu_do_interrupt_hook = dlsym(handle, "xx_register_x86_cpu_do_interrupt_hook");
+        xx_register_x86_cpu_exec_interrupt_hook = dlsym(handle, "xx_register_x86_cpu_exec_interrupt_hook");
+        xx_register_x86_cpu_do_unaligned_access_hook = dlsym(handle, "xx_register_x86_cpu_do_unaligned_access_hook");
         xx_get_x86_cpu_state = dlsym(handle, "xx_get_x86_cpu_state");
         xx_set_x86_cpu_state = dlsym(handle, "xx_set_x86_cpu_state");
         xx_save_x86_ctx_state = dlsym(handle, "xx_save_x86_ctx_state");
@@ -190,19 +204,42 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_restore_arm_ctx_state = dlsym(handle, "xx_restore_arm_ctx_state");
         xx_delete_arm_ctx_state = dlsym(handle, "xx_delete_arm_ctx_state");
         xx_insert_nvic_intc = dlsym(handle, "xx_insert_nvic_intc");
+        xx_register_arm_do_interrupt_hook = dlsym(handle, "xx_register_arm_do_interrupt_hook");
         break;
     }
 
 
-    if(!(qemu_init && xx_thread_loop && get_xx_cpu_type && set_xx_cpu_type && xx_ram_rw && xx_add_ram_regions && xx_add_mmio_regions && main_loop_should_exit && main_loop_wait
-        && xx_clear_dirty_mem && xx_get_dirty_pages && xx_register_exec_bbl_hook
+    if(!(qemu_init && xx_thread_loop && get_xx_cpu_type && 
+    set_xx_cpu_type && xx_ram_rw && xx_add_ram_regions && 
+    xx_add_mmio_regions && main_loop_should_exit && main_loop_wait 
+    && xx_clear_dirty_mem && xx_get_dirty_pages && xx_register_exec_bbl_hook &&
+    xx_target_pagesize && xx_register_exec_ins_icmp_hook
     ))
     {
         printf("symbol not found\n");
         exit(0);
     }
-    set_xx_cpu_type(cpu_type);
+    if(cpu_type == X86 && !(
+        xx_register_x86_cpu_do_interrupt_hook && xx_register_x86_cpu_exec_interrupt_hook &&
+        xx_register_x86_cpu_do_unaligned_access_hook && xx_get_x86_cpu_state &&
+        xx_set_x86_cpu_state && xx_save_x86_ctx_state && xx_restore_x86_ctx_state &&
+        xx_delete_x86_ctx_state
+    ))
+    {
+        printf("symbol not found\n");
+        exit(0);
+    }
+    if(cpu_type == ARM && !(
+        xx_get_arm_cpu_state && xx_set_arm_cpu_state && xx_reset_arm_reg &&
+        xx_save_arm_ctx_state && xx_restore_arm_ctx_state && xx_delete_arm_ctx_state &&
+        xx_insert_nvic_intc && xx_register_arm_do_interrupt_hook
+    ))
+    {
+        printf("symbol not found\n");
+        exit(0);
+    }
 
+    set_xx_cpu_type(cpu_type);
     ret->cpu_type = cpu_type;
     ret->enable_gdb_dbg = dbg;
     return ret;
@@ -232,10 +269,7 @@ void register_post_thread_exec_hook(post_thread_exec_cb cb)
 {
     post_thread_exec_func = cb;
 }
-void register_do_interrupt_hook(do_interrupt_cb cb)
-{
-    xx_register_do_interrupt_hook(cb);
-}
+
 void register_exec_bbl_hook(exec_bbl_cb cb)
 {
     xx_register_exec_bbl_hook(cb);

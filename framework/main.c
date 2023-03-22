@@ -11,15 +11,17 @@
 #include <string.h>
 #include "xx.h"
 
-#define DBG
-//#define AFL
+//#define DBG
+//#define CRASH_DBG
+#define AFL
 
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
 
 #define EXIT_NONE 0
 #define EXIT_TIMEOUT 1
-#define EXIT_CRASH 2
+#define EXIT_OUTOFSEED 2
+#define EXIT_CRASH 3
 
 
 struct __attribute__((__packed__)) Data_protocol
@@ -79,12 +81,16 @@ void take_snapshot()
     mems[1].data = (uint8_t*)malloc(mems[1].len);
     read_ram(mems[1].start,mems[1].len,mems[1].data);
 
-    mems[2].len = 0x10000;
-    mems[2].start = 0x20070000;
+    mems[2].len = 0x20000;
+    mems[2].start = 0x20000000;
     mems[2].data = (uint8_t*)malloc(mems[2].len);
     read_ram(mems[2].start,mems[2].len,mems[2].data);
 
-    mems[3].len = 0;
+    mems[3].len = 0x30000;
+    mems[3].start = 0x20060000;
+    mems[3].data = (uint8_t*)malloc(mems[3].len);
+    read_ram(mems[3].start,mems[3].len,mems[3].data);
+
     mems[4].len = 0;
 }
 void restore_snapshot()
@@ -169,8 +175,8 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     if(len_recv == -1)
     {
         should_exit = true;
-        exit_code = EXIT_NONE;
-        return 0;
+        exit_code = EXIT_OUTOFSEED;
+        return ret;
     }
     read(FORKSRV_DATAFD,&bbl_id_recv,4);
     read(FORKSRV_DATAFD,&ret,len_send);
@@ -185,13 +191,13 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
 }
 void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
 {
-    #ifdef DBG
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
-    fprintf(file,"mmio write loc:%p\n",state.regs[15]);
-    #endif
+    // #ifdef DBG
+    // struct ARM_CPU_STATE state;
+    // get_arm_cpu_state(&state);
+    // fprintf(file,"mmio write loc:%p\n",state.regs[15]);
+    // #endif
 }
-void arm_exec_bbl(regval pc,uint32_t id)
+bool arm_exec_bbl(regval pc,uint32_t id)
 {
     #ifdef DBG
 
@@ -204,17 +210,19 @@ void arm_exec_bbl(regval pc,uint32_t id)
     //     take_snapshot();
     //     first = false;
     // }
-    execed_bbl_count++;
-    if(execed_bbl_count > 50)
-    {
-        fprintf(file,"restore point\n");
-        //restore_snapshot();
-        struct ARM_CPU_STATE state;
-        get_arm_cpu_state(&state);
-        state.regs[15] = 0x388;
-        set_arm_cpu_state(&state);
-        execed_bbl_count = 0;
-    }
+    // execed_bbl_count++;
+    // if(execed_bbl_count > 50)
+    // {
+    //     fprintf(file,"restore point\n");
+    //     //restore_snapshot();
+    //     struct ARM_CPU_STATE state;
+    //     get_arm_cpu_state(&state);
+    //     state.regs[15] = 0x388;
+    //     set_arm_cpu_state(&state);
+    //     execed_bbl_count = 0;
+    //     return true;
+    // }
+    // return false;
     // else 
     // {
     //     struct ARM_CPU_STATE state;
@@ -228,35 +236,48 @@ void arm_exec_bbl(regval pc,uint32_t id)
     __afl_prev_loc = id >> 1;
     execed_bbl_count++;
     cur_bbl_id = pc;
-    if(execed_bbl_count > 50)
+    if(execed_bbl_count > 1000)
     {
         exit_with_code_start_new(EXIT_TIMEOUT);
+        return true;
     }
     if(should_exit)
     {
         exit_with_code_start_new(exit_code);
         should_exit = false;
+        return true;
     }
     #endif
-
+    return false;
     
 
     
 }
-bool arm_cpu_do_interrupt_hook()
-{
-
-    #ifdef DBG
+bool arm_cpu_do_interrupt_hook(int32_t exec_index)
+{  
+    #ifdef CRASH_DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(file,"interrupt bbl pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, sp:%x\n",state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[13]);
+    uint32_t sp0, sp1,sp2;
+    read_ram(state.regs[13],4, &sp0);
+    read_ram(state.regs[13] + 4,4, &sp1);
+    read_ram(state.regs[13] + 8,4, &sp2);
+    fprintf(file,"%d interrupt bbl index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",iii,exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[13], sp0, sp1,sp2);
     #endif
 
-    reset_arm_reg();
+
+    if(exec_index == EXCP_SWI || 
+       exec_index == EXCP_EXCEPTION_EXIT)
+       {
+        return true;
+       }
+        
+   
+
     #ifdef AFL
     exit_with_code_start_new(EXIT_CRASH);
     #endif
-
+    
     return false;
 }
 void post_thread_exec(int exec_ret)
@@ -294,20 +315,21 @@ int main(int argc, char **argv)
     
     add_ram_region("firmware",0x0, 0x80000);
     add_ram_region("on-chip-ram",0x10000000, 0x8000);
-    add_ram_region("stack",0x20070000, 0x20000);
+    add_ram_region("on-chip-ram2",0x20000000, 0x20000);
+    add_ram_region("stack",0x20060000, 0x30000);
     
     add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read, mmio_write);
     add_mmio_region("APB0",0x40000000, 0x80000, mmio_read, mmio_write);
     add_mmio_region("APB1",0x40080000, 0x80000, mmio_read, mmio_write);
     add_mmio_region("AHB",0x50000000, 0x200000, mmio_read, mmio_write);
     register_exec_bbl_hook(arm_exec_bbl);
-    register_do_interrupt_hook(arm_cpu_do_interrupt_hook);
+    register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
     register_post_thread_exec_hook(post_thread_exec);
     //register_exec_ins_icmp_hook(exec_ins_icmp);
     init_simulator(simulator);
     load_file("/root/fuzzer/xxfuzzer/framework/mbed-os-example-blinky.bin",0);
     reset_arm_reg();
-    
+    take_snapshot();
     #ifdef AFL
     
     write(FORKSRV_CTLFD+1 , &tmp,4);

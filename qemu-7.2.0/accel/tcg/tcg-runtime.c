@@ -33,13 +33,18 @@
 
 /* 32-bit helpers */
 
-typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 extern exec_bbl_cb exec_bbl_func;
 typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 extern exec_ins_icmp_cb exec_ins_icmp_func;
-uint64_t HELPER(xx_bbl)(uint64_t pc,uint32_t id)
+uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
-    exec_bbl_func(pc,id);
+    bool should_exit = exec_bbl_func(pc,id);
+    if(should_exit)
+    {
+	    CPUState *cpu = env_cpu(env);
+	    cpu_loop_exit(cpu);
+    }
     return 1;
 }
 uint64_t HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)

@@ -41,17 +41,12 @@ enum XX_CPU_TYPE
     X86,
     ARM
 };
-typedef void (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
 exec_bbl_cb exec_bbl_func;
 
 typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 exec_ins_icmp_cb exec_ins_icmp_func;
 
-typedef void (*do_interrupt_ptr)(CPUState *cpu);
-do_interrupt_ptr old_do_interrupt;
-
-typedef bool (*do_interrupt_cb)();
-do_interrupt_cb do_interrupt_func;
 
 struct DirtyBitmapSnapshot {
     ram_addr_t start;
@@ -262,19 +257,7 @@ void xx_init_mem(MachineState *machine)
         printf("add mmio %x-%x %s\n",xx_mmio_regions[i].start, xx_mmio_regions[i].start+xx_mmio_regions[i].size, xx_mmio_regions[i].name);
     }
 }
-void xx_do_interrupt(CPUState *cpu)
-{
-    bool should_continue = true;
-    if(do_interrupt_func)
-        should_continue = do_interrupt_func();
-    if(should_continue)
-        old_do_interrupt(cpu);
-}
 
-void xx_register_do_interrupt_hook(do_interrupt_cb cb)
-{
-    do_interrupt_func = cb;
-}
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
@@ -300,11 +283,7 @@ int xx_thread_loop(bool debug)
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
 		CPUClass *cc = CPU_GET_CLASS(cpu);
-        old_do_interrupt = cc->tcg_ops->do_interrupt;
 
-        mprotect((uint64_t)(&cc->tcg_ops->do_interrupt)  & ~(getpagesize()-1), getpagesize(), PROT_WRITE);
-        cc->tcg_ops->do_interrupt = xx_do_interrupt;
-        mprotect((uint64_t)(&cc->tcg_ops->do_interrupt)  & ~(getpagesize()-1), getpagesize(), PROT_READ);
         init = true;
     }
     //qemu_mutex_unlock_iothread();

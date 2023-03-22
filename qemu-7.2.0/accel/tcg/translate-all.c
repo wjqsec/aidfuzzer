@@ -752,8 +752,9 @@ void page_collection_unlock(struct page_collection *set)
  * Isolate the portion of code gen which can setjmp/longjmp.
  * Return the size of the generated code, or negative on error.
  */
-typedef void (*exec_bbl_cb)(uint64_t pc);
+typedef bool (*exec_bbl_cb)(uint64_t pc);
 extern exec_bbl_cb exec_bbl_func;
+extern TCGv_env cpu_env;
 static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
 {
 #define GOLDEN_RATIO_64 0x61C8864680B583EBull
@@ -778,7 +779,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 	TCGv_i32 arg1_id = tcg_const_i32(hash_64(pc,32) % (1 << 16));
         //TCGv_i32 arg1_id = tcg_const_i32(pc % (1 << 16));
         TCGv_i64 ret_1 = tcg_const_i64(1);
-        gen_helper_xx_bbl(ret_1,arg0_pc,arg1_id);
+        gen_helper_xx_bbl(ret_1,cpu_env,arg0_pc,arg1_id);
 	tcg_temp_free_i64(arg0_pc);
 	tcg_temp_free_i64(ret_1);
 	tcg_temp_free_i32(arg1_id);
