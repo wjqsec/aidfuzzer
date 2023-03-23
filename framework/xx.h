@@ -68,6 +68,17 @@ void delete_x86_ctx_state(void* state);
 #define EXCP_UNALIGNED      22   /* v7M UNALIGNED UsageFault */
 #define EXCP_DIVBYZERO      23   /* v7M DIVBYZERO UsageFault */
 
+#define ARMV7M_EXCP_RESET   1
+#define ARMV7M_EXCP_NMI     2
+#define ARMV7M_EXCP_HARD    3
+#define ARMV7M_EXCP_MEM     4
+#define ARMV7M_EXCP_BUS     5
+#define ARMV7M_EXCP_USAGE   6
+#define ARMV7M_EXCP_SECURE  7
+#define ARMV7M_EXCP_SVC     11
+#define ARMV7M_EXCP_DEBUG   12
+#define ARMV7M_EXCP_PENDSV  14
+#define ARMV7M_EXCP_SYSTICK 15
 struct ARM_CPU_STATE
 {
     uint32_t regs[16]; 

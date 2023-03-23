@@ -37,10 +37,10 @@ void xx_insert_nvic_intc(int irq, bool secure)
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
     //qemu_mutex_lock_iothread();
-    if(armv7m_nvic_get_ready_status(env->nvic, irq, secure))
+    //if(armv7m_nvic_get_ready_status(env->nvic, irq, secure))
     {
         armv7m_nvic_set_pending(env->nvic, irq, secure);
-        qemu_mutex_unlock_iothread();
+        //qemu_mutex_unlock_iothread();
     }
         
 }

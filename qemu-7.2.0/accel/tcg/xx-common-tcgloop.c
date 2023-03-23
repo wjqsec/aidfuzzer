@@ -287,7 +287,7 @@ int xx_thread_loop(bool debug)
         init = true;
     }
     //qemu_mutex_unlock_iothread();
-    while(!cpu->stop && !cpu->exit_request)
+    if(!cpu->stop && !cpu->exit_request)
     {
         if(!cpu_work_list_empty(cpu))
 	        process_queued_cpu_work(cpu);
@@ -321,13 +321,11 @@ int xx_thread_loop(bool debug)
                 exit(0);
                 break;
 			}
-            goto end;
 		} else if(debug)
         {
             main_loop_wait(true);
         }
-	}
-    end:
+   }
     cpu->exit_request = false;
     return r;
 }

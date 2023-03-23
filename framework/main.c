@@ -12,7 +12,8 @@
 #include "xx.h"
 
 //#define DBG
-//#define CRASH_DBG
+#define CRASH_DBG
+//#define EXIT_DBG
 #define AFL
 
 #define FORKSRV_CTLFD          198
@@ -86,8 +87,8 @@ void take_snapshot()
     mems[2].data = (uint8_t*)malloc(mems[2].len);
     read_ram(mems[2].start,mems[2].len,mems[2].data);
 
-    mems[3].len = 0x30000;
-    mems[3].start = 0x20060000;
+    mems[3].len = 0x20000;
+    mems[3].start = 0x20070000;
     mems[3].data = (uint8_t*)malloc(mems[3].len);
     read_ram(mems[3].start,mems[3].len,mems[3].data);
 
@@ -112,7 +113,7 @@ void restore_snapshot()
                 if(dirty_bits[i] & (1 << j))
                 {
                     uint32_t offset = page_size * (i * 8 + j);
-                    fprintf(file,"restore %x  %x",offset,mems[num_mem].data);
+                    //fprintf(file,"restore memory %x  %x\n",offset,mems[num_mem].data);
                     write_ram(mems[num_mem].start + offset ,page_size, mems[num_mem].data + offset);
                 }
             }
@@ -130,10 +131,14 @@ void restore_snapshot()
 void exit_with_code_start_new(int32_t code)
 {
     int32_t tmp = code;
+
     #ifdef DBG
     fprintf(file,"exit_code = %x\n",tmp);
     #endif
 
+    #ifdef EXIT_DBG
+    fprintf(file,"exit_code = %x pc = %x\n",tmp,cur_bbl_id);
+    #endif
     
     write(FORKSRV_CTLFD+1 , &tmp,4);
 
@@ -187,6 +192,7 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     get_arm_cpu_state(&state);
     fprintf(file,"mmio read loc:%p val:%x\n",state.regs[15],ret);
     #endif
+
     return ret;
 }
 void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
@@ -204,39 +210,13 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     fprintf(file,"bbl pc:%p\n",pc);
     #endif
 
-    // static bool first = true;
-    // if(first)
-    // {
-    //     take_snapshot();
-    //     first = false;
-    // }
-    // execed_bbl_count++;
-    // if(execed_bbl_count > 50)
-    // {
-    //     fprintf(file,"restore point\n");
-    //     //restore_snapshot();
-    //     struct ARM_CPU_STATE state;
-    //     get_arm_cpu_state(&state);
-    //     state.regs[15] = 0x388;
-    //     set_arm_cpu_state(&state);
-    //     execed_bbl_count = 0;
-    //     return true;
-    // }
-    // return false;
-    // else 
-    // {
-    //     struct ARM_CPU_STATE state;
-    //     get_arm_cpu_state(&state);
-    //     fprintf(file,"non restore pc:%x\n",state.regs[15]);
-    // }
-    
     
     #ifdef AFL
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
     __afl_prev_loc = id >> 1;
     execed_bbl_count++;
     cur_bbl_id = pc;
-    if(execed_bbl_count > 1000)
+    if(execed_bbl_count > 10000)
     {
         exit_with_code_start_new(EXIT_TIMEOUT);
         return true;
@@ -255,6 +235,17 @@ bool arm_exec_bbl(regval pc,uint32_t id)
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
+    
+
+
+    if(exec_index == EXCP_SWI || 
+       exec_index == EXCP_EXCEPTION_EXIT || 
+       exec_index == EXCP_IRQ)
+       {
+        return true;
+       }
+        
+   
     #ifdef CRASH_DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
@@ -262,17 +253,8 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     read_ram(state.regs[13],4, &sp0);
     read_ram(state.regs[13] + 4,4, &sp1);
     read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(file,"%d interrupt bbl index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",iii,exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[13], sp0, sp1,sp2);
+    fprintf(file,"interrupt bbl index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[13], sp0, sp1,sp2);
     #endif
-
-
-    if(exec_index == EXCP_SWI || 
-       exec_index == EXCP_EXCEPTION_EXIT)
-       {
-        return true;
-       }
-        
-   
 
     #ifdef AFL
     exit_with_code_start_new(EXIT_CRASH);
@@ -282,16 +264,16 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 }
 void post_thread_exec(int exec_ret)
 {
-
+    insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
     #ifdef AFL
-    exit_with_code_start_new(EXIT_NONE);
+    //exit_with_code_start_new(EXIT_NONE);
     #endif
+
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
     fprintf(file,"post thread exec:%d  pc:%p\n",exec_ret,state.regs[15]);
     #endif
-
 }
 void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
 {
@@ -316,7 +298,7 @@ int main(int argc, char **argv)
     add_ram_region("firmware",0x0, 0x80000);
     add_ram_region("on-chip-ram",0x10000000, 0x8000);
     add_ram_region("on-chip-ram2",0x20000000, 0x20000);
-    add_ram_region("stack",0x20060000, 0x30000);
+    add_ram_region("stack",0x20070000, 0x20000);
     
     add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read, mmio_write);
     add_mmio_region("APB0",0x40000000, 0x80000, mmio_read, mmio_write);
