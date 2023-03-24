@@ -73,6 +73,7 @@ struct XX_RAMRegion
     hwaddr start;
     hwaddr size;
     MemoryRegion *mr;
+    bool readonly;
 };
 struct XX_MMIORegion
 {
@@ -152,7 +153,7 @@ static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
     return mr;
 }
 
-void xx_add_ram_regions(char *name,hwaddr start, hwaddr size)
+void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
 {
     if(xx_num_ram_regions >= XX_MEM_REGIONS_MAX)
         return;
@@ -163,8 +164,13 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size)
     xx_ram_regions[xx_num_ram_regions].name = strdup(name);
     xx_ram_regions[xx_num_ram_regions].start = start;
     xx_ram_regions[xx_num_ram_regions].size = size;
+    xx_ram_regions[xx_num_ram_regions].readonly = readonly;
     xx_num_ram_regions++;
 
+}
+void xx_add_rom_region(char *name,hwaddr start, hwaddr size, void *data)
+{
+    rom_add_elf_program(name,0,data,size,size,start,&address_space_memory);
 }
 void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb)
 {
@@ -227,9 +233,10 @@ void xx_init_mem(MachineState *machine)
         memory_region_init_ram(mr,NULL,xx_ram_regions[i].name,xx_ram_regions[i].size,0);
         memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
         memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
+	memory_region_set_readonly(mr, xx_ram_regions[i].readonly);
         memory_region_add_subregion(ram_space,xx_ram_regions[i].start,mr);
         xx_ram_regions[i].mr = mr;
-        printf("add ram %x-%x %s\n",xx_ram_regions[i].start, xx_ram_regions[i].start+xx_ram_regions[i].size, xx_ram_regions[i].name);
+        printf("add ram %x-%x %s readonly:%d\n",xx_ram_regions[i].start, xx_ram_regions[i].start+xx_ram_regions[i].size, xx_ram_regions[i].name,xx_ram_regions[i].readonly);
     }
     for(i=0; i < xx_num_mmio_regions;i++)
     {

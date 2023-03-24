@@ -345,7 +345,7 @@ struct queue_entry
     map<u32,input_stream *> *streams;
     //vector<u32> *stream_order;
     //u8 *compressed_bits
-#define DEFAULT_PRIORITY 1000
+#define DEFAULT_PRIORITY 10000
     s32 priority;
 
 };
@@ -565,7 +565,7 @@ inline void dispatch_req(FuzzState *state,queue_entry* entry)
   }
 }
 
-void show_stat(FuzzState *state)
+inline void show_stat(FuzzState *state)
 {
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   printf("[%d] total exec times:%d queue size:%d exit_none:%d exit_outofseed:%d exit_timeout:%d exit_crash:%d edges:%d\n",get_cur_time() / 1000, state->total_exec,state->entries->size(), state->exit_none,state->exit_outofseed, state->exit_timeout, state->exit_crash,edges);
@@ -644,7 +644,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
   
   state->total_exec ++; 
 }
-void reset_queue(queue_entry* q)
+inline void reset_queue(queue_entry* q)
 {
   for (auto it = q->streams->begin(); it != q->streams->end(); it++)
   {
@@ -801,7 +801,7 @@ inline void havoc(FuzzState *state, input_stream* stream)
     }
   }
 }
-queue_entry* select_entry(FuzzState *state)
+inline queue_entry* select_entry(FuzzState *state)
 {
   s32 max_priority = (*state->entries)[0]->priority;
   int max_index = 0;
@@ -818,63 +818,42 @@ queue_entry* select_entry(FuzzState *state)
 }
 void fuzz_loop(FuzzState *state)
 { 
-
     fork_server_up(state);
     perform_init_run(state);
     show_stat(state);
     u8 *org_buf = (u8 *)malloc(MAX_STREAM_LEN);
     vector<struct input_stream *> tmp_streams;
-    while (1)
+    while(1)
     {
       queue_entry* entry = select_entry(state);
-      tmp_streams.clear();
-      for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
+      //for (int i = 0 ; i < 10 ; i++)
       {
-        tmp_streams.push_back(it->second);
-      }
-      for(input_stream *stream : tmp_streams)
-      {
-        s32 len = stream->len;  
-        memcpy(org_buf, stream->data, len);
-        havoc(state, stream);
-        fuzz_one(state,entry);
-        memcpy(stream->data, org_buf, len); 
-        reset_queue(entry);
-        if((state->total_exec % 3000) == 0)
+        tmp_streams.clear();
+        for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
         {
-          show_stat(state);
+          tmp_streams.push_back(it->second);
         }
-        
-      } 
-    /*
-    for (auto it1 = state->entries->begin(); it1 != state->entries->end();)
-    {
-      bool remove = false;
-      for(auto it2 = state->entries->begin(); it2 != state->entries->end(); it2 ++)
-      {
-        
-        if(it1 == it2)
-          continue;
-        if(cover_all_bits((*it1)->compressed_bits, (*it2)->compressed_bits, state->map_size))
+        for(input_stream *stream : tmp_streams)
         {
-          remove = true;
-          break;
-        }
-      }
+          s32 len = stream->len;  
+          memcpy(org_buf, stream->data, len);
+          havoc(state, stream);
+          fuzz_one(state,entry);
+          memcpy(stream->data, org_buf, len); 
+          reset_queue(entry);
+          if((state->total_exec % 3000) == 0)
+          {
+            show_stat(state);
+          }
+          if(state->total_exec > 20000)
+          {
+            exit(0);
+          }
 
-      if(remove)
-      {
-        printf("delete one queue\n");
-        it1 = state->entries->erase(it1);
+        }   
       }
-      else
-      {
-        ++it1;
-      }
-
     }
-    */    
-    }
+    
 }
 
 int main(int argc, char **argv)

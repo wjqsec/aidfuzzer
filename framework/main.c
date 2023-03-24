@@ -10,11 +10,13 @@
 
 #include <string.h>
 #include "xx.h"
+#define likely(_x)   __builtin_expect(!!(_x), 1)
+#define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
 //#define DBG
-#define CRASH_DBG
+//#define CRASH_DBG
 //#define EXIT_DBG
-#define AFL
+//#define AFL
 
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
@@ -128,8 +130,13 @@ void restore_snapshot()
     
 }
 
-void exit_with_code_start_new(int32_t code)
+inline void exit_with_code_start_new(int32_t code)
 {
+    static ii = 0;
+    ii++;
+    if(ii >= 20000)
+        exit(0);
+
     int32_t tmp = code;
 
     #ifdef DBG
@@ -206,7 +213,6 @@ void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
     #ifdef DBG
-
     fprintf(file,"bbl pc:%p\n",pc);
     #endif
 
@@ -216,12 +222,12 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     __afl_prev_loc = id >> 1;
     execed_bbl_count++;
     cur_bbl_id = pc;
-    if(execed_bbl_count > 10000)
+    if(unlikely(execed_bbl_count > 10000))
     {
         exit_with_code_start_new(EXIT_TIMEOUT);
         return true;
     }
-    if(should_exit)
+    if(unlikely(should_exit))
     {
         exit_with_code_start_new(exit_code);
         should_exit = false;
@@ -253,7 +259,9 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     read_ram(state.regs[13],4, &sp0);
     read_ram(state.regs[13] + 4,4, &sp1);
     read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(file,"interrupt bbl index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[13], sp0, sp1,sp2);
+    fprintf(file,"interrupt bbl exec_index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    
+    exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[13], sp0, sp1,sp2);
     #endif
 
     #ifdef AFL
@@ -265,9 +273,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 void post_thread_exec(int exec_ret)
 {
     insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
-    #ifdef AFL
-    //exit_with_code_start_new(EXIT_NONE);
-    #endif
+
 
     #ifdef DBG
     struct ARM_CPU_STATE state;
@@ -281,7 +287,8 @@ void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int imm
     fprintf(file,"ins icmp pc:%p\n",pc);
     #endif
 }
-int main(int argc, char **argv)
+
+int run_example(int argc, char **argv)
 {
     uint32_t tmp; 
     file = fopen("/tmp/a.txt","w");
@@ -295,10 +302,10 @@ int main(int argc, char **argv)
     simulator = create_simulator(ARM,false);
     
     
-    add_ram_region("firmware",0x0, 0x80000);
-    add_ram_region("on-chip-ram",0x10000000, 0x8000);
-    add_ram_region("on-chip-ram2",0x20000000, 0x20000);
-    add_ram_region("stack",0x20070000, 0x20000);
+    add_ram_region("firmware",0x0, 0x80000,false);
+    add_ram_region("on-chip-ram",0x10000000, 0x8000,false);
+    add_ram_region("on-chip-ram2",0x20000000, 0x20000,false);
+    add_ram_region("stack",0x20070000, 0x20000,false);
     
     add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read, mmio_write);
     add_mmio_region("APB0",0x40000000, 0x80000, mmio_read, mmio_write);
@@ -309,13 +316,50 @@ int main(int argc, char **argv)
     register_post_thread_exec_hook(post_thread_exec);
     //register_exec_ins_icmp_hook(exec_ins_icmp);
     init_simulator(simulator);
-    load_file("/root/fuzzer/xxfuzzer/framework/mbed-os-example-blinky.bin",0);
+    load_file("/root/fuzzer/xxfuzzer/framework/mbed-os-example-blinky.bin",0, 0,0x80000);
     reset_arm_reg();
     take_snapshot();
+
     #ifdef AFL
-    
     write(FORKSRV_CTLFD+1 , &tmp,4);
     read(FORKSRV_CTLFD,&tmp,4);
     #endif
+
     exec_simulator(simulator);
+}
+
+int run_3dprinter(int argc, char **argv)
+{
+    uint32_t tmp; 
+    file = fopen("/tmp/a.txt","w");
+    setbuf(file,0);
+    #ifdef AFL
+    __afl_map_shm();
+    __afl_prev_loc = 0;
+    #endif
+    
+    struct Simulator *simulator;
+    simulator = create_simulator(ARM,false);
+    
+    
+    //add_ram_region("firmware",0x8000000, 0x20000);
+    add_rom_region("rom",0x8000000,0x20000,read_file("/root/fuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin"));
+    set_armv7_vecbase(0x8000000);
+    init_simulator(simulator);
+    
+    //load_file("/root/fuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8000000);
+    reset_arm_reg();
+    take_snapshot();
+
+    #ifdef AFL
+    write(FORKSRV_CTLFD+1 , &tmp,4);
+    read(FORKSRV_CTLFD,&tmp,4);
+    #endif
+
+    //exec_simulator(simulator);
+}
+
+int main(int argc, char **argv)
+{
+    run_3dprinter(argc,argv);
 }

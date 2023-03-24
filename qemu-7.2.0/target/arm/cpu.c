@@ -50,7 +50,6 @@ static void arm_cpu_set_pc(CPUState *cs, vaddr value)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
-
     if (is_a64(env)) {
         env->pc = value;
         env->thumb = false;
@@ -210,7 +209,6 @@ static void arm_cpu_reset(DeviceState *dev)
     CPUARMState *env = &cpu->env;
 
     acc->parent_reset(dev);
-
     memset(env, 0, offsetof(CPUARMState, end_reset_fields));
 
     g_hash_table_foreach(cpu->cp_regs, cp_reg_reset, cpu);
@@ -363,7 +361,6 @@ static void arm_cpu_reset(DeviceState *dev)
             env->v7m.fpdscr[M_REG_NS] = 4 << FPCR_LTPSIZE_SHIFT;
             env->v7m.fpdscr[M_REG_S] = 4 << FPCR_LTPSIZE_SHIFT;
         }
-
         if (arm_feature(env, ARM_FEATURE_M_SECURITY)) {
             env->v7m.secure = true;
         } else {
@@ -408,10 +405,8 @@ static void arm_cpu_reset(DeviceState *dev)
 #ifndef CONFIG_USER_ONLY
         /* Unlike A/R profile, M profile defines the reset LR value */
         env->regs[14] = 0xffffffff;
-
         env->v7m.vecbase[M_REG_S] = cpu->init_svtor & 0xffffff80;
         env->v7m.vecbase[M_REG_NS] = cpu->init_nsvtor & 0xffffff80;
-
         /* Load the initial SP and PC from offset 0 and 4 in the vector table */
         vecbase = env->v7m.vecbase[env->v7m.secure];
         rom = rom_ptr_for_as(s->as, vecbase, 8);
@@ -430,7 +425,6 @@ static void arm_cpu_reset(DeviceState *dev)
             initial_msp = ldl_phys(s->as, vecbase);
             initial_pc = ldl_phys(s->as, vecbase + 4);
         }
-
         qemu_log_mask(CPU_LOG_INT,
                       "Loaded reset SP 0x%x PC 0x%x from vector table\n",
                       initial_msp, initial_pc);

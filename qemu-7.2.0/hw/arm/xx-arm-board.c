@@ -20,7 +20,7 @@ typedef uint64_t regval;
 MemoryRegion *get_system_memory(void);
 #define TYPE_XX_MACHINE "xx"
 void xx_init_mem(MachineState *machine);
-
+uint64_t vecbase = 0;
 struct ARM_CPU_STATE
 {
     uint32_t regs[16];
@@ -31,6 +31,11 @@ struct ARM_NVIC_ALL_STATE
     CPUARMState *env;
     struct NVICState *nvic;
 };
+
+void xx_set_armv7_vecbase(uint64_t addr)
+{
+    vecbase = addr;
+}
 void xx_insert_nvic_intc(int irq, bool secure)
 {
     CPUState *cs = qemu_get_cpu(0);
@@ -142,7 +147,11 @@ static void machine_xx_arm_init(MachineState *mch)
     object_property_set_link(OBJECT(&mms->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     sysbus_realize(SYS_BUS_DEVICE(&mms->armv7m), &error_fatal);
-    
+    CPUState *cs = qemu_get_cpu(0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->init_svtor = vecbase;
+    cpu->init_nsvtor = vecbase;
+
 }
 static void xx_arm_machine_reset(MachineState *machine, ShutdownCause reason)
 {

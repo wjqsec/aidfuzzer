@@ -93,7 +93,7 @@ void delete_arm_ctx_state(void* state);
 void insert_nvic_intc(int irq, bool secure);
 void reset_arm_reg();
 void register_arm_do_interrupt_hook(do_arm_interrupt_cb cb);
-
+void set_armv7_vecbase(hwaddr addr);
 //===================common
 
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
@@ -120,12 +120,14 @@ void register_post_thread_exec_hook(post_thread_exec_cb cb);
 
 MemTxResult write_ram(hwaddr addr, hwaddr size, void *buf);  //will make the page dirty
 MemTxResult read_ram(hwaddr addr, hwaddr size, void *buf);
-void add_ram_region(char *name,hwaddr start, hwaddr size);
+void add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly);
+void add_rom_region(char *name,hwaddr start, hwaddr size, void *data);
 void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb);
 void clear_dirty_mem(hwaddr start, hwaddr size);
 void get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
 int target_pagesize();
-void load_file(char *filename,hwaddr addr);
+void load_file(char *filename,hwaddr addr, int file_offset, int size);
+void* read_file(char *filename);
 
 
 

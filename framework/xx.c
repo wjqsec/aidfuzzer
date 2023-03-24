@@ -25,7 +25,7 @@ set_xx_cpu_type_ptr set_xx_cpu_type;
 typedef MemTxResult (*xx_ram_rw_ptr)(hwaddr addr,hwaddr len,void *buf, bool is_write);
 xx_ram_rw_ptr xx_ram_rw;
 
-typedef void (*xx_add_ram_regions_ptr)(char *name,hwaddr start, hwaddr size);
+typedef void (*xx_add_ram_regions_ptr)(char *name,hwaddr start, hwaddr size, bool readonly);
 xx_add_ram_regions_ptr xx_add_ram_regions;
 
 typedef void (*xx_add_mmio_regions_ptr)(char *name, hwaddr start, hwaddr size, void *mmio_read_cb, void *mmio_write_cb);
@@ -51,6 +51,9 @@ xx_target_pagesize_ptr xx_target_pagesize;
 
 typedef void (*xx_register_exec_ins_icmp_hook_ptr)(exec_ins_icmp_cb cb);
 xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
+
+typedef void (*xx_add_rom_region_ptr)(char *name,hwaddr start, hwaddr size, void *data);
+xx_add_rom_region_ptr xx_add_rom_region;
 //------------------------x86
 typedef void (*xx_register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
 xx_register_x86_cpu_do_interrupt_hook_ptr xx_register_x86_cpu_do_interrupt_hook;
@@ -119,7 +122,8 @@ typedef void (*xx_insert_nvic_intc_ptr)(int irq, bool secure);
 xx_insert_nvic_intc_ptr xx_insert_nvic_intc;
 typedef void (*xx_register_arm_do_interrupt_hook_ptr)(do_arm_interrupt_cb cb);
 xx_register_arm_do_interrupt_hook_ptr xx_register_arm_do_interrupt_hook;
-
+typedef void (*xx_set_armv7_vecbase_ptr)(hwaddr addr);
+xx_set_armv7_vecbase_ptr xx_set_armv7_vecbase;
 void get_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
     xx_get_arm_cpu_state(state);
@@ -151,6 +155,10 @@ void insert_nvic_intc(int irq, bool secure)
 void register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
 {
     xx_register_arm_do_interrupt_hook(cb);
+}
+void set_armv7_vecbase(hwaddr addr)
+{
+    xx_set_armv7_vecbase(addr);
 }
 //---------------common
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
@@ -184,6 +192,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     xx_register_exec_bbl_hook = dlsym(handle, "xx_register_exec_bbl_hook");
     xx_target_pagesize = dlsym(handle, "xx_target_pagesize");
     xx_register_exec_ins_icmp_hook = dlsym(handle, "xx_register_exec_ins_icmp_hook");
+    xx_add_rom_region = dlsym(handle, "xx_add_rom_region");
     switch (cpu_type)
     {
         case X86:
@@ -205,6 +214,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_delete_arm_ctx_state = dlsym(handle, "xx_delete_arm_ctx_state");
         xx_insert_nvic_intc = dlsym(handle, "xx_insert_nvic_intc");
         xx_register_arm_do_interrupt_hook = dlsym(handle, "xx_register_arm_do_interrupt_hook");
+        xx_set_armv7_vecbase = dlsym(handle, "xx_set_armv7_vecbase");
         break;
     }
 
@@ -213,7 +223,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     set_xx_cpu_type && xx_ram_rw && xx_add_ram_regions && 
     xx_add_mmio_regions && main_loop_should_exit && main_loop_wait 
     && xx_clear_dirty_mem && xx_get_dirty_pages && xx_register_exec_bbl_hook &&
-    xx_target_pagesize && xx_register_exec_ins_icmp_hook
+    xx_target_pagesize && xx_register_exec_ins_icmp_hook && xx_add_rom_region
     ))
     {
         printf("symbol not found\n");
@@ -232,7 +242,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     if(cpu_type == ARM && !(
         xx_get_arm_cpu_state && xx_set_arm_cpu_state && xx_reset_arm_reg &&
         xx_save_arm_ctx_state && xx_restore_arm_ctx_state && xx_delete_arm_ctx_state &&
-        xx_insert_nvic_intc && xx_register_arm_do_interrupt_hook
+        xx_insert_nvic_intc && xx_register_arm_do_interrupt_hook && xx_set_armv7_vecbase
     ))
     {
         printf("symbol not found\n");
@@ -253,9 +263,13 @@ MemTxResult read_ram(hwaddr addr, hwaddr size, void *buf)
 {
     xx_ram_rw(addr,size,buf,false);
 }
-void add_ram_region(char *name,hwaddr start, hwaddr size)
+void add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly)
 {
-    xx_add_ram_regions(name,start,size);
+    xx_add_ram_regions(name,start,size,readonly);
+}
+void add_rom_region(char *name,hwaddr start, hwaddr size, void *data)
+{
+    xx_add_rom_region(name,start,size,data);
 }
 void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read_cb, mmio_write_cb write_cb)
 {
@@ -290,7 +304,16 @@ void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 {
     xx_register_exec_ins_icmp_hook(cb);
 }
-void load_file(char *filename,hwaddr addr)
+void load_file(char *filename,hwaddr addr, int file_offset, int size)
+{
+    FILE *fptr = fopen(filename,"rb");
+    fseek(fptr, file_offset, SEEK_SET);
+    char *tmp = (char *)malloc(size);
+    fread(tmp,size,1,fptr);
+    write_ram(addr,size,tmp);
+    free(tmp);
+}
+void* read_file(char *filename)
 {
     int size;
     FILE *fptr = fopen(filename,"rb");
@@ -299,8 +322,7 @@ void load_file(char *filename,hwaddr addr)
     fseek(fptr, 0L, SEEK_SET);
     char *tmp = (char *)malloc(size);
     fread(tmp,size,1,fptr);
-    write_ram(addr,size,tmp);
-    free(tmp);
+    return tmp;
 }
 void exec_simulator(struct Simulator *s)
 {

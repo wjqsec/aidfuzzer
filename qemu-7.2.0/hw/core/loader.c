@@ -1575,7 +1575,7 @@ void *rom_ptr_for_as(AddressSpace *as, hwaddr addr, size_t size)
                                    false, MEMTXATTRS_UNSPECIFIED);
     if (!cbdata.mr) {
         /* Nothing at this address, so there can't be any aliasing */
-        return NULL;
+	return NULL;
     }
     cbdata.size = size;
     flatview_for_each_range(fv, find_rom_cb, &cbdata);
