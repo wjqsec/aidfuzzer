@@ -22,6 +22,9 @@ get_xx_cpu_type_ptr get_xx_cpu_type;
 typedef void (*set_xx_cpu_type_ptr)(enum XX_CPU_TYPE type);
 set_xx_cpu_type_ptr set_xx_cpu_type;
 
+typedef MemTxResult (*xx_rom_write_ptr)(hwaddr addr,void *buf, hwaddr len);
+xx_rom_write_ptr xx_rom_write;
+
 typedef MemTxResult (*xx_ram_rw_ptr)(hwaddr addr,hwaddr len,void *buf, bool is_write);
 xx_ram_rw_ptr xx_ram_rw;
 
@@ -52,7 +55,7 @@ xx_target_pagesize_ptr xx_target_pagesize;
 typedef void (*xx_register_exec_ins_icmp_hook_ptr)(exec_ins_icmp_cb cb);
 xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
 
-typedef void (*xx_add_rom_region_ptr)(char *name,hwaddr start, hwaddr size, void *data);
+typedef void (*xx_add_rom_region_ptr)(char *name,hwaddr start, hwaddr size);
 xx_add_rom_region_ptr xx_add_rom_region;
 //------------------------x86
 typedef void (*xx_register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
@@ -183,6 +186,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     get_xx_cpu_type = dlsym(handle, "get_xx_cpu_type");
     set_xx_cpu_type = dlsym(handle, "set_xx_cpu_type");
     xx_ram_rw = dlsym(handle, "xx_ram_rw");
+    xx_rom_write = dlsym(handle, "xx_rom_write");
     xx_add_ram_regions = dlsym(handle, "xx_add_ram_regions");
     xx_add_mmio_regions = dlsym(handle, "xx_add_mmio_regions");
     main_loop_should_exit = dlsym(handle, "main_loop_should_exit");
@@ -267,9 +271,9 @@ void add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly)
 {
     xx_add_ram_regions(name,start,size,readonly);
 }
-void add_rom_region(char *name,hwaddr start, hwaddr size, void *data)
+void add_rom_region(char *name,hwaddr start, hwaddr size)
 {
-    xx_add_rom_region(name,start,size,data);
+    xx_add_rom_region(name,start,size);
 }
 void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read_cb, mmio_write_cb write_cb)
 {
@@ -304,7 +308,7 @@ void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 {
     xx_register_exec_ins_icmp_hook(cb);
 }
-void load_file(char *filename,hwaddr addr, int file_offset, int size)
+void load_file_ram(char *filename,hwaddr addr, int file_offset, int size)
 {
     FILE *fptr = fopen(filename,"rb");
     fseek(fptr, file_offset, SEEK_SET);
@@ -313,16 +317,14 @@ void load_file(char *filename,hwaddr addr, int file_offset, int size)
     write_ram(addr,size,tmp);
     free(tmp);
 }
-void* read_file(char *filename)
+void load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
 {
-    int size;
     FILE *fptr = fopen(filename,"rb");
-    fseek(fptr, 0L, SEEK_END);
-    size = ftell(fptr);
-    fseek(fptr, 0L, SEEK_SET);
+    fseek(fptr, file_offset, SEEK_SET);
     char *tmp = (char *)malloc(size);
     fread(tmp,size,1,fptr);
-    return tmp;
+    xx_rom_write(addr,tmp,size);
+    free(tmp);
 }
 void exec_simulator(struct Simulator *s)
 {

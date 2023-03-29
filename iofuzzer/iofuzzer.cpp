@@ -375,10 +375,6 @@ struct FuzzState
 };
 
 
-
-
-
-
 inline input_stream *new_stream(u32 id, char *file)
 {
   input_stream *stream = new input_stream();
@@ -614,10 +610,34 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
       dispatch_req(state,entry);
     }
   }
-
+  state->total_exec ++; 
   u64 end_time = get_cur_time();
   classify_counts((u64*)state->trace_bits,state->map_size);
-  int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size); 
+  int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size);
+  
+  if(exit_code == EXIT_CRASH)
+  {
+    state->exit_crash++;
+    save_crash(entry);
+    return;
+  }
+  if(exit_code == EXIT_NONE)
+  {
+    state->exit_none++;
+    entry->priority --;
+  }
+  if(exit_code == EXIT_TIMEOUT)
+  {
+    state->exit_timeout++;
+    entry->priority -= 5 ;  
+  }
+  if(exit_code == EXIT_OUTOFSEED)
+  {
+    state->exit_outofseed++;  
+    entry->priority-- ;  
+  }
+    
+
   if(unlikely(r))
   {
     queue_entry* q = copy_queue(state,entry);
@@ -625,24 +645,8 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
     state->entries->push_back(q);
     entry->priority = DEFAULT_PRIORITY;
   }
-  else
-  {
-    entry->priority--;
-  }
-
-  if(exit_code == EXIT_CRASH)
-  {
-    state->exit_crash++;
-    save_crash(entry);
-  }
-  if(exit_code == EXIT_NONE)
-    state->exit_none++;
-  if(exit_code == EXIT_TIMEOUT)
-    state->exit_timeout++;
-  if(exit_code == EXIT_OUTOFSEED)
-    state->exit_outofseed++;
   
-  state->total_exec ++; 
+  
 }
 inline void reset_queue(queue_entry* q)
 {
@@ -845,11 +849,6 @@ void fuzz_loop(FuzzState *state)
           {
             show_stat(state);
           }
-          if(state->total_exec > 20000)
-          {
-            exit(0);
-          }
-
         }   
       }
     }

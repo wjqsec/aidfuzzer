@@ -75,6 +75,15 @@ struct XX_RAMRegion
     MemoryRegion *mr;
     bool readonly;
 };
+
+struct XX_ROMRegion
+{
+    char *name;
+    hwaddr start;
+    hwaddr size;
+    MemoryRegion *mr;
+};
+
 struct XX_MMIORegion
 {
     char *name;
@@ -91,6 +100,8 @@ struct XX_RAMRegion xx_ram_regions[XX_MEM_REGIONS_MAX];
 int xx_num_ram_regions;
 struct XX_MMIORegion xx_mmio_regions[XX_MEM_REGIONS_MAX];
 int xx_num_mmio_regions;
+struct XX_ROMRegion xx_rom_regions[XX_MEM_REGIONS_MAX];
+int xx_num_rom_regions;
 
 
 
@@ -101,6 +112,10 @@ MemTxResult xx_ram_rw(hwaddr addr,hwaddr len,void *buf, bool is_write)
     } else {
         return address_space_read_full(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, len);
     }
+}
+MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len)
+{
+    address_space_write_rom(&address_space_memory,addr,MEMTXATTRS_UNSPECIFIED,buf,len);
 }
 
 static bool check_mem_overlap(hwaddr start, hwaddr size)
@@ -168,9 +183,18 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
     xx_num_ram_regions++;
 
 }
-void xx_add_rom_region(char *name,hwaddr start, hwaddr size, void *data)
+void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 {
-    rom_add_elf_program(name,0,data,size,size,start,&address_space_memory);
+    if(xx_num_rom_regions >= XX_MEM_REGIONS_MAX)
+	    return;
+    if(check_mem_overlap(start,size))
+	    return;
+    if(!check_mem_addr_and_size(start,size))
+	    return;
+    xx_rom_regions[xx_num_rom_regions].name = strdup(name);
+    xx_rom_regions[xx_num_rom_regions].start = start;
+    xx_rom_regions[xx_num_rom_regions].size = size;
+    xx_num_rom_regions++;
 }
 void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb)
 {
@@ -237,6 +261,14 @@ void xx_init_mem(MachineState *machine)
         memory_region_add_subregion(ram_space,xx_ram_regions[i].start,mr);
         xx_ram_regions[i].mr = mr;
         printf("add ram %x-%x %s readonly:%d\n",xx_ram_regions[i].start, xx_ram_regions[i].start+xx_ram_regions[i].size, xx_ram_regions[i].name,xx_ram_regions[i].readonly);
+    }
+    for(i = 0 ; i < xx_num_rom_regions ; i++)
+    {
+        MemoryRegion *mr = g_new0(MemoryRegion, 1);
+	memory_region_init_rom(mr,NULL,xx_rom_regions[i].name,xx_rom_regions[i].size,0);
+        memory_region_add_subregion(ram_space,xx_rom_regions[i].start,mr);
+	xx_rom_regions[i].mr = mr;
+	printf("add rom %x-%x %s\n",xx_rom_regions[i].start, xx_rom_regions[i].start+xx_rom_regions[i].size, xx_rom_regions[i].name);
     }
     for(i=0; i < xx_num_mmio_regions;i++)
     {
