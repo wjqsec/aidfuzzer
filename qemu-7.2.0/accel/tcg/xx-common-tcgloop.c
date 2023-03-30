@@ -215,11 +215,9 @@ void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, v
 RAMBlock *qemu_get_ram_block(ram_addr_t addr);
 void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
 {
-    RAMBlock *block = qemu_get_ram_block(addr);
-    MemoryRegion *mr = block->mr;
-
+    MemoryRegion *mr = find_mr_by_addr(addr,size);
     tlb_reset_dirty_range_all(addr, size);
-    memory_region_clear_dirty_bitmap(mr, 0, size);
+    memory_region_clear_dirty_bitmap(mr, addr - mr->addr, size);
     //printf("clear dirty pages %p-%p\n",addr,addr+size);
 }
 int xx_target_pagesize()
@@ -236,7 +234,8 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
     if(!mr)
         return;
     DirtyBitmapSnapshot * snap = memory_region_snapshot_and_clear_dirty(mr,addr - mr->addr , size, DIRTY_MEMORY_VGA);
-    num_page_in_byte = ((size / page_size) / 8) + (((size / page_size) % 8) ? 1 : 0) ;
+    //num_page_in_byte = ((size / page_size) / 8) + (((size / page_size) % 8) ? 1 : 0) ;
+    num_page_in_byte = ((size / page_size) / 8) + 1;
 
     memcpy(dirty,snap->dirty,num_page_in_byte);
     g_free(snap);

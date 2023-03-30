@@ -341,10 +341,12 @@ struct queue_entry
 {
     u64 exec_time;
     u32 edges;
+    u32 fuzz_times;
     s32 depth;
     map<u32,input_stream *> *streams;
     //vector<u32> *stream_order;
     //u8 *compressed_bits
+    
 #define DEFAULT_PRIORITY 10000
     s32 priority;
 
@@ -407,7 +409,7 @@ inline input_stream *new_stream(u32 id, char *file)
 inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
 {
   queue_entry *entry = new queue_entry();
-  entry->depth = q->depth + 1;
+  
   entry->streams = new map<u32,input_stream *>();
   for (auto it = q->streams->begin(); it != q->streams->end(); it++)
   {
@@ -423,7 +425,9 @@ inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
   //entry->stream_order = new vector<u32>(*q->stream_order);
   //entry->compressed_bits = (u8*)malloc(state->map_size >> 3);
   //memset(entry->compressed_bits,0,state->map_size >> 3);
+  entry->depth = q->depth + 1;
   entry->priority = DEFAULT_PRIORITY;
+  entry->fuzz_times = 0;
   return entry;
 }
 
@@ -565,6 +569,20 @@ inline void show_stat(FuzzState *state)
 {
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   printf("[%d] total exec times:%d queue size:%d exit_none:%d exit_outofseed:%d exit_timeout:%d exit_crash:%d edges:%d\n",get_cur_time() / 1000, state->total_exec,state->entries->size(), state->exit_none,state->exit_outofseed, state->exit_timeout, state->exit_crash,edges);
+  printf("-----------queue details-----------\n");
+  printf("id        depth           edges           #streams           prio           exec_times\n");
+  int count = state->entries->size();
+  for(int i = 0; i < count; i++)
+  {
+    printf("%-3d        %-4d           %-10d           %-10d           %-10d        %-10d\n",i,
+    (*state->entries)[i]->depth,
+    (*state->entries)[i]->edges,
+    (*state->entries)[i]->streams->size(),
+    (*state->entries)[i]->priority,
+    (*state->entries)[i]->fuzz_times);
+  }
+
+  
 }
 void save_crash(queue_entry* entry)
 {
@@ -611,6 +629,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
     }
   }
   state->total_exec ++; 
+  entry->fuzz_times++;
   u64 end_time = get_cur_time();
   classify_counts((u64*)state->trace_bits,state->map_size);
   int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size);
@@ -642,8 +661,8 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
   {
     queue_entry* q = copy_queue(state,entry);
     q->exec_time = end_time - start_time;
+    q->edges = count_bytes(state->trace_bits, state->map_size);
     state->entries->push_back(q);
-    entry->priority = DEFAULT_PRIORITY;
   }
   
   
@@ -676,6 +695,7 @@ void perform_init_run(FuzzState *state)
 {
   queue_entry *entry = new queue_entry();
   entry->depth = 0;
+  entry->fuzz_times = 0;
   entry->streams = new map<u32,struct input_stream *>();
   //entry->compressed_bits = (u8*)malloc(state->map_size >> 3);
   //memset(entry->compressed_bits,0,state->map_size >> 3);

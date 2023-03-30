@@ -13,8 +13,8 @@
 #define likely(_x)   __builtin_expect(!!(_x), 1)
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
-#define DBG
-#define CRASH_DBG
+//#define DBG
+// #define CRASH_DBG
 #define EXIT_DBG
 #define AFL
 
@@ -43,11 +43,12 @@ uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
 
-FILE *file;
+FILE *flog;
 
 uint64_t execed_bbl_count = 0;
 uint32_t cur_bbl_id;
 uint64_t exit_pc;
+hwaddr snapshot_point;
 
 bool should_exit = false;
 uint32_t exit_code = 0;
@@ -63,7 +64,7 @@ void __afl_map_shm(void) {
 
 }
 
-#define NUM_MEM_SNAPSHOT 5
+
 struct MEM_SEG
 {
     uint8_t *data;
@@ -72,30 +73,41 @@ struct MEM_SEG
 };
 struct SNAPSHOT
 {
+    #define NUM_MEM_SNAPSHOT 5
     struct MEM_SEG mems[NUM_MEM_SNAPSHOT];
     void *arm_ctx;
+    uint32_t __afl_prev_loc;
 };
 struct SNAPSHOT *org_snap, *new_snap;
 struct SNAPSHOT* take_snapshot()
 {
     struct SNAPSHOT *snap = (struct SNAPSHOT*)malloc(sizeof(struct SNAPSHOT));
     snap->arm_ctx = save_arm_ctx_state();
-
+    snap->__afl_prev_loc = __afl_prev_loc;
     snap->mems[0].len = 0;
     snap->mems[1].len = 0;
     snap->mems[2].len = 0;
     snap->mems[3].len = 0;
     snap->mems[4].len = 0;
 
-    snap->mems[0].len = 0x1000;
-    snap->mems[0].start = 0;
-    snap->mems[0].data = (uint8_t*)malloc(snap->mems[0].len);
-    read_ram(snap->mems[0].start,snap->mems[0].len,snap->mems[0].data);
+    int index = 0;
+    snap->mems[index].len = 0x1000;
+    snap->mems[index].start = 0;
+    snap->mems[index].data = (uint8_t*)malloc(snap->mems[index].len);
+    read_ram(snap->mems[index].start,snap->mems[index].len,snap->mems[index].data);
+    index++;
 
-    snap->mems[1].len = 0x20000;
-    snap->mems[1].start = 0x20000000;
-    snap->mems[1].data = (uint8_t*)malloc(snap->mems[1].len);
-    read_ram(snap->mems[1].start,snap->mems[1].len,snap->mems[1].data);
+    snap->mems[index].len = 0x20000;
+    snap->mems[index].start = 0x20000000;
+    snap->mems[index].data = (uint8_t*)malloc(snap->mems[index].len);
+    read_ram(snap->mems[index].start,snap->mems[index].len,snap->mems[index].data);
+    index++;
+
+    snap->mems[index].len = 0x10000;
+    snap->mems[index].start = 0x1e0000;
+    snap->mems[index].data = (uint8_t*)malloc(snap->mems[index].len);
+    read_ram(snap->mems[index].start,snap->mems[index].len,snap->mems[index].data);
+    index++;
 
     return snap;    
 }
@@ -103,33 +115,37 @@ void restore_snapshot(struct SNAPSHOT* snap)
 {
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
+    __afl_prev_loc = snap->__afl_prev_loc;
     int page_size = target_pagesize();
     for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
     {
         if(snap->mems[num_mem].len ==0)
             continue;
-        int num_pages_byte = snap->mems[5].len / page_size;
+        int num_pages = snap->mems[num_mem].len / page_size;
+        
+        // write_ram(snap->mems[num_mem].start,snap->mems[num_mem].len,snap->mems[num_mem].data);
         
         get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, dirty_bits);
-        for(int i = 0 ; i < num_pages_byte ; i++)
+        for(int i = 0 ; i < num_pages ; i++)
         {
-            for(int j = 0 ; j < 8 ; j++)
+            if(1 & (dirty_bits[i / 8] >> (i & 7)))
             {
-                if(dirty_bits[i] & (1 << j))
-                {
-                    uint32_t offset = page_size * (i * 8 + j);
-                    //fprintf(file,"restore memory %x  %x\n",offset,mems[num_mem].data);
-                    write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
-                }
+                uint32_t offset = page_size * i;
+                //fprintf(flog,"restore memory %x\n",snap->mems[num_mem].start + offset);
+                write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
             }
+            
         }
+        
     }
+    
     for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
     {
         if(snap->mems[num_mem].len ==0)
             continue;
         clear_dirty_mem(snap->mems[num_mem].start, snap->mems[num_mem].len);
     }
+    
     
 }
 
@@ -138,8 +154,13 @@ inline void exit_with_code_start_new(int32_t code)
     int32_t tmp = code;
 
     #ifdef DBG
-    fprintf(file,"exit_code = %x pc = %x\n",tmp,exit_pc);
+    fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
     #endif
+
+    #ifdef EXIT_DBG
+    fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
+    #endif
+
     
     write(FORKSRV_CTLFD+1 , &tmp,4);
     if(new_snap)
@@ -147,7 +168,7 @@ inline void exit_with_code_start_new(int32_t code)
     else
         restore_snapshot(org_snap);
     execed_bbl_count = 0;
-    __afl_prev_loc = 0;
+
     read(FORKSRV_CTLFD,&tmp,4);
 
 }
@@ -156,12 +177,14 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     uint64_t ret = 0;
     #ifdef AFL
 
-    // static bool first = false;
-    // if(!first)
-    // {
-    //     new_snap = take_snapshot();
-    //     first = true;
-    // }
+    static bool first = false;
+    if(unlikely(!first))
+    {
+        struct ARM_CPU_STATE state;
+        get_arm_cpu_state(&state);
+        snapshot_point = state.regs[15];
+        first = true;
+    }
 
     static uint8_t buf[32];
     uint8_t  type_recv;
@@ -201,7 +224,7 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(file,"mmio read loc:%p val:%x\n",state.regs[15],ret);
+    fprintf(flog,"mmio read pc:%p offset:%x val:%x\n",state.regs[15],addr_offset,ret);
     #endif
 
     return ret;
@@ -211,29 +234,21 @@ void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(file,"mmio write loc:%p\n",state.regs[15]);
+    fprintf(flog,"mmio write loc:%p\n",state.regs[15]);
     #endif
 }
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
-    // if(pc == 0x800ce42)
-    // {
-    //     struct ARM_CPU_STATE state;
-    //     get_arm_cpu_state(&state);
-    //     uint32_t sp0, sp1,sp2;
-    //     read_ram(state.regs[13],4, &sp0);
-    //     read_ram(state.regs[13] + 4,4, &sp1);
-    //     read_ram(state.regs[13] + 8,4, &sp2);
-    //     uint32_t mem1,mem2;
-    //     read_ram(0,4, &mem1);
-    //     read_ram(4,4, &mem2);
-    //     fprintf(file,"what:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x [0]=%x [4]=%x\n",
-    //     1, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[13], sp0, sp1,sp2,mem1,mem2);
-    // }
+    static bool snaped = false;
+    if(pc == snapshot_point && !snaped)
+    {
+        new_snap = take_snapshot();
+        snaped = true;
+    }
 
 
     #ifdef DBG
-    fprintf(file,"bbl pc:%p\n",pc);
+    fprintf(flog,"bbl pc:%p\n",pc);
     #endif
 
     
@@ -242,7 +257,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     __afl_prev_loc = id >> 1;
     execed_bbl_count++;
     cur_bbl_id = pc;
-    if(unlikely(execed_bbl_count > 100000))
+    if(unlikely(execed_bbl_count >50000))
     {
         exit_pc = pc;
         exit_with_code_start_new(EXIT_TIMEOUT);
@@ -278,8 +293,8 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     read_ram(state.regs[13],4, &sp0);
     read_ram(state.regs[13] + 4,4, &sp1);
     read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(file,"interrupt exec_index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
-    exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[13], sp0, sp1,sp2);
+    fprintf(flog,"interrupt exec_index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],state.regs[13], sp0, sp1,sp2);
     #endif
 
     #ifdef AFL
@@ -299,21 +314,21 @@ void post_thread_exec(int exec_ret)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(file,"post thread exec:%d  pc:%p\n",exec_ret,state.regs[15]);
+    fprintf(flog,"post thread exec:%d  pc:%p\n",exec_ret,state.regs[15]);
     #endif
 }
 void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
 {
     #ifdef DBG
-    fprintf(file,"ins icmp pc:%p\n",pc);
+    fprintf(flog,"ins icmp pc:%p\n",pc);
     #endif
 }
 
 int run_example(int argc, char **argv)
 {
     uint32_t tmp; 
-    file = fopen("/tmp/a.txt","w");
-    setbuf(file,0);
+    flog = fopen("/tmp/a.txt","w");
+    setbuf(flog,0);
     #ifdef AFL
     __afl_map_shm();
     __afl_prev_loc = 0;
@@ -351,13 +366,8 @@ int run_example(int argc, char **argv)
 
 int run_3dprinter(int argc, char **argv)
 {
-    uint32_t tmp; 
-    file = fopen("/tmp/a.txt","w");
-    setbuf(file,0);
-    #ifdef AFL
-    __afl_map_shm();
-    __afl_prev_loc = 0;
-    #endif
+    
+    
     
     struct Simulator *simulator;
     simulator = create_simulator(ARM,false);
@@ -367,8 +377,9 @@ int run_3dprinter(int argc, char **argv)
     add_ram_region("ram",0x20000000, 0x20000,false);
     add_rom_region("rom",0x8000000,0x14000);
     add_ram_region("text",0x8014000, 0x3000,true);  
+    add_ram_region("ram2",0x1e0000, 0x10000,false);
     add_mmio_region("mmio",0x40000000, 0x20000000, mmio_read, mmio_write);
-    add_mmio_region("mmio2",0x1e0000, 0x10000, mmio_read, mmio_write);
+    
     set_armv7_vecbase(0x8000000);
 
     register_exec_bbl_hook(arm_exec_bbl);
@@ -388,6 +399,7 @@ int run_3dprinter(int argc, char **argv)
     org_snap = take_snapshot();
 
     #ifdef AFL
+    uint32_t tmp; 
     write(FORKSRV_CTLFD+1 , &tmp,4);
     read(FORKSRV_CTLFD,&tmp,4);
     #endif
@@ -397,5 +409,12 @@ int run_3dprinter(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+    flog = fopen("/tmp/a.txt","w");
+    setbuf(flog,0);
+    #ifdef AFL
+    __afl_map_shm();
+    __afl_prev_loc = 0;
+    #endif
+
     run_3dprinter(argc,argv);
 }
