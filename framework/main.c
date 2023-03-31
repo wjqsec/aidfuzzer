@@ -7,14 +7,14 @@
 #include <sys/types.h>
 #include <sys/shm.h>
 #include <unistd.h>
-
+#include <glib.h>
 #include <string.h>
 #include "xx.h"
 #define likely(_x)   __builtin_expect(!!(_x), 1)
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
-//#define DBG
-// #define CRASH_DBG
+#define DBG
+#define CRASH_DBG
 #define EXIT_DBG
 #define AFL
 
@@ -46,13 +46,15 @@ uint32_t __afl_prev_loc;
 FILE *flog;
 
 uint64_t execed_bbl_count = 0;
-uint32_t cur_bbl_id;
+uint32_t max_bbl_exec = 50000;
+uint32_t cur_bbl_pc;
 uint64_t exit_pc;
 hwaddr snapshot_point;
 
 bool should_exit = false;
 uint32_t exit_code = 0;
 
+GArray* bbl_records;
 void __afl_map_shm(void) {
 
   char *id_str = getenv("__AFL_SHM_ID");
@@ -76,14 +78,12 @@ struct SNAPSHOT
     #define NUM_MEM_SNAPSHOT 5
     struct MEM_SEG mems[NUM_MEM_SNAPSHOT];
     void *arm_ctx;
-    uint32_t __afl_prev_loc;
 };
 struct SNAPSHOT *org_snap, *new_snap;
 struct SNAPSHOT* take_snapshot()
 {
     struct SNAPSHOT *snap = (struct SNAPSHOT*)malloc(sizeof(struct SNAPSHOT));
     snap->arm_ctx = save_arm_ctx_state();
-    snap->__afl_prev_loc = __afl_prev_loc;
     snap->mems[0].len = 0;
     snap->mems[1].len = 0;
     snap->mems[2].len = 0;
@@ -103,11 +103,11 @@ struct SNAPSHOT* take_snapshot()
     read_ram(snap->mems[index].start,snap->mems[index].len,snap->mems[index].data);
     index++;
 
-    snap->mems[index].len = 0x10000;
-    snap->mems[index].start = 0x1e0000;
-    snap->mems[index].data = (uint8_t*)malloc(snap->mems[index].len);
-    read_ram(snap->mems[index].start,snap->mems[index].len,snap->mems[index].data);
-    index++;
+    // snap->mems[index].len = 0x10000;
+    // snap->mems[index].start = 0x1e0000;
+    // snap->mems[index].data = (uint8_t*)malloc(snap->mems[index].len);
+    // read_ram(snap->mems[index].start,snap->mems[index].len,snap->mems[index].data);
+    // index++;
 
     return snap;    
 }
@@ -115,7 +115,6 @@ void restore_snapshot(struct SNAPSHOT* snap)
 {
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
-    __afl_prev_loc = snap->__afl_prev_loc;
     int page_size = target_pagesize();
     for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
     {
@@ -135,19 +134,16 @@ void restore_snapshot(struct SNAPSHOT* snap)
                 write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
             }
             
-        }
-        
+        }  
     }
-    
     for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
     {
         if(snap->mems[num_mem].len ==0)
             continue;
         clear_dirty_mem(snap->mems[num_mem].start, snap->mems[num_mem].len);
     }
-    
-    
 }
+
 
 inline void exit_with_code_start_new(int32_t code)
 {
@@ -155,6 +151,12 @@ inline void exit_with_code_start_new(int32_t code)
 
     #ifdef DBG
     fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
+    for (int i = 0; i < bbl_records->len; i++) 
+    {
+       fprintf(flog,"%-8x ",g_array_index(bbl_records, hwaddr, i));
+    }
+    fprintf(flog,"\n");
+    g_array_set_size(bbl_records, 0);
     #endif
 
     #ifdef EXIT_DBG
@@ -168,22 +170,24 @@ inline void exit_with_code_start_new(int32_t code)
     else
         restore_snapshot(org_snap);
     execed_bbl_count = 0;
-
+    __afl_prev_loc = 0;
     read(FORKSRV_CTLFD,&tmp,4);
-
+    
+    
 }
-uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
+
+uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
     uint64_t ret = 0;
     #ifdef AFL
 
-    static bool first = false;
-    if(unlikely(!first))
+    static bool snapped = false;
+    if(!snapped)
     {
         struct ARM_CPU_STATE state;
         get_arm_cpu_state(&state);
         snapshot_point = state.regs[15];
-        first = true;
+        snapped = true;
     }
 
     static uint8_t buf[32];
@@ -198,7 +202,7 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     buf[0] = FUZZ_REQ;
     len_send = size;
     memcpy(buf+1, &len_send, 4);
-    memcpy(buf+5, &cur_bbl_id,4);
+    memcpy(buf+5, &cur_bbl_pc,4);
     write(FORKSRV_DATAFD+1 , buf, 9);
 
     read(FORKSRV_DATAFD,&type_recv,1);
@@ -208,6 +212,7 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
         exit(0);
     }
     read(FORKSRV_DATAFD,&len_recv,4);
+
     if(len_recv == -1)
     {
         should_exit = true;
@@ -224,40 +229,61 @@ uint64_t mmio_read(void *opaque,hwaddr addr_offset,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"mmio read pc:%p offset:%x val:%x\n",state.regs[15],addr_offset,ret);
+    fprintf(flog,"mmio read pc:%p offset:%x val:%x\n",state.regs[15],addr,ret);
     #endif
 
     return ret;
 }
-void mmio_write(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size)
+
+void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 {
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"mmio write loc:%p\n",state.regs[15]);
+    fprintf(flog,"mmio write pc:%p offset:%x val:%x\n",state.regs[15],addr,data);
     #endif
 }
+
+uint64_t mmio1_read(void *opaque,hwaddr offset,unsigned size)
+{
+    return mmio_read_common(opaque,offset + 0x40000000, size);
+}
+uint64_t mmio2_read(void *opaque,hwaddr offset,unsigned size)
+{
+    return mmio_read_common(opaque,offset + 0x1e0000, size);
+}
+void mmio1_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
+{
+    return mmio_write_common(opaque,offset + 0x40000000,data,size);
+}
+void mmio2_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
+{
+    return mmio_write_common(opaque,offset + 0x1e0000,data,size);
+}
+
+
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
-    static bool snaped = false;
-    if(pc == snapshot_point && !snaped)
-    {
-        new_snap = take_snapshot();
-        snaped = true;
-    }
-
 
     #ifdef DBG
     fprintf(flog,"bbl pc:%p\n",pc);
+    g_array_append_val(bbl_records, pc);
     #endif
-
     
     #ifdef AFL
+    
+    static bool snapped = false;
+    if(!snapped && pc == snapshot_point)
+    {
+        new_snap = take_snapshot();
+        max_bbl_exec = 5000;
+        snapped = true;
+    }
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
     __afl_prev_loc = id >> 1;
     execed_bbl_count++;
-    cur_bbl_id = pc;
-    if(unlikely(execed_bbl_count >50000))
+    cur_bbl_pc = pc;
+    if(unlikely(execed_bbl_count > max_bbl_exec))
     {
         exit_pc = pc;
         exit_with_code_start_new(EXIT_TIMEOUT);
@@ -343,10 +369,10 @@ int run_example(int argc, char **argv)
     add_ram_region("on-chip-ram2",0x20000000, 0x20000,false);
     add_ram_region("stack",0x20070000, 0x20000,false);
     
-    add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read, mmio_write);
-    add_mmio_region("APB0",0x40000000, 0x80000, mmio_read, mmio_write);
-    add_mmio_region("APB1",0x40080000, 0x80000, mmio_read, mmio_write);
-    add_mmio_region("AHB",0x50000000, 0x200000, mmio_read, mmio_write);
+    add_mmio_region("gpio",0x2009C000, 0x4000, mmio_read_common, mmio_write_common);
+    add_mmio_region("APB0",0x40000000, 0x80000, mmio_read_common, mmio_write_common);
+    add_mmio_region("APB1",0x40080000, 0x80000, mmio_read_common, mmio_write_common);
+    add_mmio_region("AHB",0x50000000, 0x200000, mmio_read_common, mmio_write_common);
     register_exec_bbl_hook(arm_exec_bbl);
     register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
     register_post_thread_exec_hook(post_thread_exec);
@@ -377,9 +403,10 @@ int run_3dprinter(int argc, char **argv)
     add_ram_region("ram",0x20000000, 0x20000,false);
     add_rom_region("rom",0x8000000,0x14000);
     add_ram_region("text",0x8014000, 0x3000,true);  
-    add_ram_region("ram2",0x1e0000, 0x10000,false);
-    add_mmio_region("mmio",0x40000000, 0x20000000, mmio_read, mmio_write);
     
+    add_mmio_region("mmio",0x40000000, 0x20000000, mmio1_read, mmio2_write);
+    add_mmio_region("mmio2",0x1e0000, 0x10000,mmio2_read,mmio2_write);
+
     set_armv7_vecbase(0x8000000);
 
     register_exec_bbl_hook(arm_exec_bbl);
@@ -397,7 +424,6 @@ int run_3dprinter(int argc, char **argv)
     free(buf);
     reset_arm_reg();
     org_snap = take_snapshot();
-
     #ifdef AFL
     uint32_t tmp; 
     write(FORKSRV_CTLFD+1 , &tmp,4);
@@ -415,6 +441,7 @@ int main(int argc, char **argv)
     __afl_map_shm();
     __afl_prev_loc = 0;
     #endif
+    bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));
 
     run_3dprinter(argc,argv);
 }

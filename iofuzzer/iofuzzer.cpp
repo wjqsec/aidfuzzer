@@ -335,6 +335,7 @@ struct input_stream
     u8 *data;
     s32 len;
     s32 used;
+    set<u32> *interesting_vals;
 };
 
 struct queue_entry
@@ -373,7 +374,7 @@ struct FuzzState
 
     vector<queue_entry*> *entries;
 
-    set<u32> *interesting_vals;
+    
 };
 
 
@@ -382,7 +383,7 @@ inline input_stream *new_stream(u32 id, char *file)
   input_stream *stream = new input_stream();
   stream->id = id;
   stream->used = 0;
-
+  stream->interesting_vals = new set<u32>();
   if(file)
   {
     struct stat st;
@@ -419,6 +420,7 @@ inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
     stream->len = it->second->len;
     stream->used = 0;
     stream->data = (u8*)malloc(stream->len);
+    stream->interesting_vals = it->second->interesting_vals;
     memcpy(stream->data,it->second->data,stream->len);
     entry->streams->insert({it->first , stream});
   }
@@ -426,7 +428,7 @@ inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
   //entry->compressed_bits = (u8*)malloc(state->map_size >> 3);
   //memset(entry->compressed_bits,0,state->map_size >> 3);
   entry->depth = q->depth + 1;
-  entry->priority = DEFAULT_PRIORITY;
+  entry->priority = DEFAULT_PRIORITY * entry->depth;
   entry->fuzz_times = 0;
   return entry;
 }
@@ -458,7 +460,7 @@ void fuzzer_init(FuzzState *state, u32 map_size)
     state->fd_data_toserver = todata_pipe[1];
     state->fd_data_fromserver = fromdata_pipe[0];
     state->entries = new vector<struct queue_entry*>();
-    state->interesting_vals = new set<u32>();
+
     state->total_exec = 0;
     state->total_edges = 0;
     state->exit_none = 0;
@@ -648,7 +650,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
   if(exit_code == EXIT_TIMEOUT)
   {
     state->exit_timeout++;
-    entry->priority -= 5 ;  
+    entry->priority -= 2 ;  
   }
   if(exit_code == EXIT_OUTOFSEED)
   {
@@ -657,7 +659,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
   }
     
 
-  if(unlikely(r))
+  if(unlikely(r == 2))
   {
     queue_entry* q = copy_queue(state,entry);
     q->exec_time = end_time - start_time;
@@ -716,12 +718,12 @@ void perform_init_run(FuzzState *state)
 inline void havoc(FuzzState *state, input_stream* stream)
 {
   #define HAVOC_STACK 8
-  #define HAVOC_TOKEN 14//20
+  #define HAVOC_TOKEN 20
   #define ARITH_MAX   35
   u32 use_stacking = 1 + UR(HAVOC_STACK);
   s32 len = stream->len;
   u8 *data = stream->data;
-  if(len  <= 4 )
+  if(len  <= 8 )
     return;
 
   for (s32 i = 0; i < use_stacking; i++) 
@@ -813,12 +815,15 @@ inline void havoc(FuzzState *state, input_stream* stream)
       case 18:
       case 19:
       {
-        if(state->interesting_vals->size() == 0)
-          break;
-        auto it = state->interesting_vals->begin();
-        std::advance(it, UR(state->interesting_vals->size()));
-        s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffff4));
-        *tmp = *it;
+        // if(state->interesting_vals->size() == 0)
+        //   break;
+        // auto it = state->interesting_vals->begin();
+        // std::advance(it, UR(state->interesting_vals->size()));
+        // s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffff4));
+        // *tmp = *it;
+        s32* tmp1 = (s32*)(data + UR(len - 7));
+        s32* tmp2 = (s32*)(data + UR(len - 3));
+        *tmp1 = *tmp2 = UR(0xffffffff);
       }
       default:
       break;
