@@ -52,8 +52,8 @@ using namespace std;
 #define FUZZ_OUTPUT 0x3
 #define ACK 0x4
 
-#define DEFAULT_STREAM_LEN 0x100
-#define MAX_STREAM_LEN 0x1000
+#define DEFAULT_STREAM_LEN 0x5000
+#define MAX_STREAM_LEN 0x10000
 /*
 struct __attribute__((__packed__)) Data_protocol
 {

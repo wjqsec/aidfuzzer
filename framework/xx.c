@@ -311,20 +311,28 @@ void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 void load_file_ram(char *filename,hwaddr addr, int file_offset, int size)
 {
     FILE *fptr = fopen(filename,"rb");
+    fseek(fptr, 0, SEEK_END);
+    long remainder_size = ftell(fptr) - file_offset;
     fseek(fptr, file_offset, SEEK_SET);
+    size = size < remainder_size ? size : remainder_size;
     char *tmp = (char *)malloc(size);
     fread(tmp,size,1,fptr);
     write_ram(addr,size,tmp);
     free(tmp);
+    fclose(fptr);
 }
 void load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
 {
     FILE *fptr = fopen(filename,"rb");
+    fseek(fptr, 0, SEEK_END);
+    long remainder_size = ftell(fptr) - file_offset;
     fseek(fptr, file_offset, SEEK_SET);
+    size = size < remainder_size ? size : remainder_size;
     char *tmp = (char *)malloc(size);
     fread(tmp,size,1,fptr);
     xx_rom_write(addr,tmp,size);
     free(tmp);
+    fclose(fptr);
 }
 void exec_simulator(struct Simulator *s)
 {

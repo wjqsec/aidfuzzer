@@ -13,7 +13,7 @@
 #define likely(_x)   __builtin_expect(!!(_x), 1)
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
-#define DBG
+//#define DBG
 #define CRASH_DBG
 #define EXIT_DBG
 #define AFL
@@ -55,6 +55,8 @@ bool should_exit = false;
 uint32_t exit_code = 0;
 
 GArray* bbl_records;
+
+uint32_t run_time;
 void __afl_map_shm(void) {
 
   char *id_str = getenv("__AFL_SHM_ID");
@@ -150,13 +152,16 @@ inline void exit_with_code_start_new(int32_t code)
     int32_t tmp = code;
 
     #ifdef DBG
-    fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
+    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_time, tmp,exit_pc);
     for (int i = 0; i < bbl_records->len; i++) 
     {
        fprintf(flog,"%-8x ",g_array_index(bbl_records, hwaddr, i));
     }
     fprintf(flog,"\n");
     g_array_set_size(bbl_records, 0);
+    run_time++;
+
+    
     #endif
 
     #ifdef EXIT_DBG
@@ -229,7 +234,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"mmio read pc:%p offset:%x val:%x\n",state.regs[15],addr,ret);
+    fprintf(flog,"%d->mmio read pc:%p offset:%x val:%x\n",run_time, state.regs[15],addr,ret);
     #endif
 
     return ret;
@@ -240,7 +245,7 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"mmio write pc:%p offset:%x val:%x\n",state.regs[15],addr,data);
+    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_time, state.regs[15],addr,data);
     #endif
 }
 
@@ -266,8 +271,44 @@ bool arm_exec_bbl(regval pc,uint32_t id)
 {
 
     #ifdef DBG
-    fprintf(flog,"bbl pc:%p\n",pc);
+    fprintf(flog,"%d->bbl pc:%p\n",run_time, pc);
     g_array_append_val(bbl_records, pc);
+
+    // static printed =false;
+    // uint32_t tt1 = 55;
+    // uint32_t tt2 = 0;
+    // uint32_t tt3 = 0;
+    // uint32_t tt4 = 0;
+    // uint32_t tt5 = 0;
+    // if(pc == 0x0800CE18)
+    // {
+    //     read_ram(0x80133a0,4, &tt1);
+    //     read_ram(0x80133a0 + 4,4, &tt2);
+    //     read_ram(0x80133a0 + 8,4, &tt3);
+    //     read_ram(0x80133a0 + 0xc,4, &tt4);
+    //     read_ram(0x80133a0 + 0x10,4, &tt5);
+    //     printf("%x  %x  %x  %x  %x\n",tt1,tt2,tt3,tt4,tt5);
+
+    // }
+    
+    
+    // if(pc == 0x8000598)
+    // {
+    //     struct ARM_CPU_STATE state;
+    //     get_arm_cpu_state(&state);
+    //     uint32_t sp0, sp1,sp2;
+    //     uint32_t mem1, mem2,mem3;
+    //     read_ram(state.regs[13],4, &sp0);
+    //     read_ram(state.regs[13] + 4,4, &sp1);
+    //     read_ram(state.regs[13] + 8,4, &sp2);
+    //     read_ram(0x200010A0,4, &mem1);
+    //     read_ram(state.regs[0] + 4,4, &mem2);
+    //     fprintf(flog,"%d->what pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x [mem1]=%x [mem2]=%x\n",run_time,
+    //             state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],state.regs[13], sp0, sp1,sp2,
+    //             mem1,mem2
+    //             );
+ 
+    // }
     #endif
     
     #ifdef AFL
@@ -276,7 +317,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     if(!snapped && pc == snapshot_point)
     {
         new_snap = take_snapshot();
-        max_bbl_exec = 5000;
+        max_bbl_exec = 50000;
         snapped = true;
     }
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
@@ -328,9 +369,10 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     get_arm_cpu_state(&tmp_state);
     exit_pc = tmp_state.regs[15];
     exit_with_code_start_new(EXIT_CRASH);
+    return false;
     #endif
     
-    return false;
+    return true;
 }
 void post_thread_exec(int exec_ret)
 {
@@ -340,13 +382,13 @@ void post_thread_exec(int exec_ret)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"post thread exec:%d  pc:%p\n",exec_ret,state.regs[15]);
+    fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_time, exec_ret,state.regs[15]);
     #endif
 }
 void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
 {
     #ifdef DBG
-    fprintf(flog,"ins icmp pc:%p\n",pc);
+    fprintf(flog,"%d->ins icmp pc:%p\n",run_time, pc);
     #endif
 }
 
@@ -402,7 +444,7 @@ int run_3dprinter(int argc, char **argv)
     add_ram_region("zero",0, 0x1000,false);
     add_ram_region("ram",0x20000000, 0x20000,false);
     add_rom_region("rom",0x8000000,0x14000);
-    add_ram_region("text",0x8014000, 0x3000,true);  
+    add_ram_region("text",0x8014000, 0x3000,false);  
     
     add_mmio_region("mmio",0x40000000, 0x20000000, mmio1_read, mmio2_write);
     add_mmio_region("mmio2",0x1e0000, 0x10000,mmio2_read,mmio2_write);
@@ -418,10 +460,15 @@ int run_3dprinter(int argc, char **argv)
  
     load_file_rom("/root/fuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8000000,0,0x14000);
     load_file_ram("/root/fuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8014000,0x14000,0x3000);
+
+
     uint8_t *buf = (uint8_t *)malloc(0x1000);
     memset(buf,0,0x1000);
     write_ram(0,0x1000,buf);
     free(buf);
+
+    
+
     reset_arm_reg();
     org_snap = take_snapshot();
     #ifdef AFL
