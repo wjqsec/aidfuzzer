@@ -47,12 +47,14 @@ FILE *flog;
 
 uint64_t execed_bbl_count = 0;
 uint32_t max_bbl_exec = 50000;
+
 uint32_t cur_bbl_pc;
-uint64_t exit_pc;
+
 hwaddr snapshot_point;
 
 bool should_exit = false;
 uint32_t exit_code = 0;
+uint64_t exit_pc;
 
 GArray* bbl_records;
 
@@ -168,8 +170,8 @@ inline void exit_with_code_start_new(int32_t code)
     fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
     #endif
 
-    
     write(FORKSRV_CTLFD+1 , &tmp,4);
+    write(FORKSRV_CTLFD+1 , &exit_pc,4);    
     if(new_snap)
         restore_snapshot(new_snap);
     else

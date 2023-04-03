@@ -52,7 +52,7 @@ using namespace std;
 #define FUZZ_OUTPUT 0x3
 #define ACK 0x4
 
-#define DEFAULT_STREAM_LEN 0x5000
+#define DEFAULT_STREAM_LEN 0x150
 #define MAX_STREAM_LEN 0x10000
 /*
 struct __attribute__((__packed__)) Data_protocol
@@ -345,6 +345,7 @@ struct queue_entry
     u32 fuzz_times;
     s32 depth;
     map<u32,input_stream *> *streams;
+    input_stream * favorate_stream;
     //vector<u32> *stream_order;
     //u8 *compressed_bits
     
@@ -430,6 +431,7 @@ inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
   entry->depth = q->depth + 1;
   entry->priority = DEFAULT_PRIORITY * entry->depth;
   entry->fuzz_times = 0;
+  entry->favorate_stream = nullptr;
   return entry;
 }
 
@@ -488,12 +490,14 @@ inline void fork_server_runonce(FuzzState *state)
     write(state->fd_ctl_toserver, &tmp,4);
 }
 
-inline s32 fork_server_getexit(FuzzState *state)
+inline s32 fork_server_getexit(FuzzState *state, u32 *exit_pc)
 {
     s32 tmp;
     read(state->fd_ctl_fromserver, &tmp,4);
+    read(state->fd_ctl_fromserver, exit_pc,4);
     return tmp;
 }
+
 
 void run_controlled_process(int argc,char *old_argv[])
 {
@@ -572,15 +576,16 @@ inline void show_stat(FuzzState *state)
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   printf("[%d] total exec times:%d queue size:%d exit_none:%d exit_outofseed:%d exit_timeout:%d exit_crash:%d edges:%d\n",get_cur_time() / 1000, state->total_exec,state->entries->size(), state->exit_none,state->exit_outofseed, state->exit_timeout, state->exit_crash,edges);
   printf("-----------queue details-----------\n");
-  printf("id        depth           edges           #streams           prio           exec_times\n");
+  printf("id        depth           edges           #streams           prio           favorate           exec_times\n");
   int count = state->entries->size();
   for(int i = 0; i < count; i++)
   {
-    printf("%-3d        %-4d           %-10d           %-10d           %-10d        %-10d\n",i,
+    printf("%-3d        %-4d           %-10d           %-10d           %-10d         %-10x          %-10d\n",i,
     (*state->entries)[i]->depth,
     (*state->entries)[i]->edges,
     (*state->entries)[i]->streams->size(),
     (*state->entries)[i]->priority,
+    (*state->entries)[i]->favorate_stream ? (*state->entries)[i]->favorate_stream->id : 0,
     (*state->entries)[i]->fuzz_times);
   }
 
@@ -611,6 +616,7 @@ void save_crash(queue_entry* entry)
 inline void fuzz_one(FuzzState *state,queue_entry* entry)
 {
   s32 exit_code;
+  u32 exit_pc;
   u64 start_time = get_cur_time();
   memset(state->trace_bits,0,state->map_size);
   fork_server_runonce(state);
@@ -622,7 +628,7 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
       fatal("poll error\n");
     if(state->pfds[0].revents & POLLIN)
     {
-      exit_code = fork_server_getexit(state);
+      exit_code = fork_server_getexit(state,&exit_pc);
       break;
     }
     if(state->pfds[1].revents & POLLIN)
@@ -655,7 +661,8 @@ inline void fuzz_one(FuzzState *state,queue_entry* entry)
   if(exit_code == EXIT_OUTOFSEED)
   {
     state->exit_outofseed++;  
-    entry->priority-- ;  
+    entry->priority-- ;
+    entry->favorate_stream = (*entry->streams)[exit_pc];
   }
     
 
@@ -858,10 +865,28 @@ void fuzz_loop(FuzzState *state)
       //for (int i = 0 ; i < 10 ; i++)
       {
         tmp_streams.clear();
-        for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
+        if(entry->favorate_stream)
         {
-          tmp_streams.push_back(it->second);
+          if(UR(10) > 3)
+          {
+            tmp_streams.push_back(entry->favorate_stream);
+          }
+          else
+          {
+            for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
+            {
+              tmp_streams.push_back(it->second);
+            }
+          }
         }
+        else
+        {
+          for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
+          {
+            tmp_streams.push_back(it->second);
+          }
+        }
+
         for(input_stream *stream : tmp_streams)
         {
           s32 len = stream->len;  
