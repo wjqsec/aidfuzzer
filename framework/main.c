@@ -14,8 +14,9 @@
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
 //#define DBG
-#define CRASH_DBG
-#define EXIT_DBG
+//#define CRASH_DBG
+//#define EXIT_DBG
+//#define TRACE_DBG
 #define AFL
 
 #define FORKSRV_CTLFD          198
@@ -27,17 +28,12 @@
 #define EXIT_CRASH 3
 
 
-struct __attribute__((__packed__)) Data_protocol
-{
-  #define FUZZ_REQ 0x1
-  #define CMP_VAL 0x2
-  #define FUZZ_OUTPUT 0x3
-  #define ACK 0x4
-  uint8_t type;
-  int32_t len; // -1 means no more data
-  uint32_t bbl_id;
-  uint8_t data[];
-};
+
+#define FUZZ_REQ 0x1
+#define CMP_VAL 0x2
+#define FUZZ_OUTPUT 0x3
+#define ACK 0x4
+
 
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
@@ -48,12 +44,11 @@ FILE *flog;
 uint64_t execed_bbl_count = 0;
 uint32_t max_bbl_exec = 50000;
 
-uint32_t cur_bbl_pc;
-
 hwaddr snapshot_point;
 
 bool should_exit = false;
 uint32_t exit_code = 0;
+uint32_t exit_info;
 uint64_t exit_pc;
 
 GArray* bbl_records;
@@ -128,7 +123,7 @@ void restore_snapshot(struct SNAPSHOT* snap)
         
         // write_ram(snap->mems[num_mem].start,snap->mems[num_mem].len,snap->mems[num_mem].data);
         
-        get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, dirty_bits);
+        get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, (unsigned long*)dirty_bits);
         for(int i = 0 ; i < num_pages ; i++)
         {
             if(1 & (dirty_bits[i / 8] >> (i & 7)))
@@ -148,36 +143,62 @@ void restore_snapshot(struct SNAPSHOT* snap)
     }
 }
 
-
-inline void exit_with_code_start_new(int32_t code)
+void exit_with_code_start_new(int32_t code)
 {
     int32_t tmp = code;
-
+    uint32_t record;
     #ifdef DBG
     fprintf(flog,"%d->exit_code = %x pc = %x\n",run_time, tmp,exit_pc);
-    for (int i = 0; i < bbl_records->len; i++) 
-    {
-       fprintf(flog,"%-8x ",g_array_index(bbl_records, hwaddr, i));
-    }
-    fprintf(flog,"\n");
-    g_array_set_size(bbl_records, 0);
     run_time++;
+    #endif
+
+    #ifdef CRASH_DBG
+    if(tmp == EXIT_CRASH)
+    {
+        struct ARM_CPU_STATE state;
+        get_arm_cpu_state(&state);
+        uint32_t sp0, sp1,sp2;
+        read_ram(state.regs[13],4, &sp0);
+        read_ram(state.regs[13] + 4,4, &sp1);
+        read_ram(state.regs[13] + 8,4, &sp2);
+        fprintf(flog,"crash pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+        state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
+        state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
+    }
+    #endif
+
 
     
-    #endif
 
     #ifdef EXIT_DBG
     fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
     #endif
 
     write(FORKSRV_CTLFD+1 , &tmp,4);
-    write(FORKSRV_CTLFD+1 , &exit_pc,4);    
+    write(FORKSRV_CTLFD+1 , &exit_info,4);
+    write(FORKSRV_CTLFD+1 , &exit_pc,4);        
     if(new_snap)
         restore_snapshot(new_snap);
     else
         restore_snapshot(org_snap);
     execed_bbl_count = 0;
     __afl_prev_loc = 0;
+
+    read(FORKSRV_CTLFD,&record,4);
+
+    #ifdef TRACE_DBG
+    if(record)
+    {
+        fprintf(flog,"trace:\n");
+        for (int i = 0; i < bbl_records->len; i++) 
+        {
+           fprintf(flog,"%-8x\n",g_array_index(bbl_records, hwaddr, i));
+        }
+        fprintf(flog,"end\n");
+        g_array_set_size(bbl_records, 0);
+    }
+    #endif
+
     read(FORKSRV_CTLFD,&tmp,4);
     
     
@@ -199,38 +220,26 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     static uint8_t buf[32];
     uint8_t  type_recv;
-    int32_t len_recv;
-    uint32_t bbl_id_recv;
-
-    uint8_t  type_send;
-    int32_t len_send;
-    uint32_t bbl_id_send;
+    int32_t len;
+    uint32_t mmio_id_send = addr & 0xfffffff0;
     
     buf[0] = FUZZ_REQ;
-    len_send = size;
-    memcpy(buf+1, &len_send, 4);
-    memcpy(buf+5, &cur_bbl_pc,4);
+    len = size;
+    memcpy(buf+1, &len, 4);
+    memcpy(buf+5, &mmio_id_send,4);
     write(FORKSRV_DATAFD+1 , buf, 9);
-
-    read(FORKSRV_DATAFD,&type_recv,1);
-    if(type_recv != FUZZ_OUTPUT)
-    {
-        printf("error type_recv\n");
-        exit(0);
-    }
-    read(FORKSRV_DATAFD,&len_recv,4);
-
-    if(len_recv == -1)
+    read(FORKSRV_DATAFD,&len,4);
+    exit_info = mmio_id_send;
+    if(len == -1)
     {
         should_exit = true;
         exit_code = EXIT_OUTOFSEED;
-        struct ARM_CPU_STATE state;
-        get_arm_cpu_state(&state);
-        exit_pc = state.regs[15];
+        // struct ARM_CPU_STATE state;
+        // get_arm_cpu_state(&state);
+        // exit_pc = state.regs[15];
         return ret;
     }
-    read(FORKSRV_DATAFD,&bbl_id_recv,4);
-    read(FORKSRV_DATAFD,&ret,len_send);
+    read(FORKSRV_DATAFD,&ret,len);
     #endif
 
     #ifdef DBG
@@ -271,10 +280,37 @@ void mmio2_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
 
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
+    #ifdef AFL
+    static bool snapped = false;
+    if(!snapped && pc == snapshot_point)
+    {
+        new_snap = take_snapshot();
+        //max_bbl_exec = 50000;
+        snapped = true;
+    }
+
+    if(unlikely(pc == 0x8002FCC))
+    {
+        
+        exit_with_code_start_new(EXIT_NONE);
+
+        return true;
+    }
+    if(unlikely(execed_bbl_count >= max_bbl_exec))
+    {
+        exit_with_code_start_new(EXIT_TIMEOUT);
+        return true;
+    }
+    if(unlikely(should_exit))
+    {
+        exit_with_code_start_new(exit_code);
+        should_exit = false;
+        return true;
+    }
+    #endif
 
     #ifdef DBG
     fprintf(flog,"%d->bbl pc:%p\n",run_time, pc);
-    g_array_append_val(bbl_records, pc);
 
     // static printed =false;
     // uint32_t tt1 = 55;
@@ -315,30 +351,14 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     
     #ifdef AFL
     
-    static bool snapped = false;
-    if(!snapped && pc == snapshot_point)
-    {
-        new_snap = take_snapshot();
-        max_bbl_exec = 50000;
-        snapped = true;
-    }
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
     __afl_prev_loc = id >> 1;
+    exit_pc = pc;
     execed_bbl_count++;
-    cur_bbl_pc = pc;
-    if(unlikely(execed_bbl_count > max_bbl_exec))
-    {
-        exit_pc = pc;
-        exit_with_code_start_new(EXIT_TIMEOUT);
-        return true;
-    }
-    if(unlikely(should_exit))
-    {
-        exit_with_code_start_new(exit_code);
-        should_exit = false;
-        return true;
-    }
     #endif
+    #ifdef TRACE_DBG
+    g_array_append_val(bbl_records, pc);
+    #endif 
     return false;
     
 
@@ -355,21 +375,12 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
        }
         
    
-    #ifdef CRASH_DBG
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
-    uint32_t sp0, sp1,sp2;
-    read_ram(state.regs[13],4, &sp0);
-    read_ram(state.regs[13] + 4,4, &sp1);
-    read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(flog,"interrupt exec_index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
-    exec_index, state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],state.regs[13], sp0, sp1,sp2);
-    #endif
+    
 
     #ifdef AFL
-    struct ARM_CPU_STATE tmp_state;
-    get_arm_cpu_state(&tmp_state);
-    exit_pc = tmp_state.regs[15];
+    // struct ARM_CPU_STATE tmp_state;
+    // get_arm_cpu_state(&tmp_state);
+    // exit_pc = tmp_state.regs[15];
     exit_with_code_start_new(EXIT_CRASH);
     return false;
     #endif
@@ -380,7 +391,7 @@ void post_thread_exec(int exec_ret)
 {
     insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
 
-
+    printf("post exec\n");
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
@@ -460,8 +471,8 @@ int run_3dprinter(int argc, char **argv)
     init_simulator(simulator);
     
  
-    load_file_rom("/root/fuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8000000,0,0x14000);
-    load_file_ram("/root/fuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8014000,0x14000,0x3000);
+    load_file_rom("/home/w/hd/iofuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8000000,0,0x14000);
+    load_file_ram("/home/w/hd/iofuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8014000,0x14000,0x3000);
 
 
     uint8_t *buf = (uint8_t *)malloc(0x1000);
@@ -490,7 +501,10 @@ int main(int argc, char **argv)
     __afl_map_shm();
     __afl_prev_loc = 0;
     #endif
+
+    #ifdef TRACE_DBG
     bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));
+    #endif
 
     run_3dprinter(argc,argv);
 }

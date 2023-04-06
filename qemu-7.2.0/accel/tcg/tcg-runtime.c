@@ -39,6 +39,7 @@ typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 extern exec_ins_icmp_cb exec_ins_icmp_func;
 uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
+    qemu_clock_run_all_timers();
     bool should_exit = exec_bbl_func(pc,id);
     if(should_exit)
     {

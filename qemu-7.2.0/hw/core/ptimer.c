@@ -201,7 +201,6 @@ static void ptimer_tick(void *opaque)
 uint64_t ptimer_get_count(ptimer_state *s)
 {
     uint64_t counter;
-
     if (s->enabled && s->delta != 0) {
         int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         int64_t next = s->next_event;

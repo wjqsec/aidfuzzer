@@ -1,1 +1,2 @@
-gcc -ldl main.c xx.c -O3 `pkg-config --cflags --libs glib-2.0`
+gcc  main.c xx.c -Wno-unused-result -Wno-format -ldl -O3 `pkg-config --cflags --libs glib-2.0` -o simulator
+g++ iofuzzer.cpp -Wno-unused-result -Wno-format -O3 -o iofuzz
