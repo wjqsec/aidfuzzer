@@ -443,8 +443,8 @@ static void xx_accel_ops_init(AccelOpsClass *ops)
     ops->create_vcpu_thread = xx_start_vcpu_thread;
     ops->kick_vcpu_thread = xx_kick_vcpu_thread;
     ops->handle_interrupt = xx_icount_handle_interrupt;
-    ops->get_virtual_clock = xx_icount_get;
-    ops->get_elapsed_ticks = xx_icount_get;
+    //ops->get_virtual_clock = xx_icount_get;
+    //ops->get_elapsed_ticks = xx_icount_get;
 
     ops->supports_guest_debug = tcg_supports_guest_debug;
     ops->insert_breakpoint = tcg_insert_breakpoint;

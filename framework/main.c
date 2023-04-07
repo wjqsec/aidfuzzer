@@ -37,7 +37,8 @@
 
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
-
+uint32_t __afl_intc_old_prev_loc;
+bool skip_this_bbl = false;
 
 FILE *flog;
 
@@ -280,6 +281,7 @@ void mmio2_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
 
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
+
     #ifdef AFL
     static bool snapped = false;
     if(!snapped && pc == snapshot_point)
@@ -289,19 +291,18 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         snapped = true;
     }
 
-    if(unlikely(pc == 0x8002FCC))
+    if(unlikely(pc == 0x8002FCC))  //fail function reached
     {
         
         exit_with_code_start_new(EXIT_NONE);
-
         return true;
     }
-    if(unlikely(execed_bbl_count >= max_bbl_exec))
-    {
-        exit_with_code_start_new(EXIT_TIMEOUT);
-        return true;
-    }
-    if(unlikely(should_exit))
+    // if(unlikely(execed_bbl_count >= max_bbl_exec))
+    // {
+    //     exit_with_code_start_new(EXIT_TIMEOUT);
+    //     return true;
+    // }
+    if(unlikely(should_exit))  //run out of seed
     {
         exit_with_code_start_new(exit_code);
         should_exit = false;
@@ -350,7 +351,11 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     #endif
     
     #ifdef AFL
-    
+    if(skip_this_bbl)
+    {
+        skip_this_bbl = false;
+        return false;
+    }
     __afl_area_ptr[__afl_prev_loc ^ id] ++;
     __afl_prev_loc = id >> 1;
     exit_pc = pc;
@@ -366,13 +371,23 @@ bool arm_exec_bbl(regval pc,uint32_t id)
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
-    
-    if(exec_index == EXCP_SWI || 
-       exec_index == EXCP_EXCEPTION_EXIT || 
-       exec_index == EXCP_IRQ)
-       {
+    if(exec_index == EXCP_IRQ)
+    {
+        __afl_intc_old_prev_loc = __afl_prev_loc;
+        __afl_prev_loc = 0;
         return true;
-       }
+    }
+    if(exec_index == EXCP_EXCEPTION_EXIT)
+    {
+        __afl_prev_loc = __afl_intc_old_prev_loc;
+        skip_this_bbl = true;
+        return true;
+    }
+    
+    if(exec_index == EXCP_SWI)
+    {
+        return true;
+    }
         
    
     
