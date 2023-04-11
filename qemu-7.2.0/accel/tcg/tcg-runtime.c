@@ -30,7 +30,7 @@
 #include "disas/disas.h"
 #include "exec/log.h"
 #include "tcg/tcg.h"
-
+#include "qemu/timer.h"
 /* 32-bit helpers */
 
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
@@ -41,9 +41,8 @@ uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
     bool should_exit = exec_bbl_func(pc,id);
     static uint64_t e = 0;
-    if((e & 0xf) == 0)
-        qemu_clock_run_all_timers();
-    e++;
+    if((e++ & 0xff) == 0)
+	qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
     if(should_exit)
     {
 	    CPUState *cpu = env_cpu(env);

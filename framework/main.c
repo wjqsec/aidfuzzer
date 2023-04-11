@@ -6,6 +6,7 @@
 #include <errno.h> 
 #include <sys/types.h>
 #include <sys/shm.h>
+#include <time.h>
 #include <unistd.h>
 #include <glib.h>
 #include <string.h>
@@ -40,10 +41,11 @@ uint32_t __afl_prev_loc;
 uint32_t __afl_intc_old_prev_loc;
 bool skip_this_bbl = false;
 
+
 FILE *flog;
 
 uint64_t execed_bbl_count = 0;
-uint32_t max_bbl_exec = 50000;
+uint32_t max_bbl_exec = 100000000;
 
 hwaddr snapshot_point;
 
@@ -146,6 +148,7 @@ void restore_snapshot(struct SNAPSHOT* snap)
 
 void exit_with_code_start_new(int32_t code)
 {
+
     int32_t tmp = code;
     uint32_t record;
     #ifdef DBG
@@ -183,9 +186,9 @@ void exit_with_code_start_new(int32_t code)
     else
         restore_snapshot(org_snap);
     execed_bbl_count = 0;
-    __afl_prev_loc = 0;
+    // __afl_prev_loc = 0;
 
-    read(FORKSRV_CTLFD,&record,4);
+    //read(FORKSRV_CTLFD,&record,4);
 
     #ifdef TRACE_DBG
     if(record)
@@ -282,6 +285,9 @@ void mmio2_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
 
+    
+
+
     #ifdef AFL
     static bool snapped = false;
     if(!snapped && pc == snapshot_point)
@@ -297,11 +303,11 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         exit_with_code_start_new(EXIT_NONE);
         return true;
     }
-    // if(unlikely(execed_bbl_count >= max_bbl_exec))
-    // {
-    //     exit_with_code_start_new(EXIT_TIMEOUT);
-    //     return true;
-    // }
+    if(unlikely(execed_bbl_count >= max_bbl_exec))
+    {
+        exit_with_code_start_new(EXIT_TIMEOUT);
+        return true;
+    }
     if(unlikely(should_exit))  //run out of seed
     {
         exit_with_code_start_new(exit_code);
@@ -309,6 +315,20 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         return true;
     }
     #endif
+
+    // if((rand() % 100) == 1)
+    // {
+    //     GArray* irqs = get_enabled_nvic_irq();
+        
+    //     int irq = g_array_index(irqs, int, rand() % irqs->len);
+    //     //printf("insert irq:%d\n",irq);
+    //     insert_nvic_intc(irq,false);
+    //     g_array_free(irqs,false);
+    //     return true;
+    // }
+    
+    
+
 
     #ifdef DBG
     fprintf(flog,"%d->bbl pc:%p\n",run_time, pc);
@@ -351,13 +371,14 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     #endif
     
     #ifdef AFL
-    if(skip_this_bbl)
-    {
-        skip_this_bbl = false;
-        return false;
-    }
-    __afl_area_ptr[__afl_prev_loc ^ id] ++;
-    __afl_prev_loc = id >> 1;
+    // if(skip_this_bbl)
+    // {
+    //     skip_this_bbl = false;
+    //     return false;
+    // }
+    // __afl_area_ptr[__afl_prev_loc ^ id] ++;
+    // __afl_prev_loc = id >> 1;
+    __afl_area_ptr[id] ++;
     exit_pc = pc;
     execed_bbl_count++;
     #endif
@@ -373,14 +394,14 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
     if(exec_index == EXCP_IRQ)
     {
-        __afl_intc_old_prev_loc = __afl_prev_loc;
-        __afl_prev_loc = 0;
+        // __afl_intc_old_prev_loc = __afl_prev_loc;
+        // __afl_prev_loc = 0;
         return true;
     }
     if(exec_index == EXCP_EXCEPTION_EXIT)
     {
-        __afl_prev_loc = __afl_intc_old_prev_loc;
-        skip_this_bbl = true;
+        // __afl_prev_loc = __afl_intc_old_prev_loc;
+        // skip_this_bbl = true;
         return true;
     }
     
@@ -410,7 +431,7 @@ void post_thread_exec(int exec_ret)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_time, exec_ret,state.regs[15]);
+    fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_t ime, exec_ret,state.regs[15]);
     #endif
 }
 void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
@@ -512,6 +533,7 @@ int main(int argc, char **argv)
 {
     flog = fopen("/tmp/a.txt","w");
     setbuf(flog,0);
+    srand(time(NULL));
     #ifdef AFL
     __afl_map_shm();
     __afl_prev_loc = 0;

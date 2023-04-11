@@ -49,6 +49,20 @@ void xx_insert_nvic_intc(int irq, bool secure)
     }
         
 }
+GArray* xx_get_enabled_nvic_irq()
+{
+    GArray* ret = g_array_new(FALSE, FALSE, sizeof(int));
+    CPUState *cs = qemu_get_cpu(0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    NVICState *nvic_state = cpu->env.nvic;
+    for(int i= 15; i < NVIC_MAX_VECTORS; i ++)
+    {
+	    if(nvic_state->vectors[i].enabled)
+		    g_array_append_val(ret, i);
+    }
+    return ret;
+}
+
 void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
     int i;
