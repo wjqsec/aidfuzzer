@@ -91,6 +91,7 @@ struct XX_MMIORegion
     hwaddr size;
     void *read_cb;
     void *write_cb;
+    void *opaque;
     MemoryRegion *mr;
 };
 
@@ -117,7 +118,7 @@ MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len)
 {
     address_space_write_rom(&address_space_memory,addr,MEMTXATTRS_UNSPECIFIED,buf,len);
 }
-
+/*
 static bool check_mem_overlap(hwaddr start, hwaddr size)
 {
     int i;
@@ -147,6 +148,7 @@ static bool check_mem_addr_and_size(hwaddr start, hwaddr size)
     }
     return true;
 }
+*/
 static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
 {
     MemoryRegion *mr = NULL;
@@ -156,6 +158,13 @@ static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
         if(start >= xx_ram_regions[i].start && start + size <= xx_ram_regions[i].start + xx_ram_regions[i].size)
         {
             mr = xx_ram_regions[i].mr;
+        }
+    }
+    for(i=0; i < xx_num_rom_regions;i++)
+    {   
+        if(start >= xx_rom_regions[i].start && start + size <= xx_rom_regions[i].start + xx_rom_regions[i].size)
+        {   
+            mr = xx_rom_regions[i].mr;
         }
     }
     for(i=0; i < xx_num_mmio_regions;i++)
@@ -172,46 +181,127 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
 {
     if(xx_num_ram_regions >= XX_MEM_REGIONS_MAX)
         return;
+    /*
     if(check_mem_overlap(start,size))
         return;
     if(!check_mem_addr_and_size(start,size))
         return;
+    */
+
+    MemoryRegion *ram_space = get_system_memory();
+    MemoryRegion *mmio_space = get_system_io();
+    
+
+    
+    MemoryRegion *mr = g_new0(MemoryRegion, 1);
+    memory_region_init_ram(mr,NULL,name,size,0);
+    memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
+    memory_region_reset_dirty(mr, 0, size, DIRTY_MEMORY_VGA);
+    memory_region_set_readonly(mr, readonly);
+
+    memory_region_add_subregion(ram_space,start,mr);
+    MemoryRegion *old = find_mr_by_addr(start,size);
+    if(old)
+          memory_region_del_subregion(ram_space,old);
+
     xx_ram_regions[xx_num_ram_regions].name = strdup(name);
     xx_ram_regions[xx_num_ram_regions].start = start;
     xx_ram_regions[xx_num_ram_regions].size = size;
     xx_ram_regions[xx_num_ram_regions].readonly = readonly;
+    xx_ram_regions[xx_num_ram_regions].mr = mr;
     xx_num_ram_regions++;
-
+    printf("add ram %x-%x %s readonly:%d\n",start, start+size,name,readonly);
 }
 void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 {
     if(xx_num_rom_regions >= XX_MEM_REGIONS_MAX)
 	    return;
+    /*
     if(check_mem_overlap(start,size))
 	    return;
     if(!check_mem_addr_and_size(start,size))
 	    return;
+    */
+
+    MemoryRegion *ram_space = get_system_memory();
+    MemoryRegion *mmio_space = get_system_io();
+    
+
+    MemoryRegion *mr = g_new0(MemoryRegion, 1);
+    memory_region_init_rom(mr,NULL,name,size,0);
+
+    MemoryRegion *old = find_mr_by_addr(start,size);
+    if(old)
+          memory_region_del_subregion(ram_space,old);
+    memory_region_add_subregion(ram_space,start,mr);
+
     xx_rom_regions[xx_num_rom_regions].name = strdup(name);
     xx_rom_regions[xx_num_rom_regions].start = start;
     xx_rom_regions[xx_num_rom_regions].size = size;
+    xx_rom_regions[xx_num_rom_regions].mr = mr;
     xx_num_rom_regions++;
+    printf("add rom %x-%x %s\n",start, start+size,name);
 }
-void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb)
+void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb,void *opaque)
 {
     if(xx_num_mmio_regions >= XX_MEM_REGIONS_MAX)
         return;
+    /*
     if(check_mem_overlap(start,size))
         return;
     if(!check_mem_addr_and_size(start,size))
         return;
+    */
+
+    MemoryRegion *ram_space = get_system_memory();
+    MemoryRegion *mmio_space = get_system_io();
+
+    struct MemoryRegionOps *ops = g_new0(MemoryRegionOps, 1);
+    ops->read = read_cb;
+    ops->write = write_cb;
+    ops->read_with_attrs = 0;
+    ops->write_with_attrs = 0;
+    ops->endianness = DEVICE_NATIVE_ENDIAN;
+    ops->valid.min_access_size = 1;
+    ops->valid.max_access_size = 8;
+    ops->valid.unaligned = true;
+    ops->valid.accepts = NULL;
+    ops->impl.min_access_size = 1;
+    ops->impl.max_access_size = 8;
+    ops->impl.unaligned = true;
+    MemoryRegion *mr = g_new0(MemoryRegion, 1);
+    memory_region_init_io(mr,NULL,ops,opaque,name,size);
+            //memory_region_add_subregion(mmio_space,xx_mmio_regions[i].start,mr);
+        // memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
+        // memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
+    
+    MemoryRegion *old = find_mr_by_addr(start,size);
+    if(old)
+          memory_region_del_subregion(ram_space,old);
+    memory_region_add_subregion(ram_space,start,mr);
+
+
     xx_mmio_regions[xx_num_mmio_regions].name = strdup(name);
     xx_mmio_regions[xx_num_mmio_regions].start = start;
     xx_mmio_regions[xx_num_mmio_regions].size = size;
     xx_mmio_regions[xx_num_mmio_regions].read_cb = read_cb;
     xx_mmio_regions[xx_num_mmio_regions].write_cb = write_cb;
+    xx_mmio_regions[xx_num_mmio_regions].opaque = opaque;
+    xx_mmio_regions[xx_num_mmio_regions].mr = mr;
     xx_num_mmio_regions++;
+    printf("add mmio %x-%x %s\n",start, start+size,name);
 }
-
+/*
+void xx_modify_mmio_cb(hwaddr start, hwaddr size, void* mmio_read_cb, void* mmio_write_cb,void * opaque)
+{
+	MemoryRegion *mr = find_mr_by_addr(start,size);
+	if (! mr || !mr->ops)
+		return;
+	mr->opaque = opaque;
+	mr->ops->read = mmio_read_cb;
+	mr->ops->write = mmio_write_cb;
+}
+*/
 RAMBlock *qemu_get_ram_block(ram_addr_t addr);
 void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
 {
@@ -228,8 +318,8 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 {
     int num_page_in_byte = 0;
     hwaddr page_size = TARGET_PAGE_BITS == 0 ? 4 << 10 : 1 << TARGET_PAGE_BITS;
-    if(!check_mem_addr_and_size(addr,size))
-        return;
+    //if(!check_mem_addr_and_size(addr,size))
+    //    return;
     MemoryRegion *mr = find_mr_by_addr(addr,size);
     if(!mr)
         return;
@@ -246,7 +336,7 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 void xx_init_mem(MachineState *machine)
 {
 
-                
+    return;      
     MemoryRegion *ram_space = get_system_memory();
     MemoryRegion *mmio_space = get_system_io();
     int i;
@@ -285,7 +375,7 @@ void xx_init_mem(MachineState *machine)
         ops->impl.max_access_size = 8;
         ops->impl.unaligned = true;
         MemoryRegion *mr = g_new0(MemoryRegion, 1);
-        memory_region_init_io(mr,NULL,ops,NULL,xx_mmio_regions[i].name,xx_mmio_regions[i].size);
+        memory_region_init_io(mr,NULL,ops,xx_mmio_regions[i].opaque,xx_mmio_regions[i].name,xx_mmio_regions[i].size);
 	    //memory_region_add_subregion(mmio_space,xx_mmio_regions[i].start,mr);
         // memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
         // memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
@@ -299,10 +389,15 @@ void xx_init_mem(MachineState *machine)
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
+    CPUState *cpu = qemu_get_cpu(0);
+    tlb_flush(cpu);
+
 }
 void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 {
     exec_ins_icmp_func = cb;
+    CPUState *cpu = qemu_get_cpu(0);
+    tlb_flush(cpu);
 }
 
 

@@ -16,9 +16,8 @@
 
 //#define DBG
 //#define CRASH_DBG
-//#define EXIT_DBG
 //#define TRACE_DBG
-#define AFL
+//#define AFL
 
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
@@ -38,16 +37,15 @@
 
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
-uint32_t __afl_intc_old_prev_loc;
-bool skip_this_bbl = false;
 
+int irq_level = 0;
 
 FILE *flog;
 
 uint64_t execed_bbl_count = 0;
-uint32_t max_bbl_exec = 100000000;
+uint32_t max_bbl_exec = 100000;
 
-hwaddr snapshot_point;
+
 
 bool should_exit = false;
 uint32_t exit_code = 0;
@@ -56,7 +54,7 @@ uint64_t exit_pc;
 
 GArray* bbl_records;
 
-uint32_t run_time;
+uint32_t run_index;
 void __afl_map_shm(void) {
 
   char *id_str = getenv("__AFL_SHM_ID");
@@ -68,23 +66,23 @@ void __afl_map_shm(void) {
 
 }
 
-
-struct MEM_SEG
+struct SNAPSHOT_MEM_SEG
 {
     uint8_t *data;
     hwaddr start;
     uint32_t len;
 };
-struct SNAPSHOT
+struct ARMM_SNAPSHOT
 {
     #define NUM_MEM_SNAPSHOT 5
-    struct MEM_SEG mems[NUM_MEM_SNAPSHOT];
+    struct SNAPSHOT_MEM_SEG mems[NUM_MEM_SNAPSHOT];
     void *arm_ctx;
 };
-struct SNAPSHOT *org_snap, *new_snap;
-struct SNAPSHOT* take_snapshot()
+
+struct ARMM_SNAPSHOT *org_snap, *new_snap;
+struct ARMM_SNAPSHOT* arm_take_snapshot()
 {
-    struct SNAPSHOT *snap = (struct SNAPSHOT*)malloc(sizeof(struct SNAPSHOT));
+    struct ARMM_SNAPSHOT *snap = (struct ARMM_SNAPSHOT*)malloc(sizeof(struct ARMM_SNAPSHOT));
     snap->arm_ctx = save_arm_ctx_state();
     snap->mems[0].len = 0;
     snap->mems[1].len = 0;
@@ -113,7 +111,8 @@ struct SNAPSHOT* take_snapshot()
 
     return snap;    
 }
-void restore_snapshot(struct SNAPSHOT* snap)
+
+void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
 {
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
@@ -146,14 +145,16 @@ void restore_snapshot(struct SNAPSHOT* snap)
     }
 }
 
+
 void exit_with_code_start_new(int32_t code)
 {
 
     int32_t tmp = code;
     uint32_t record;
+
     #ifdef DBG
-    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_time, tmp,exit_pc);
-    run_time++;
+    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, tmp,exit_pc);
+    run_index++;
     #endif
 
     #ifdef CRASH_DBG
@@ -172,22 +173,16 @@ void exit_with_code_start_new(int32_t code)
     #endif
 
 
-    
-
-    #ifdef EXIT_DBG
-    fprintf(flog,"exit_code = %x pc = %x\n",tmp,exit_pc);
-    #endif
-
     write(FORKSRV_CTLFD+1 , &tmp,4);
     write(FORKSRV_CTLFD+1 , &exit_info,4);
     write(FORKSRV_CTLFD+1 , &exit_pc,4);        
     if(new_snap)
-        restore_snapshot(new_snap);
+        arm_restore_snapshot(new_snap);
     else
-        restore_snapshot(org_snap);
+        arm_restore_snapshot(org_snap);
     execed_bbl_count = 0;
     // __afl_prev_loc = 0;
-
+    // irq_level = 0;
     //read(FORKSRV_CTLFD,&record,4);
 
     #ifdef TRACE_DBG
@@ -203,7 +198,7 @@ void exit_with_code_start_new(int32_t code)
     }
     #endif
 
-    read(FORKSRV_CTLFD,&tmp,4);
+    read(FORKSRV_CTLFD,&tmp,4);  // start new run
     
     
 }
@@ -213,14 +208,14 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint64_t ret = 0;
     #ifdef AFL
 
-    static bool snapped = false;
-    if(!snapped)
-    {
-        struct ARM_CPU_STATE state;
-        get_arm_cpu_state(&state);
-        snapshot_point = state.regs[15];
-        snapped = true;
-    }
+    // static bool snapped = false;
+    // if(!snapped)
+    // {
+    //     struct ARM_CPU_STATE state;
+    //     get_arm_cpu_state(&state);
+    //     snapshot_point = state.regs[15];
+    //     snapped = true;
+    // }
 
     static uint8_t buf[32];
     uint8_t  type_recv;
@@ -249,7 +244,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio read pc:%p offset:%x val:%x\n",run_time, state.regs[15],addr,ret);
+    fprintf(flog,"%d->mmio read pc:%p offset:%x val:%x\n",run_index, state.regs[15],addr,ret);
     #endif
 
     return ret;
@@ -260,49 +255,23 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_time, state.regs[15],addr,data);
+    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, state.regs[15],addr,data);
     #endif
-}
-
-uint64_t mmio1_read(void *opaque,hwaddr offset,unsigned size)
-{
-    return mmio_read_common(opaque,offset + 0x40000000, size);
-}
-uint64_t mmio2_read(void *opaque,hwaddr offset,unsigned size)
-{
-    return mmio_read_common(opaque,offset + 0x1e0000, size);
-}
-void mmio1_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
-{
-    return mmio_write_common(opaque,offset + 0x40000000,data,size);
-}
-void mmio2_write(void *opaque,hwaddr offset,uint64_t data,unsigned size)
-{
-    return mmio_write_common(opaque,offset + 0x1e0000,data,size);
 }
 
 
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
+    #ifdef AFL
+    // static bool snapped = false;
+    // if(!snapped && pc == snapshot_point)
+    // {
+    //     new_snap = arm_take_snapshot();
+    //     //max_bbl_exec = 50000;
+    //     snapped = true;
+    // }
 
     
-
-
-    #ifdef AFL
-    static bool snapped = false;
-    if(!snapped && pc == snapshot_point)
-    {
-        new_snap = take_snapshot();
-        //max_bbl_exec = 50000;
-        snapped = true;
-    }
-
-    if(unlikely(pc == 0x8002FCC))  //fail function reached
-    {
-        
-        exit_with_code_start_new(EXIT_NONE);
-        return true;
-    }
     if(unlikely(execed_bbl_count >= max_bbl_exec))
     {
         exit_with_code_start_new(EXIT_TIMEOUT);
@@ -316,22 +285,41 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     }
     #endif
 
-    // if((rand() % 100) == 1)
-    // {
-    //     GArray* irqs = get_enabled_nvic_irq();
+    if((rand() % 100000) == 1)
+    {
+        GArray* irqs = get_enabled_nvic_irq();
+        int irq = g_array_index(irqs, int, rand() % irqs->len);
         
-    //     int irq = g_array_index(irqs, int, rand() % irqs->len);
-    //     //printf("insert irq:%d\n",irq);
-    //     insert_nvic_intc(irq,false);
-    //     g_array_free(irqs,false);
+        insert_nvic_intc(irq,false);
+        g_array_free(irqs,false);
+        return true;
+    }
+    // static int old = 0;
+    // GArray* irqs = get_enabled_nvic_irq();
+
+    // if(irqs->len != old)
+    // {
+    //     old = irqs->len;
+    //     printf("irq bbl:%x  %d\n",pc,old);
+    // }
+    // g_array_free(irqs,false);
+    // if(unlikely(pc == 0x8002FC2))  //fail function reached
+    // {
+        
+    //     GArray* irqs = get_enabled_nvic_irq();
+    //     printf("irqs:");
+    //     for (int i = 0; i < irqs->len; i++) 
+    //     {
+    //        printf("%-8d ",g_array_index(irqs, int, i));
+    //     }
+    //     printf("\n");
     //     return true;
     // }
-    
     
 
 
     #ifdef DBG
-    fprintf(flog,"%d->bbl pc:%p\n",run_time, pc);
+    fprintf(flog,"%d->bbl pc:%p\n",run_index, pc);
 
     // static printed =false;
     // uint32_t tt1 = 55;
@@ -362,7 +350,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     //     read_ram(state.regs[13] + 8,4, &sp2);
     //     read_ram(0x200010A0,4, &mem1);
     //     read_ram(state.regs[0] + 4,4, &mem2);
-    //     fprintf(flog,"%d->what pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x [mem1]=%x [mem2]=%x\n",run_time,
+    //     fprintf(flog,"%d->what pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x [mem1]=%x [mem2]=%x\n",run_index,
     //             state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],state.regs[13], sp0, sp1,sp2,
     //             mem1,mem2
     //             );
@@ -396,12 +384,14 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     {
         // __afl_intc_old_prev_loc = __afl_prev_loc;
         // __afl_prev_loc = 0;
+        irq_level++;
         return true;
     }
     if(exec_index == EXCP_EXCEPTION_EXIT)
     {
         // __afl_prev_loc = __afl_intc_old_prev_loc;
         // skip_this_bbl = true;
+        irq_level--;
         return true;
     }
     
@@ -427,7 +417,6 @@ void post_thread_exec(int exec_ret)
 {
     insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
 
-    printf("post exec\n");
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
@@ -437,10 +426,11 @@ void post_thread_exec(int exec_ret)
 void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
 {
     #ifdef DBG
-    fprintf(flog,"%d->ins icmp pc:%p\n",run_time, pc);
+    fprintf(flog,"%d->ins icmp pc:%p\n",run_index, pc);
     #endif
 }
 
+/*
 int run_example(int argc, char **argv)
 {
     uint32_t tmp; 
@@ -471,7 +461,7 @@ int run_example(int argc, char **argv)
     init_simulator(simulator);
     load_file_ram("/root/fuzzer/xxfuzzer/framework/mbed-os-example-blinky.bin",0, 0,0x80000);
     reset_arm_reg();
-    take_snapshot();
+    arm_take_snapshot();
 
     #ifdef AFL
     write(FORKSRV_CTLFD+1 , &tmp,4);
@@ -480,36 +470,96 @@ int run_example(int argc, char **argv)
 
     exec_simulator(simulator);
 }
+*/
+uint64_t mmio_read_1(void *opaque,hwaddr addr,unsigned size)
+{
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    hwaddr pc = state.regs[15];
+    printf("mmio after snap  pc %x\n",pc);
+    exit(0);
+}
+void mmio_write_1(void *opaque,hwaddr addr,uint64_t data,unsigned size)
+{
+    //printf("mmio_write_1 after snapshot\n");
+}
+bool exec_bbl_1(regval pc,uint32_t id)
+{
+    
+}
+
+hwaddr snapshot_point = 0;
+uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
+{
+    static bool found = false;
+    if(!found)
+    {
+        struct ARM_CPU_STATE state;
+        get_arm_cpu_state(&state);
+        snapshot_point = state.regs[15];
+        found = true;
+    }
+    
+    return 0;
+    
+}
+void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
+
+bool arm_cpu_do_interrupt_snap(int32_t exec_index)
+{
+    // struct ARM_CPU_STATE state;
+    // get_arm_cpu_state(&state);
+    // hwaddr pc = state.regs[15];
+    // printf("crash pc  index:%x  %d\n",pc,exec_index);
+}
+bool exec_bbl_snapshot(regval pc,uint32_t id)
+{
+
+    static bool returned = false;
+    if(snapshot_point == pc)
+    {
+        
+        printf("finally here\n");
+        // register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
+        // register_post_thread_exec_hook(post_thread_exec);
+        //register_exec_bbl_hook(exec_bbl_1);
+        add_mmio_region("mmio234",0x40000000, 0x20000000, mmio_read_1, mmio_write_1,(void*)0x40000000);
+        add_mmio_region("mmio345",0x1e0000, 0x10000,mmio_read_1,mmio_write_1,(void*)0x1e0000);
+       
+        new_snap = arm_take_snapshot();
+        #ifdef AFL
+        uint32_t tmp; 
+        write(FORKSRV_CTLFD+1 , &tmp,4);
+        read(FORKSRV_CTLFD,&tmp,4);
+        #endif
+        return false;
+    }
+    else if(snapshot_point && !returned)
+    {
+        arm_restore_snapshot(org_snap);
+        returned = true;
+        return true;
+    }
+    return false;
+}
+
+
 
 int run_3dprinter(int argc, char **argv)
 {
-    
-    
-    
     struct Simulator *simulator;
     simulator = create_simulator(ARM,false);
-    
-    
+
+    set_armv7_vecbase(0x8000000);
+    init_simulator(simulator);
+
     add_ram_region("zero",0, 0x1000,false);
     add_ram_region("ram",0x20000000, 0x20000,false);
     add_rom_region("rom",0x8000000,0x14000);
     add_ram_region("text",0x8014000, 0x3000,false);  
     
-    add_mmio_region("mmio",0x40000000, 0x20000000, mmio1_read, mmio2_write);
-    add_mmio_region("mmio2",0x1e0000, 0x10000,mmio2_read,mmio2_write);
-
-    set_armv7_vecbase(0x8000000);
-
-    register_exec_bbl_hook(arm_exec_bbl);
-    register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
-    register_post_thread_exec_hook(post_thread_exec);
-
-    init_simulator(simulator);
-    
- 
     load_file_rom("/home/w/hd/iofuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8000000,0,0x14000);
     load_file_ram("/home/w/hd/iofuzzer/xxfuzzer/framework/uEmu.3Dprinter.bin",0x8014000,0x14000,0x3000);
-
 
     uint8_t *buf = (uint8_t *)malloc(0x1000);
     memset(buf,0,0x1000);
@@ -519,13 +569,14 @@ int run_3dprinter(int argc, char **argv)
     
 
     reset_arm_reg();
-    org_snap = take_snapshot();
-    #ifdef AFL
-    uint32_t tmp; 
-    write(FORKSRV_CTLFD+1 , &tmp,4);
-    read(FORKSRV_CTLFD,&tmp,4);
-    #endif
+    
+    
+    register_exec_bbl_hook(exec_bbl_snapshot);
+    register_arm_do_interrupt_hook(arm_cpu_do_interrupt_snap);
+    add_mmio_region("mmio",0x40000000, 0x20000000, mmio_read_snapshot, mmio_write_snapshot,(void*)0x40000000);
+    add_mmio_region("mmio2",0x1e0000, 0x10000,mmio_read_snapshot,mmio_write_snapshot,(void*)0x1e0000);
 
+    org_snap = arm_take_snapshot();
     exec_simulator(simulator);
 }
 

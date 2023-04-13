@@ -84,6 +84,8 @@ struct ARM_CPU_STATE
     uint32_t regs[16]; 
     uint64_t xregs[32];
 };
+
+
 typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
 void get_arm_cpu_state(struct ARM_CPU_STATE *state);
 void set_arm_cpu_state(struct ARM_CPU_STATE *state);
@@ -123,12 +125,16 @@ MemTxResult write_ram(hwaddr addr, hwaddr size, void *buf);  //will make the pag
 MemTxResult read_ram(hwaddr addr, hwaddr size, void *buf);
 void add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly);
 void add_rom_region(char *name,hwaddr start, hwaddr size);
-void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb);
+void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
+//void modify_mmio_cb(hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
 void load_file_ram(char *filename,hwaddr addr, int file_offset, int size);
 void load_file_rom(char *filename,hwaddr addr, int file_offset, int size);
 int target_pagesize();
 void clear_dirty_mem(hwaddr start, hwaddr size);
 void get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
+
+
+
 
 
 

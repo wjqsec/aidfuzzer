@@ -53,7 +53,7 @@ using namespace std;
 #define ACK 0x4
 
 #define DEFAULT_STREAM_LEN 0x100
-#define DEFAULT_STATUS_STREAM_LEN 0x10000
+#define DEFAULT_STATUS_STREAM_LEN 0x100000
 #define MAX_STREAM_LEN 0x1000000
 
 
@@ -345,8 +345,11 @@ struct queue_entry
     u32 exit_outofseed;
     u32 exit_timeout;
     u32 exit_crash;
+
+    u32 num_mmio;
+    u32 exit_seed;
     
-#define DEFAULT_PRIORITY 1000
+#define DEFAULT_PRIORITY 1
     s32 priority;
 
 };
@@ -372,7 +375,7 @@ struct FuzzState
 
     vector<queue_entry*> *entries;
 
-    
+    s32 total_priority;
 };
 
 
@@ -400,7 +403,7 @@ inline input_stream *new_stream(u32 id, char *file)
   else
   {
     stream->backup_file = 0;
-    if(id == 0x40013800)
+    if(id == 0x40013800 || id == 0x40004400)
     {
       stream->data = (u8*)malloc(DEFAULT_STATUS_STREAM_LEN);
       stream->len = DEFAULT_STATUS_STREAM_LEN;
@@ -457,6 +460,8 @@ queue_entry* copy_queue(FuzzState *state,queue_entry* q)
   entry->exit_outofseed = 0;
   entry->exit_timeout = 0;
   entry->id = id++;
+  entry->num_mmio = 0;
+  entry->exit_seed = 0;
   return entry;
 }
 
@@ -499,6 +504,7 @@ void fuzzer_init(FuzzState *state, u32 map_size)
 
     state->pfds[1].fd = state->fd_data_fromserver;
     state->pfds[1].events = POLLIN;
+    state->total_priority = 0;
     init_count_class16();
 
 }
@@ -552,6 +558,7 @@ void dispatch_req(FuzzState *state,queue_entry* entry)
 
   if(type_recv == FUZZ_REQ)
   {
+    entry->num_mmio++;
     read(state->fd_data_fromserver, &len, 4);
     read(state->fd_data_fromserver, &mmio_id_recv, 4);
     input_stream *stream;
@@ -566,6 +573,7 @@ void dispatch_req(FuzzState *state,queue_entry* entry)
     {
       len = -1;
       write(state->fd_data_toserver,&len, 4);
+      entry->exit_seed = mmio_id_recv;
     }
     else
     {
@@ -585,11 +593,11 @@ void show_stat(FuzzState *state)
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   printf("[%d] total exec times:%d edges:%d\n",get_cur_time() / 1000, state->total_exec,edges);
   printf("-----------queue details-----------\n");
-  printf("id        depth           edges           #streams           prio               favorate             none      seed      timeout   crash     exit_pc   exec_times\n");
+  printf("id        depth     bbls      #streams  prio      favorate  none      seed      timeout   crash     exit_pc   exit_seed num_mmio  exec_times\n");
   int count = state->entries->size();
   for(int i = 0; i < count; i++)
   {
-    printf("%-3d        %-4d           %-10d           %-10d    %-10d         %-10x           %-10d%-10d%-10d%-10d%-10x%-10d\n",
+    printf("%-10d%-10d%-10d%-10d%-10d%-10x%-10d%-10d%-10d%-10d%-10x%-10x%-10d%-10d\n",
     (*state->entries)[i]->id,
     (*state->entries)[i]->depth,
     (*state->entries)[i]->edges,
@@ -598,6 +606,8 @@ void show_stat(FuzzState *state)
     (*state->entries)[i]->favorate_stream ? (*state->entries)[i]->favorate_stream->id : 0,
     (*state->entries)[i]->exit_none,(*state->entries)[i]->exit_outofseed,(*state->entries)[i]->exit_timeout,(*state->entries)[i]->exit_crash,
     (*state->entries)[i]->exit_pc,
+    (*state->entries)[i]->exit_seed,
+    (*state->entries)[i]->num_mmio,
     (*state->entries)[i]->fuzz_times);
   }
 
@@ -630,6 +640,7 @@ s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)//
   s32 exit_code;
   //u32 record = 0;
   //u64 start_time = get_cur_time();
+  entry->num_mmio = 0;
   memset(state->trace_bits,0,state->map_size);
   fork_server_runonce(state);
 
@@ -672,20 +683,20 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
   {
     //state->exit_none++;
     entry->exit_none++;
-    entry->priority--;
+
   }
   if(exit_code == EXIT_TIMEOUT)
   {
     //state->exit_timeout++;
     entry->exit_timeout++;
-    entry->priority-- ;  
+
   }
   
   if(exit_code == EXIT_OUTOFSEED)
   {
     //state->exit_outofseed++; 
     entry->exit_outofseed++; 
-    entry->priority-- ;
+
     
   }
   if(exit_info != 0)
@@ -699,7 +710,9 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     queue_entry* q = copy_queue(state,entry);
     //q->exec_time = end_time - start_time;
     q->edges = count_bytes(state->trace_bits, state->map_size);
-    q->priority = DEFAULT_PRIORITY * q->edges;
+    //q->priority = DEFAULT_PRIORITY * q->edges;
+    q->priority = DEFAULT_PRIORITY * q->streams->size();
+    state->total_priority += q->priority;
     q->exit_pc = exit_pc;
     state->entries->push_back(q);
     show_stat(state);
@@ -712,6 +725,7 @@ void reset_queue(queue_entry* q)
   {
     it->second->used = 0;
   }
+
 }
 
 void free_queue(FuzzState *state,queue_entry* q)
@@ -867,18 +881,19 @@ void havoc(FuzzState *state, input_stream* stream)
 }
 queue_entry* select_entry(FuzzState *state)
 {
-  s32 max_priority = (*state->entries)[0]->priority;
-  int max_index = 0;
-  int count = state->entries->size();
-  for(int i = 1; i < count; i ++)
+  s32 random_number =  UR(state->total_priority);
+  s32 weight_sum = 0;
+  for(int i = 0; i < state->entries->size(); i++)
   {
-    if((*state->entries)[i]->priority > max_priority)
+    weight_sum += (*state->entries)[i]->priority;
+    if(random_number < weight_sum)
     {
-      max_priority = (*state->entries)[i]->priority;
-      max_index = i;
+      return (*state->entries)[i];
     }
   }
-  return (*state->entries)[max_index];
+  fatal("select entry error\n");
+  // not reachable
+  return NULL;
 }
 void fuzz_loop(FuzzState *state)
 { 
@@ -895,7 +910,7 @@ void fuzz_loop(FuzzState *state)
         tmp_streams.clear();
         if(entry->favorate_stream)
         {
-          if(UR(10) > 2)
+          if(UR(10) > 6)
           {
             tmp_streams.push_back(entry->favorate_stream);
           }
@@ -925,11 +940,12 @@ void fuzz_loop(FuzzState *state)
           exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
           fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
           memcpy(stream->data, org_buf, len); 
-          reset_queue(entry);
+          
           if((state->total_exec % 10) == 0)
           {
             show_stat(state);
           }
+          reset_queue(entry);
         }   
       }
     }

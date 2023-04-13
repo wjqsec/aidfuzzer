@@ -11,6 +11,7 @@ pre_thread_exec_cb pre_thread_exec_func;
 post_thread_exec_cb post_thread_exec_func;
 
 
+
 typedef void (*qemu_init_ptr)(int,char **);
 qemu_init_ptr qemu_init;
 
@@ -32,7 +33,7 @@ xx_ram_rw_ptr xx_ram_rw;
 typedef void (*xx_add_ram_regions_ptr)(char *name,hwaddr start, hwaddr size, bool readonly);
 xx_add_ram_regions_ptr xx_add_ram_regions;
 
-typedef void (*xx_add_mmio_regions_ptr)(char *name, hwaddr start, hwaddr size, void *mmio_read_cb, void *mmio_write_cb);
+typedef void (*xx_add_mmio_regions_ptr)(char *name, hwaddr start, hwaddr size, void *mmio_read_cb, void *mmio_write_cb, void *opaque);
 xx_add_mmio_regions_ptr xx_add_mmio_regions;
 
 typedef bool (*main_loop_should_exit_ptr)(int *status);
@@ -58,6 +59,9 @@ xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
 
 typedef void (*xx_add_rom_region_ptr)(char *name,hwaddr start, hwaddr size);
 xx_add_rom_region_ptr xx_add_rom_region;
+
+// typedef void (*xx_modify_mmio_cb_ptr)(hwaddr start, hwaddr size, void * mmio_read_cb, void * mmio_write_cb,void * opaque);
+// xx_modify_mmio_cb_ptr xx_modify_mmio_cb;
 //------------------------x86
 typedef void (*xx_register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
 xx_register_x86_cpu_do_interrupt_hook_ptr xx_register_x86_cpu_do_interrupt_hook;
@@ -205,6 +209,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     xx_target_pagesize = dlsym(handle, "xx_target_pagesize");
     xx_register_exec_ins_icmp_hook = dlsym(handle, "xx_register_exec_ins_icmp_hook");
     xx_add_rom_region = dlsym(handle, "xx_add_rom_region");
+    //xx_modify_mmio_cb = dlsym(handle, "xx_modify_mmio_cb");
     switch (cpu_type)
     {
         case X86:
@@ -285,10 +290,14 @@ void add_rom_region(char *name,hwaddr start, hwaddr size)
 {
     xx_add_rom_region(name,start,size);
 }
-void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read_cb, mmio_write_cb write_cb)
+void add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read_cb, mmio_write_cb write_cb, void *opaque)
 {
-    xx_add_mmio_regions(name,start,size,read_cb,write_cb);
+    xx_add_mmio_regions(name,start,size,read_cb,write_cb,opaque);
 }
+// void modify_mmio_cb(hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque)
+// {
+//     xx_modify_mmio_regions(start,size,mmio_read_cb,mmio_write_cb,opaque);
+// }
 void register_pre_thread_exec_hook(pre_thread_exec_cb cb)
 {
     pre_thread_exec_func = cb;
@@ -382,4 +391,9 @@ void init_simulator(struct Simulator * s)
     }
     qemu_init(argc, args_qemu);
 }
+
+
+
+
+
 

@@ -1091,7 +1091,7 @@ void memory_region_transaction_commit(void)
     AddressSpace *as;
 
     assert(memory_region_transaction_depth);
-    assert(qemu_mutex_iothread_locked());
+    //assert(qemu_mutex_iothread_locked());
 
     --memory_region_transaction_depth;
     if (!memory_region_transaction_depth) {
@@ -1749,7 +1749,6 @@ static void memory_region_finalize(Object *obj)
     MemoryRegion *mr = MEMORY_REGION(obj);
 
     assert(!mr->container);
-
     /* We know the region is not visible in any address space (it
      * does not have a container and cannot be a root either because
      * it has no references, so we can blindly clear mr->enabled.

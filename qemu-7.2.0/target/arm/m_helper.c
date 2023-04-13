@@ -2199,6 +2199,7 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     CPUARMState *env = &cpu->env;
     uint32_t lr;
     bool ignore_stackfaults;
+
     bool should_continue = true;
     if(do_arm_interrupt_func)
 	    should_continue = do_arm_interrupt_func(cs->exception_index);
