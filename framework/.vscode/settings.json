@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "xtree": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "utility": "cpp"
     }
 }

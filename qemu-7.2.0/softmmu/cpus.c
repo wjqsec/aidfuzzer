@@ -497,18 +497,22 @@ bool qemu_in_main_thread(void)
  */
 void qemu_mutex_lock_iothread_impl(const char *file, int line)
 {
+    /*
     QemuMutexLockFunc bql_lock = qatomic_read(&qemu_bql_mutex_lock_func);
 
-    g_assert(!qemu_mutex_iothread_locked());
     bql_lock(&qemu_global_mutex, file, line);
+    */
+    g_assert(!qemu_mutex_iothread_locked());
     set_iothread_locked(true);
 }
 
 void qemu_mutex_unlock_iothread(void)
 {
     g_assert(qemu_mutex_iothread_locked());
-    set_iothread_locked(false);
+    /*
     qemu_mutex_unlock(&qemu_global_mutex);
+    */
+    set_iothread_locked(false);
 }
 
 void qemu_cond_wait_iothread(QemuCond *cond)

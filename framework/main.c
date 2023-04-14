@@ -15,9 +15,9 @@
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
 //#define DBG
-//#define CRASH_DBG
+#define CRASH_DBG
 //#define TRACE_DBG
-//#define AFL
+#define AFL
 
 #define FORKSRV_CTLFD          198
 #define FORKSRV_DATAFD          200
@@ -176,11 +176,9 @@ void exit_with_code_start_new(int32_t code)
     write(FORKSRV_CTLFD+1 , &tmp,4);
     write(FORKSRV_CTLFD+1 , &exit_info,4);
     write(FORKSRV_CTLFD+1 , &exit_pc,4);        
-    if(new_snap)
-        arm_restore_snapshot(new_snap);
-    else
-        arm_restore_snapshot(org_snap);
+    arm_restore_snapshot(new_snap);
     execed_bbl_count = 0;
+    exit_info = 0;
     // __afl_prev_loc = 0;
     // irq_level = 0;
     //read(FORKSRV_CTLFD,&record,4);
@@ -205,17 +203,9 @@ void exit_with_code_start_new(int32_t code)
 
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
+    addr = (hwaddr)opaque + addr;
     uint64_t ret = 0;
     #ifdef AFL
-
-    // static bool snapped = false;
-    // if(!snapped)
-    // {
-    //     struct ARM_CPU_STATE state;
-    //     get_arm_cpu_state(&state);
-    //     snapshot_point = state.regs[15];
-    //     snapped = true;
-    // }
 
     static uint8_t buf[32];
     uint8_t  type_recv;
@@ -228,14 +218,12 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     memcpy(buf+5, &mmio_id_send,4);
     write(FORKSRV_DATAFD+1 , buf, 9);
     read(FORKSRV_DATAFD,&len,4);
-    exit_info = mmio_id_send;
     if(len == -1)
     {
+        
         should_exit = true;
         exit_code = EXIT_OUTOFSEED;
-        // struct ARM_CPU_STATE state;
-        // get_arm_cpu_state(&state);
-        // exit_pc = state.regs[15];
+        exit_info = mmio_id_send;
         return ret;
     }
     read(FORKSRV_DATAFD,&ret,len);
@@ -252,6 +240,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
 void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 {
+    addr = (hwaddr)opaque + addr;
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
@@ -263,14 +252,6 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
     #ifdef AFL
-    // static bool snapped = false;
-    // if(!snapped && pc == snapshot_point)
-    // {
-    //     new_snap = arm_take_snapshot();
-    //     //max_bbl_exec = 50000;
-    //     snapped = true;
-    // }
-
     
     if(unlikely(execed_bbl_count >= max_bbl_exec))
     {
@@ -285,24 +266,8 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     }
     #endif
 
-    if((rand() % 100000) == 1)
-    {
-        GArray* irqs = get_enabled_nvic_irq();
-        int irq = g_array_index(irqs, int, rand() % irqs->len);
-        
-        insert_nvic_intc(irq,false);
-        g_array_free(irqs,false);
-        return true;
-    }
-    // static int old = 0;
-    // GArray* irqs = get_enabled_nvic_irq();
+    
 
-    // if(irqs->len != old)
-    // {
-    //     old = irqs->len;
-    //     printf("irq bbl:%x  %d\n",pc,old);
-    // }
-    // g_array_free(irqs,false);
     // if(unlikely(pc == 0x8002FC2))  //fail function reached
     // {
         
@@ -359,17 +324,24 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     #endif
     
     #ifdef AFL
-    // if(skip_this_bbl)
-    // {
-    //     skip_this_bbl = false;
-    //     return false;
-    // }
-    // __afl_area_ptr[__afl_prev_loc ^ id] ++;
-    // __afl_prev_loc = id >> 1;
+
     __afl_area_ptr[id] ++;
     exit_pc = pc;
     execed_bbl_count++;
+
+    if((execed_bbl_count & 0x1ff) == 0)
+    {
+        GArray* irqs = get_enabled_nvic_irq();
+        int irq = g_array_index(irqs, int, rand() % irqs->len);
+            insert_nvic_intc(irq,false);
+        // if(irq != 15 && irq != 53&& irq != 44 && irq != 36 && irq != 35)  
+        //     printf("irq:%d\n",irq);
+        g_array_free(irqs,false);
+        return false;
+    }
+
     #endif
+
     #ifdef TRACE_DBG
     g_array_append_val(bbl_records, pc);
     #endif 
@@ -380,6 +352,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
+    /*
     if(exec_index == EXCP_IRQ)
     {
         // __afl_intc_old_prev_loc = __afl_prev_loc;
@@ -394,14 +367,11 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
         irq_level--;
         return true;
     }
-    
-    if(exec_index == EXCP_SWI)
+    */
+    if(exec_index == EXCP_SWI || exec_index == EXCP_IRQ || exec_index == EXCP_EXCEPTION_EXIT)
     {
         return true;
     }
-        
-   
-    
 
     #ifdef AFL
     // struct ARM_CPU_STATE tmp_state;
@@ -471,22 +441,6 @@ int run_example(int argc, char **argv)
     exec_simulator(simulator);
 }
 */
-uint64_t mmio_read_1(void *opaque,hwaddr addr,unsigned size)
-{
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
-    hwaddr pc = state.regs[15];
-    printf("mmio after snap  pc %x\n",pc);
-    exit(0);
-}
-void mmio_write_1(void *opaque,hwaddr addr,uint64_t data,unsigned size)
-{
-    //printf("mmio_write_1 after snapshot\n");
-}
-bool exec_bbl_1(regval pc,uint32_t id)
-{
-    
-}
 
 hwaddr snapshot_point = 0;
 uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
@@ -499,32 +453,21 @@ uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
         snapshot_point = state.regs[15];
         found = true;
     }
-    
     return 0;
     
 }
 void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
 
-bool arm_cpu_do_interrupt_snap(int32_t exec_index)
-{
-    // struct ARM_CPU_STATE state;
-    // get_arm_cpu_state(&state);
-    // hwaddr pc = state.regs[15];
-    // printf("crash pc  index:%x  %d\n",pc,exec_index);
-}
 bool exec_bbl_snapshot(regval pc,uint32_t id)
 {
-
     static bool returned = false;
     if(snapshot_point == pc)
     {
-        
-        printf("finally here\n");
-        // register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
-        // register_post_thread_exec_hook(post_thread_exec);
-        //register_exec_bbl_hook(exec_bbl_1);
-        add_mmio_region("mmio234",0x40000000, 0x20000000, mmio_read_1, mmio_write_1,(void*)0x40000000);
-        add_mmio_region("mmio345",0x1e0000, 0x10000,mmio_read_1,mmio_write_1,(void*)0x1e0000);
+        register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
+        register_post_thread_exec_hook(post_thread_exec);
+        register_exec_bbl_hook(arm_exec_bbl);
+        add_mmio_region("mmio234",0x40000000, 0x20000000, mmio_read_common, mmio_write_common,(void*)0x40000000);
+        add_mmio_region("mmio345",0x1e0000, 0x10000,mmio_read_common,mmio_write_common,(void*)0x1e0000);
        
         new_snap = arm_take_snapshot();
         #ifdef AFL
@@ -566,13 +509,10 @@ int run_3dprinter(int argc, char **argv)
     write_ram(0,0x1000,buf);
     free(buf);
 
-    
-
     reset_arm_reg();
     
     
     register_exec_bbl_hook(exec_bbl_snapshot);
-    register_arm_do_interrupt_hook(arm_cpu_do_interrupt_snap);
     add_mmio_region("mmio",0x40000000, 0x20000000, mmio_read_snapshot, mmio_write_snapshot,(void*)0x40000000);
     add_mmio_region("mmio2",0x1e0000, 0x10000,mmio_read_snapshot,mmio_write_snapshot,(void*)0x1e0000);
 

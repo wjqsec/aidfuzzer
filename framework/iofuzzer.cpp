@@ -375,7 +375,7 @@ struct FuzzState
 
     vector<queue_entry*> *entries;
 
-    s32 total_priority;
+    //s32 total_priority;
 };
 
 
@@ -413,7 +413,7 @@ inline input_stream *new_stream(u32 id, char *file)
     {
       stream->data = (u8*)malloc(DEFAULT_STREAM_LEN);
       stream->len = DEFAULT_STREAM_LEN;
-      memset(stream->data,0x80,stream->len);
+      memset(stream->data,0,stream->len);
     }
     
   }
@@ -504,7 +504,7 @@ void fuzzer_init(FuzzState *state, u32 map_size)
 
     state->pfds[1].fd = state->fd_data_fromserver;
     state->pfds[1].events = POLLIN;
-    state->total_priority = 0;
+    //state->total_priority = 0;
     init_count_class16();
 
 }
@@ -696,13 +696,12 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
   {
     //state->exit_outofseed++; 
     entry->exit_outofseed++; 
-
-    
+    if(exit_info != 0)
+    {
+      entry->favorate_stream = (*entry->streams)[exit_info];
+    }
   }
-  if(exit_info != 0)
-  {
-    entry->favorate_stream = (*entry->streams)[exit_info];
-  }
+  
   entry->exit_pc = exit_pc;
   if(unlikely(r == 2))
   {
@@ -711,8 +710,8 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     //q->exec_time = end_time - start_time;
     q->edges = count_bytes(state->trace_bits, state->map_size);
     //q->priority = DEFAULT_PRIORITY * q->edges;
-    q->priority = DEFAULT_PRIORITY * q->streams->size();
-    state->total_priority += q->priority;
+    //q->priority = DEFAULT_PRIORITY * q->streams->size();
+    //state->total_priority += q->priority;
     q->exit_pc = exit_pc;
     state->entries->push_back(q);
     show_stat(state);
@@ -881,7 +880,17 @@ void havoc(FuzzState *state, input_stream* stream)
 }
 queue_entry* select_entry(FuzzState *state)
 {
-  s32 random_number =  UR(state->total_priority);
+  s32 total_priority = 0;
+  for(int i = 0; i < state->entries->size(); i++)
+  {
+    (*state->entries)[i]->priority = (*state->entries)[i]->streams->size(); //+ ((*state->entries)[i]->edges / 10);
+    // if((*state->entries)[i]->exit_outofseed > (*state->entries)[i]->exit_timeout)
+    //   (*state->entries)[i]->priority *= 1.5;
+    total_priority += (*state->entries)[i]->priority;
+  }
+
+
+  s32 random_number =  UR(total_priority);
   s32 weight_sum = 0;
   for(int i = 0; i < state->entries->size(); i++)
   {
@@ -908,26 +917,16 @@ void fuzz_loop(FuzzState *state)
       //for (int i = 0 ; i < 10 ; i++)
       {
         tmp_streams.clear();
-        if(entry->favorate_stream)
+        for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
         {
-          if(UR(10) > 6)
+          if(it->second == entry->favorate_stream)
           {
-            tmp_streams.push_back(entry->favorate_stream);
+            for(int j = 0 ; j < 10 ;j ++)
+              tmp_streams.push_back(it->second);
           }
           else
-          {
-            for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
-            {
-              tmp_streams.push_back(it->second);
-            }
-          }
-        }
-        else
-        {
-          for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
-          {
             tmp_streams.push_back(it->second);
-          }
+          
         }
 
         for(input_stream *stream : tmp_streams)
@@ -941,7 +940,7 @@ void fuzz_loop(FuzzState *state)
           fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
           memcpy(stream->data, org_buf, len); 
           
-          if((state->total_exec % 10) == 0)
+          if((state->total_exec % 500) == 0)
           {
             show_stat(state);
           }
