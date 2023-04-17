@@ -2,6 +2,9 @@
     "files.associations": {
         "algorithm": "cpp",
         "*.inc": "c",
-        "vector": "cpp"
+        "vector": "cpp",
+        "xtree": "cpp",
+        "utility": "cpp",
+        "set": "cpp"
     }
 }

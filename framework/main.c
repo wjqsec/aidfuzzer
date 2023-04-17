@@ -329,16 +329,16 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     exit_pc = pc;
     execed_bbl_count++;
 
-    if((execed_bbl_count & 0x1ff) == 0)
-    {
-        GArray* irqs = get_enabled_nvic_irq();
-        int irq = g_array_index(irqs, int, rand() % irqs->len);
-            insert_nvic_intc(irq,false);
-        // if(irq != 15 && irq != 53&& irq != 44 && irq != 36 && irq != 35)  
-        //     printf("irq:%d\n",irq);
-        g_array_free(irqs,false);
-        return false;
-    }
+    // if((execed_bbl_count & 0x1ff) == 0)
+    // {
+    //     GArray* irqs = get_enabled_nvic_irq();
+    //     int irq = g_array_index(irqs, int, rand() % irqs->len);
+    //         insert_nvic_intc(irq,false);
+    //     // if(irq != 15 && irq != 53&& irq != 44 && irq != 36 && irq != 35)  
+    //     //     printf("irq:%d\n",irq);
+    //     g_array_free(irqs,false);
+    //     return false;
+    // }
 
     #endif
 
