@@ -34,7 +34,7 @@
 #define FUZZ_OUTPUT 0x3
 #define ACK 0x4
 
-
+uint8_t *__afl_share_data;
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
@@ -55,6 +55,58 @@ uint64_t exit_pc;
 GArray* bbl_records;
 
 uint32_t run_index;
+
+struct SHARED_STREAMS
+{
+    uint32_t stream_id;
+    uint32_t len;
+    uint32_t *used;
+    uint8_t *data;
+};
+GArray* streams;
+uint32_t* num_new_streams;
+uint32_t* new_streams;
+void collect_streams()
+{
+    struct SHARED_STREAMS *stream;
+    for (int i = 0; i < streams->len; i++) 
+    {
+        stream = g_array_index(streams, struct SHARED_STREAMS*, i);
+        free(stream);
+    }
+    g_array_set_size(streams, 0);
+    
+    uint32_t len = *(uint32_t*)__afl_share_data;
+    uint8_t *ptr = __afl_share_data + 4;
+    for(int i = 0; i < len;i++)
+    {
+        stream = (struct SHARED_STREAMS *)malloc(sizeof(struct SHARED_STREAMS));
+        stream->stream_id = *(uint32_t*)ptr;
+        stream->len = *(uint32_t*)(ptr+4);
+        stream->used = (uint32_t*)(ptr+8);
+        stream->data = (uint8_t*)(ptr+12);
+        ptr += 12 + stream->len;
+    }
+    num_new_streams = (uint32_t*)ptr;
+    new_streams = num_new_streams + 1;
+    *num_new_streams = 0;
+
+}
+struct SHARED_STREAMS* find_stream(uint32_t stream_id)
+{
+    struct SHARED_STREAMS *ret = NULL, *tmp;
+    for (int i = 0; i < streams->len; i++) 
+    {
+        tmp = g_array_index(streams, struct SHARED_STREAMS*, i);
+        if(tmp->stream_id == stream_id)
+        {
+            ret = tmp;
+            break;
+        }
+    }
+    return ret;
+}
+
 void __afl_map_shm(void) {
 
   char *id_str = getenv("__AFL_SHM_ID");
@@ -62,6 +114,13 @@ void __afl_map_shm(void) {
     uint32_t shm_id = atoi(id_str);
     __afl_area_ptr = shmat(shm_id, NULL, 0);
     if (__afl_area_ptr == (void *)-1) _exit(1);
+  }
+
+  id_str = getenv("__AFL_SHM_SHARE");
+  if (id_str) {
+    uint32_t shm_id = atoi(id_str);
+    __afl_share_data = shmat(shm_id, NULL, 0);
+    if (__afl_share_data == (void *)-1) _exit(1);
   }
 
 }
@@ -149,16 +208,16 @@ void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
 void exit_with_code_start_new(int32_t code)
 {
 
-    int32_t tmp = code;
+    int32_t tmp;
     uint32_t record;
 
     #ifdef DBG
-    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, tmp,exit_pc);
+    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, code,exit_pc);
     run_index++;
     #endif
 
     #ifdef CRASH_DBG
-    if(tmp == EXIT_CRASH)
+    if(code == EXIT_CRASH)
     {
         struct ARM_CPU_STATE state;
         get_arm_cpu_state(&state);
@@ -172,10 +231,11 @@ void exit_with_code_start_new(int32_t code)
     }
     #endif
 
-
-    write(FORKSRV_CTLFD+1 , &tmp,4);
-    write(FORKSRV_CTLFD+1 , &exit_info,4);
-    write(FORKSRV_CTLFD+1 , &exit_pc,4);        
+    static uint32_t buf[128];
+    buf[0] = code;
+    buf[1] = exit_info;
+    buf[2] = exit_pc;
+    write(FORKSRV_CTLFD+1 , buf,12);        
     arm_restore_snapshot(new_snap);
     execed_bbl_count = 0;
     exit_info = 0;
@@ -207,26 +267,34 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint64_t ret = 0;
     #ifdef AFL
 
-    static uint8_t buf[32];
-    uint8_t  type_recv;
     int32_t len;
-    uint32_t mmio_id_send = addr & 0xfffffff0;
+    uint32_t stream_id = addr & 0xfffffff0;
     
-    buf[0] = FUZZ_REQ;
-    len = size;
-    memcpy(buf+1, &len, 4);
-    memcpy(buf+5, &mmio_id_send,4);
-    write(FORKSRV_DATAFD+1 , buf, 9);
-    read(FORKSRV_DATAFD,&len,4);
-    if(len == -1)
+    struct SHARED_STREAMS* stream =  find_stream(stream_id);
+    if(!stream)
     {
-        
-        should_exit = true;
-        exit_code = EXIT_OUTOFSEED;
-        exit_info = mmio_id_send;
-        return ret;
+        new_streams[*num_new_streams] = stream_id;
+        (*num_new_streams)++;
     }
-    read(FORKSRV_DATAFD,&ret,len);
+    else
+    {
+        if(stream->len - *stream->used < size)
+        {
+            
+            should_exit = true;
+            exit_code = EXIT_OUTOFSEED;
+            exit_info = stream_id;
+            return ret;
+        }
+        else
+        {
+            memcpy(&ret,stream->data + *stream->used,size);
+            *stream->used += size;
+        }
+    }
+    
+    
+    
     #endif
 
     #ifdef DBG
@@ -526,6 +594,7 @@ int main(int argc, char **argv)
     setbuf(flog,0);
     srand(time(NULL));
     #ifdef AFL
+    streams = g_array_new(FALSE, FALSE, sizeof(struct SHARED_STREAMS*));
     __afl_map_shm();
     __afl_prev_loc = 0;
     #endif

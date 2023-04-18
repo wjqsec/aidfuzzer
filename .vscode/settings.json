@@ -5,6 +5,9 @@
         "vector": "cpp",
         "xtree": "cpp",
         "utility": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "initializer_list": "cpp",
+        "xstring": "cpp",
+        "xutility": "cpp"
     }
 }
