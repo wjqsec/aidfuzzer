@@ -17,6 +17,8 @@
 #include <sys/shm.h>
 #include <fcntl.h>              /* Definition of O_* constants */
 #include <sys/stat.h>
+#include <execinfo.h>
+#include <signal.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #define SHM_ENV_VAR         "__AFL_SHM_ID"
@@ -50,7 +52,6 @@ using namespace std;
 #define ACK 0x4
 
 #define DEFAULT_STREAM_LEN 0x100
-#define DEFAULT_STATUS_STREAM_LEN 0x10000
 #define MAX_STREAM_LEN 0x1000000
 
 
@@ -108,6 +109,7 @@ void init_count_class16(void) {
   count_class_lookup8[2] = 2;
   count_class_lookup8[3] = 4;
   int i;
+  
   for(i = 4;i <= 7; i++)
     count_class_lookup8[i] = 8;
   for(i = 8;i <= 15; i++)
@@ -118,6 +120,7 @@ void init_count_class16(void) {
     count_class_lookup8[i] = 64;
   for(i = 128;i <= 255; i++)
     count_class_lookup8[i] = 128;
+  
 
   u32 b1, b2;
 
@@ -349,6 +352,19 @@ inline static u64 get_cur_time(void) {
   return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
 
 }
+void handler(int sig) {
+  void *array[10];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 10);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
+
 
 struct input_stream
 {
@@ -373,8 +389,6 @@ struct queue_entry
     u64 exit_outofseed;
     u64 exit_timeout;
     u64 exit_crash;
-
-    u32 exit_info; // out of seed
 
     u32 num_mmio;
 #define DEFAULT_PRIORITY 1
@@ -402,6 +416,7 @@ struct FuzzState
     u8 *temp_compressed_bits;
 
     int cpu;
+    int sync_times;
 };
 
 #define ENTRY_MUTEX_MEM_SIZE 1024
@@ -412,7 +427,10 @@ char *in_dir, *out_dir;
 
 s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc);
 void free_queue(queue_entry* q);
-void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_info, u32 exit_pc);
+bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_info, u32 exit_pc);
+void reset_queue(queue_entry* q);
+
+
 inline input_stream *new_stream(u32 id, char *file)
 {
   input_stream *stream = new input_stream();
@@ -427,7 +445,7 @@ inline input_stream *new_stream(u32 id, char *file)
       fatal("unable to access backup file\n");
     }
     FILE *fd = fopen(file,"rb");
-    stream->len = st.st_size > MAX_STREAM_LEN ? MAX_STREAM_LEN : st.st_size;
+    stream->len = st.st_size;
     stream->data = (u8*)malloc(stream->len);
     
     fread(stream->data,stream->len,1,fd);
@@ -435,17 +453,18 @@ inline input_stream *new_stream(u32 id, char *file)
   }
   else
   {
-    if(id == 0x40013800 || id == 0x40004400)
-    {
-      stream->data = (u8*)malloc(DEFAULT_STATUS_STREAM_LEN);
-      stream->len = DEFAULT_STATUS_STREAM_LEN;
-      memset(stream->data,0x80,stream->len);
-    }
-    else
+    // if(id == 0x40013800 || id == 0x40004400)
+    // {
+    //   stream->data = (u8*)malloc(DEFAULT_STATUS_STREAM_LEN);
+    //   stream->len = DEFAULT_STATUS_STREAM_LEN;
+    //   memset(stream->data,0x80,stream->len);
+    // }
+    // else
     {
       stream->data = (u8*)malloc(DEFAULT_STREAM_LEN);
       stream->len = DEFAULT_STREAM_LEN;
-      memset(stream->data,0,stream->len);
+      for(int i = 0 ; i < (stream->len >> 2) ; i++)
+        ((u32*)stream->data)[i] = 0xffffffff;// UR(0XFFFFFFFF);
     }
     
   }
@@ -482,7 +501,6 @@ queue_entry* copy_queue(queue_entry* q)
   entry->exit_timeout = 0;
 
   entry->num_mmio = 0;
-  entry->exit_info = 0;
   return entry;
 }
 
@@ -537,6 +555,8 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
     state->cksums = new set<u32>();
     state->temp_compressed_bits = (u8*)malloc(state->map_size >> 3);
 
+    state->sync_times = 0;
+
 }
 inline void fork_server_up(FuzzState *state)
 {
@@ -551,12 +571,13 @@ inline void fork_server_runonce(FuzzState *state)
     write(state->fd_ctl_toserver, &tmp,4);
 }
 
-s32 fork_server_getexit(FuzzState *state,u32 *exit_info, u32 *exit_pc)
+s32 fork_server_getexit(FuzzState *state,u32 *exit_info, u32 *exit_pc, u32 *num_mmio)
 {
     static s32 buf[128];
-    read(state->fd_ctl_fromserver, buf,12);
+    read(state->fd_ctl_fromserver, buf,16);
     *exit_info = buf[1];
     *exit_pc = buf[2];
+    *num_mmio = buf[3];
     return buf[0];
 }
 
@@ -577,37 +598,59 @@ void run_controlled_process(int argc,char *old_argv[])
 	}
 }
 
-void copy_fuzz_data(FuzzState *state,queue_entry* entry)
+void copy_fuzz_data(FuzzState *state,queue_entry* entry,u32** num_new_streams,u32** new_streams)
 {
+  u32* num_streams_ptr = (u32*)state->shared_data;
+  *num_streams_ptr = entry->streams->size();
+  u8 *ptr = state->shared_data + 4;
+  for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
+  {
+    
+    *(uint32_t*)ptr = it->second->id;
+    *(uint32_t*)(ptr+4) = it->second->len;
+    *(uint32_t*)(ptr+8) = it->second->used;
+    memcpy(ptr+12,it->second->data,it->second->len);
+    ptr += 12 + it->second->len;
+  }
+  *num_new_streams = (u32*)ptr;
+  *new_streams = (u32*)(ptr + 4);
   
 }
-
+void sync_undiscovered_streams(queue_entry* entry,u32* num_new_streams,u32* new_streams)
+{
+  for(int i = 0; i < *num_new_streams ; i++)
+  {
+    input_stream *stream = new_stream(new_streams[i],nullptr);
+    entry->streams->insert({new_streams[i] , stream});
+  }
+}
 void show_stat(FuzzState *state)
 {
+  if(state->cpu != 0)
+    return;
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
-  printf("[%d][%d] total exec %d edges:%d\n",state->cpu,get_cur_time() / 1000, state->total_exec, edges);
-  printf("-----------queue details-----------\n");
-  printf("id        depth     bbls      #streams  prio      favorate  none      seed      timeout   crash     exit_pc   exit_seed num_mmio  exec_times\n");
-  int count = state->entries->size();
-  for(int i = 0; i < count; i++)
-  {
-    printf("%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d%-10d%-10d%-10x%-10x%-10d%-10d\n",
-    (*state->entries)[i]->cksum,
-    (*state->entries)[i]->depth,
-    (*state->entries)[i]->edges,
-    (*state->entries)[i]->streams->size(),
-    (*state->entries)[i]->priority,
-    (*state->entries)[i]->favorate_stream ? (*state->entries)[i]->favorate_stream : 0,
-    (*state->entries)[i]->exit_none ,
-    (*state->entries)[i]->exit_outofseed ,
-    (*state->entries)[i]->exit_timeout ,
-    (*state->entries)[i]->exit_crash ,
-    (*state->entries)[i]->exit_pc,
-    (*state->entries)[i]->exit_info,
-    (*state->entries)[i]->num_mmio,
-    (*state->entries)[i]->fuzz_times);
-  }
-
+  
+  // printf("-----------queue details-----------\n");
+  // printf("id        depth     bbls      #streams  prio      favorate  none      seed      timeout   crash     exit_pc   num_mmio  exec_times\n");
+  // int count = state->entries->size();
+  // for(int i = 0; i < count; i++)
+  // {
+  //   printf("%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d\n",
+  //   (*state->entries)[i]->cksum,
+  //   (*state->entries)[i]->depth,
+  //   (*state->entries)[i]->edges,
+  //   (*state->entries)[i]->streams->size(),
+  //   (*state->entries)[i]->priority,
+  //   (*state->entries)[i]->favorate_stream ? (*state->entries)[i]->favorate_stream : 0,
+  //   (*state->entries)[i]->exit_none ,
+  //   (*state->entries)[i]->exit_outofseed ,
+  //   (*state->entries)[i]->exit_timeout ,
+  //   (*state->entries)[i]->exit_crash ,
+  //   (*state->entries)[i]->exit_pc,
+  //   (*state->entries)[i]->num_mmio,
+  //   (*state->entries)[i]->fuzz_times);
+  // }
+  printf("[%d][%d] total exec %d sync:%d edges:%d paths:%d\n",state->cpu,get_cur_time() / 1000, state->total_exec,state->sync_times, edges,state->entries->size());
   
 }
 void save_crash(queue_entry* entry)
@@ -760,6 +803,7 @@ void sync_entries(FuzzState *state)
   }
   closedir(dir);
   pthread_mutex_unlock(entry_mutex);
+  state->sync_times++;
   if(out.size() == 0)
     out.push_back(copy_queue(nullptr));
   for(queue_entry *entry : out)
@@ -770,36 +814,52 @@ void sync_entries(FuzzState *state)
   }
   
 }
+void try_increased_stream(FuzzState *state,queue_entry* entry,input_stream *stream)
+{
+  s32 old_len = stream->len;
+  u32 exit_info,exit_pc;
+  s32 exit_code;
+  int found_new = 0;
 
+  s32 len = old_len << 1;
+  if(len >= MAX_STREAM_LEN)
+    return;
+  stream->data = (u8*)realloc(stream->data,len);
+  stream->len = len;
+  for(int i = (old_len >> 2) ; i < (len >> 2) ; i++)
+  {
+    ((u32*)stream->data)[i] = 0xffffffff;//UR(0XFFFFFFFF);
+  }
 
+  exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
+
+  found_new = fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
+
+  if(!found_new)
+  {
+    stream->data =  (u8*)realloc(stream->data,old_len);
+    stream->len = old_len;
+  }
+
+}
 s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
 {
   s32 exit_code;
-  entry->num_mmio = 0;
+  u32* num_new_streams;
+  u32* new_streams;
+  u32 num_mmio;
   memset(state->trace_bits,0,state->map_size);
-  copy_fuzz_data(state,entry);
+  reset_queue(entry);
+  copy_fuzz_data(state,entry,&num_new_streams,&new_streams);
+
   fork_server_runonce(state);
-  
-  while(1)
-  {
-    int ready = poll(state->pfds, 2, -1);
-    if (ready == -1)
-      fatal("poll error\n");
-    if(state->pfds[0].revents & POLLIN)
-    {
-      exit_code = fork_server_getexit(state,exit_info,exit_pc);
-      break;
-    }
-    if(state->pfds[1].revents & POLLIN)
-    {
-      //dispatch_req(state,entry);
-    }
-  }
-  
+  exit_code = fork_server_getexit(state,exit_info,exit_pc,&num_mmio);
+  sync_undiscovered_streams(entry,num_new_streams,new_streams);
+  entry->num_mmio = num_mmio;
   return exit_code;
   
 }
-void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_info, u32 exit_pc)
+bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_info, u32 exit_pc)
 {
   classify_counts((u64*)state->trace_bits,state->map_size);
   int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size);
@@ -810,7 +870,7 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
   {
     entry->exit_crash++;
     save_crash(entry);
-    return;
+    return false;
   }
   
   if(exit_code == EXIT_NONE)
@@ -832,18 +892,20 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     }
   }
   
-  if(unlikely(r == 2))
+  if(unlikely(r))
   {
     queue_entry* q = copy_queue(entry);
     q->edges = count_bytes(state->trace_bits, state->map_size);
     minimize_bits(state->temp_compressed_bits,state->trace_bits,state->map_size);
-    q->cksum = hash32(state->temp_compressed_bits,state->map_size >> 3);
+    q->cksum = hash32(state->temp_compressed_bits,state->map_size >> 2);
+    
     state->entries->push_back(q);
     save_entry(q);
     state->cksums->insert(q->cksum);
     show_stat(state);
+    return true;
   }
-
+  return false;
 }
 void reset_queue(queue_entry* q)
 {
@@ -875,10 +937,10 @@ void free_queue(queue_entry* q)
   } while (0)
 void havoc(FuzzState *state, input_stream* stream)
 {
-  #define HAVOC_STACK 8
+  #define HAVOC_STACK 32
   #define HAVOC_TOKEN 20
   #define ARITH_MAX   35
-  u32 use_stacking = 1 + UR(HAVOC_STACK);
+  u32 use_stacking = 1 + UR(stream->len >> 2);
   s32 len = stream->len;
   u8 *data = stream->data;
   if(len  <= 8 )
@@ -981,7 +1043,7 @@ void havoc(FuzzState *state, input_stream* stream)
         // *tmp = *it;
         s32* tmp1 = (s32*)(data + UR(len - 7));
         s32* tmp2 = (s32*)(data + UR(len - 3));
-        *tmp1 = *tmp2 = UR(2);
+        *tmp1 = *tmp2 = UR(0xffffffff);
       } 
       default:
       break;
@@ -990,7 +1052,6 @@ void havoc(FuzzState *state, input_stream* stream)
 }
 queue_entry* select_entry(FuzzState *state)
 {
-  
   s32 total_priority = 0;
   for(int i = 0; i < state->entries->size(); i++)
   {
@@ -1019,13 +1080,13 @@ void fuzz_loop(FuzzState *state, int cpu)
     u32 exit_info,exit_pc;
     s32 exit_code;
     cpu_set_t  mask;
+    state->cpu = cpu;
     CPU_ZERO(&mask);
     CPU_SET(cpu, &mask);
     sched_setaffinity(0, sizeof(mask), &mask);
-    state->cpu = cpu;
+    
     fork_server_up(state);
     sync_entries(state);
-    show_stat(state);
     u8 *org_buf = (u8 *)malloc(MAX_STREAM_LEN);
     vector<struct input_stream *> tmp_streams;
     while(1)
@@ -1053,14 +1114,15 @@ void fuzz_loop(FuzzState *state, int cpu)
           exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
           fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
           memcpy(stream->data, org_buf, len); 
-          reset_queue(entry);
+          if(exit_code == EXIT_OUTOFSEED)
+            try_increased_stream(state,entry,(*entry->streams)[exit_info]);
         }
 
         rounds++;   
       }
-      if((rounds & 0xffff) == 0)
+      if((rounds & 0xff) == 0)
         sync_entries(state);
-      if((rounds & 0xfff) == 0)
+      if((rounds & 0xff) == 0)
         show_stat(state);
     }
     
@@ -1104,6 +1166,7 @@ int main(int argc, char **argv)
   init_dir(argc,argv);
   init_shared_mutex();
   init_count_class16();
+  
   long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
   for(int i = 0; i < number_of_processors; i++)
   {
@@ -1113,7 +1176,7 @@ int main(int argc, char **argv)
     else if(pid == 0)
     {
       FuzzState state;
-      fuzzer_init(&state,1 << 16, 50 << 20);
+      fuzzer_init(&state,1 << 16, 100 << 20);
       run_controlled_process(argc,argv);
       fuzz_loop(&state,i);
     }

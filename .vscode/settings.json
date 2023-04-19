@@ -8,6 +8,8 @@
         "set": "cpp",
         "initializer_list": "cpp",
         "xstring": "cpp",
-        "xutility": "cpp"
+        "xutility": "cpp",
+        "random": "cpp",
+        "type_traits": "cpp"
     }
 }
