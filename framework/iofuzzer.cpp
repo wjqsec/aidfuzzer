@@ -809,13 +809,17 @@ void sync_entries(FuzzState *state)
   for(queue_entry *entry : out)
   {
     exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
+
     fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
+
     free_queue(entry);
   }
+
   
 }
 void try_increased_stream(FuzzState *state,queue_entry* entry,input_stream *stream)
 {
+
   s32 old_len = stream->len;
   u32 exit_info,exit_pc;
   s32 exit_code;
@@ -841,6 +845,7 @@ void try_increased_stream(FuzzState *state,queue_entry* entry,input_stream *stre
     stream->len = old_len;
   }
 
+
 }
 s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
 {
@@ -861,6 +866,7 @@ s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
 }
 bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_info, u32 exit_pc)
 {
+
   classify_counts((u64*)state->trace_bits,state->map_size);
   int r = has_new_bits_update_virgin(state->virgin_bits, state->trace_bits, state->map_size);
   state->total_exec++;
@@ -898,13 +904,15 @@ bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     q->edges = count_bytes(state->trace_bits, state->map_size);
     minimize_bits(state->temp_compressed_bits,state->trace_bits,state->map_size);
     q->cksum = hash32(state->temp_compressed_bits,state->map_size >> 2);
-    
+
     state->entries->push_back(q);
     save_entry(q);
     state->cksums->insert(q->cksum);
     show_stat(state);
+
     return true;
   }
+
   return false;
 }
 void reset_queue(queue_entry* q)
@@ -940,7 +948,7 @@ void havoc(FuzzState *state, input_stream* stream)
   #define HAVOC_STACK 32
   #define HAVOC_TOKEN 20
   #define ARITH_MAX   35
-  u32 use_stacking = 1 + UR(stream->len >> 2);
+  u32 use_stacking = 1 + UR(stream->len >> 3);
   s32 len = stream->len;
   u8 *data = stream->data;
   if(len  <= 8 )
@@ -948,6 +956,11 @@ void havoc(FuzzState *state, input_stream* stream)
 
   for (s32 i = 0; i < use_stacking; i++) 
   {
+    if(stream->id == 0xffffffff)   //for irq
+    {
+      data[UR(len)] = UR(0xf0) + 15;
+      continue;
+    }
     switch (UR(HAVOC_TOKEN))
     {
       case 0:
@@ -1062,6 +1075,7 @@ queue_entry* select_entry(FuzzState *state)
   }
   s32 random_number =  UR(total_priority);
   s32 weight_sum = 0;
+  
   for(int i = 0; i < state->entries->size(); i++)
   {
     weight_sum += (*state->entries)[i]->priority;
@@ -1084,9 +1098,10 @@ void fuzz_loop(FuzzState *state, int cpu)
     CPU_ZERO(&mask);
     CPU_SET(cpu, &mask);
     sched_setaffinity(0, sizeof(mask), &mask);
-    
+
     fork_server_up(state);
     sync_entries(state);
+
     u8 *org_buf = (u8 *)malloc(MAX_STREAM_LEN);
     vector<struct input_stream *> tmp_streams;
     while(1)
@@ -1105,14 +1120,17 @@ void fuzz_loop(FuzzState *state, int cpu)
           else
             tmp_streams.push_back(it->second);
         }
+
         for(input_stream *stream : tmp_streams)
         {
           
           s32 len = stream->len;  
           memcpy(org_buf, stream->data, len);
           havoc(state, stream);
+
           exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
           fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
+
           memcpy(stream->data, org_buf, len); 
           if(exit_code == EXIT_OUTOFSEED)
             try_increased_stream(state,entry,(*entry->streams)[exit_info]);
@@ -1167,7 +1185,8 @@ int main(int argc, char **argv)
   init_shared_mutex();
   init_count_class16();
   
-  long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
+  //long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
+  long number_of_processors = 1;
   for(int i = 0; i < number_of_processors; i++)
   {
     int pid = fork();

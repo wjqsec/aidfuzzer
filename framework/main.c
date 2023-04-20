@@ -41,8 +41,9 @@ uint32_t __afl_prev_loc;
 int irq_level = 0;
 
 FILE *flog;
+FILE *f_crash_log;
 
-uint64_t execed_bbl_count = 0;
+uint64_t execed_bbl_count = 1;
 uint32_t max_bbl_exec = 100000;
 
 
@@ -225,20 +226,7 @@ void exit_with_code_start_new(int32_t code)
     run_index++;
     #endif
 
-    #ifdef CRASH_DBG
-    if(code == EXIT_CRASH)
-    {
-        struct ARM_CPU_STATE state;
-        get_arm_cpu_state(&state);
-        uint32_t sp0, sp1,sp2;
-        read_ram(state.regs[13],4, &sp0);
-        read_ram(state.regs[13] + 4,4, &sp1);
-        read_ram(state.regs[13] + 8,4, &sp2);
-        fprintf(flog,"crash pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
-        state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
-        state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
-    }
-    #endif
+    
 
     static uint32_t buf[128];
     buf[0] = code;
@@ -247,7 +235,7 @@ void exit_with_code_start_new(int32_t code)
     buf[3] = num_mmio;
     write(FORKSRV_CTLFD+1 , buf,16);        
     arm_restore_snapshot(new_snap);
-    execed_bbl_count = 0;
+    execed_bbl_count = 1;
     exit_info = 0;
     num_mmio = 0;
     // __afl_prev_loc = 0;
@@ -351,48 +339,45 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         should_exit = false;
         return true;
     }
+    if((execed_bbl_count & 0xfff) == 0 && !irq_level)
+    {
+        struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
+        if(!stream)
+        {
+            if(!discovered_stream(0xffffffff))
+            {
+                new_streams[*num_new_streams] = 0xffffffff;
+                (*num_new_streams)++;
+            }
+            exit_info = 0xffffffff;
+            exit_with_code_start_new(EXIT_OUTOFSEED);
+        }
+        else
+        {
+            if(stream->len - *stream->used < 1)
+            {
+                exit_info = 0xffffffff;
+                exit_with_code_start_new(EXIT_OUTOFSEED);
+            }
+            else
+            {
+                insert_nvic_intc(stream->data[*stream->used],false);
+                *stream->used += 1;
+            }
+        
+        }
+        // GArray* irqs = get_enabled_nvic_irq();
+        // int irq = g_array_index(irqs, int, rand() % irqs->len);
+        //     insert_nvic_intc(irq,false);
+        // g_array_free(irqs,false);
+        return false;
+    }
     #endif
 
     
 
     #ifdef DBG
     fprintf(flog,"%d->bbl pc:%p\n",run_index, pc);
-
-    // static printed =false;
-    // uint32_t tt1 = 55;
-    // uint32_t tt2 = 0;
-    // uint32_t tt3 = 0;
-    // uint32_t tt4 = 0;
-    // uint32_t tt5 = 0;
-    // if(pc == 0x0800CE18)
-    // {
-    //     read_ram(0x80133a0,4, &tt1);
-    //     read_ram(0x80133a0 + 4,4, &tt2);
-    //     read_ram(0x80133a0 + 8,4, &tt3);
-    //     read_ram(0x80133a0 + 0xc,4, &tt4);
-    //     read_ram(0x80133a0 + 0x10,4, &tt5);
-    //     printf("%x  %x  %x  %x  %x\n",tt1,tt2,tt3,tt4,tt5);
-
-    // }
-    
-    
-    // if(pc == 0x8000598)
-    // {
-    //     struct ARM_CPU_STATE state;
-    //     get_arm_cpu_state(&state);
-    //     uint32_t sp0, sp1,sp2;
-    //     uint32_t mem1, mem2,mem3;
-    //     read_ram(state.regs[13],4, &sp0);
-    //     read_ram(state.regs[13] + 4,4, &sp1);
-    //     read_ram(state.regs[13] + 8,4, &sp2);
-    //     read_ram(0x200010A0,4, &mem1);
-    //     read_ram(state.regs[0] + 4,4, &mem2);
-    //     fprintf(flog,"%d->what pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x [mem1]=%x [mem2]=%x\n",run_index,
-    //             state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],state.regs[13], sp0, sp1,sp2,
-    //             mem1,mem2
-    //             );
- 
-    // }
     #endif
     
     #ifdef AFL
@@ -403,16 +388,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     exit_pc = pc;
     execed_bbl_count++;
 
-    // if((execed_bbl_count & 0x1ff) == 0)
-    // {
-    //     GArray* irqs = get_enabled_nvic_irq();
-    //     int irq = g_array_index(irqs, int, rand() % irqs->len);
-    //         insert_nvic_intc(irq,false);
-    //     // if(irq != 15 && irq != 53&& irq != 44 && irq != 36 && irq != 35)  
-    //     //     printf("irq:%d\n",irq);
-    //     g_array_free(irqs,false);
-    //     return false;
-    // }
+    
 
     #endif
 
@@ -437,6 +413,17 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
         return true;
     }
 
+    #ifdef CRASH_DBG
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    uint32_t sp0, sp1,sp2;
+    read_ram(state.regs[13],4, &sp0);
+    read_ram(state.regs[13] + 4,4, &sp1);
+    read_ram(state.regs[13] + 8,4, &sp2);
+    fprintf(f_crash_log,"crash index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
+    state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
+    #endif
     #ifdef AFL
     // struct ARM_CPU_STATE tmp_state;
     // get_arm_cpu_state(&tmp_state);
@@ -589,7 +576,9 @@ int run_3dprinter(int argc, char **argv)
 int main(int argc, char **argv)
 {
     flog = fopen("/tmp/a.txt","w");
+    f_crash_log = fopen("/tmp/crash.txt","a");
     setbuf(flog,0);
+    setbuf(f_crash_log,0);
     srand(time(NULL));
     #ifdef AFL
     struct SHARED_STREAMS* stream;
