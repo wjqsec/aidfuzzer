@@ -78,7 +78,6 @@ void collect_streams()
     {
         stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
         stream->stream_id = *(uint32_t*)ptr;
-        
         stream->len = *(uint32_t*)(ptr+4);
         stream->used = (uint32_t*)(ptr+8);
         stream->data = (uint8_t*)(ptr+12);
@@ -233,6 +232,7 @@ void exit_with_code_start_new(int32_t code)
     buf[1] = exit_info;
     buf[2] = exit_pc;
     buf[3] = num_mmio;
+
     write(FORKSRV_CTLFD+1 , buf,16);        
     arm_restore_snapshot(new_snap);
     execed_bbl_count = 1;
@@ -272,6 +272,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint32_t stream_id = addr & 0xfffffff0;
     
     struct SHARED_STREAMS* stream =  find_stream(stream_id);
+
     if(!stream)
     {
         if(!discovered_stream(stream_id))
@@ -300,7 +301,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
         }
     }
     
-    
+
     
     #endif
 
@@ -326,6 +327,7 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 
 bool arm_exec_bbl(regval pc,uint32_t id)
 {
+
     #ifdef AFL
     
     if(unlikely(execed_bbl_count >= max_bbl_exec))
@@ -339,7 +341,8 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         should_exit = false;
         return true;
     }
-    if((execed_bbl_count & 0xfff) == 0 && !irq_level)
+
+    if((execed_bbl_count & 0x1ff) == 0 && !irq_level)
     {
         struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
         if(!stream)
@@ -349,32 +352,26 @@ bool arm_exec_bbl(regval pc,uint32_t id)
                 new_streams[*num_new_streams] = 0xffffffff;
                 (*num_new_streams)++;
             }
-            exit_info = 0xffffffff;
-            exit_with_code_start_new(EXIT_OUTOFSEED);
+            exit_with_code_start_new(EXIT_NONE);
+            return true;
         }
         else
         {
             if(stream->len - *stream->used < 1)
             {
-                exit_info = 0xffffffff;
-                exit_with_code_start_new(EXIT_OUTOFSEED);
+                exit_with_code_start_new(EXIT_NONE);
+                return true;
             }
             else
             {
                 insert_nvic_intc(stream->data[*stream->used],false);
                 *stream->used += 1;
             }
-        
         }
-        // GArray* irqs = get_enabled_nvic_irq();
-        // int irq = g_array_index(irqs, int, rand() % irqs->len);
-        //     insert_nvic_intc(irq,false);
-        // g_array_free(irqs,false);
-        return false;
     }
     #endif
 
-    
+
 
     #ifdef DBG
     fprintf(flog,"%d->bbl pc:%p\n",run_index, pc);
@@ -388,7 +385,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     exit_pc = pc;
     execed_bbl_count++;
 
-    
+
 
     #endif
 
@@ -402,7 +399,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
-    
+
     if(exec_index == EXCP_IRQ)
         irq_level++;
     if(exec_index == EXCP_EXCEPTION_EXIT)
@@ -436,6 +433,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 }
 void post_thread_exec(int exec_ret)
 {
+
     insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
 
     #ifdef DBG

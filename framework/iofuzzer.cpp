@@ -416,6 +416,7 @@ struct FuzzState
     u8 *temp_compressed_bits;
 
     int cpu;
+    int pid;
     int sync_times;
 };
 
@@ -429,6 +430,7 @@ s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc);
 void free_queue(queue_entry* q);
 bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_info, u32 exit_pc);
 void reset_queue(queue_entry* q);
+void save_entry(queue_entry* entry, char *folder);
 
 
 inline input_stream *new_stream(u32 id, char *file)
@@ -560,10 +562,10 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
 }
 inline void fork_server_up(FuzzState *state)
 {
-    printf("wait for fork server\n");
+    printf("pid:%d wait for fork server\n",state->pid);
     s32 tmp;
     read(state->fd_ctl_fromserver, &tmp,4);
-    printf("fork server is up\n");
+    printf("pid:%d fork server is up\n",state->pid);
 }
 inline void fork_server_runonce(FuzzState *state)
 {
@@ -582,7 +584,7 @@ s32 fork_server_getexit(FuzzState *state,u32 *exit_info, u32 *exit_pc, u32 *num_
 }
 
 
-void run_controlled_process(int argc,char *old_argv[])
+int run_controlled_process(int argc,char *old_argv[])
 {
 	pid_t pid;
 	char *child_arg[1000];
@@ -596,6 +598,7 @@ void run_controlled_process(int argc,char *old_argv[])
 	{
 		execv(child_arg[0],child_arg);
 	}
+  return pid;
 }
 
 void copy_fuzz_data(FuzzState *state,queue_entry* entry,u32** num_new_streams,u32** new_streams)
@@ -630,59 +633,34 @@ void show_stat(FuzzState *state)
     return;
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   
-  // printf("-----------queue details-----------\n");
-  // printf("id        depth     bbls      #streams  prio      favorate  none      seed      timeout   crash     exit_pc   num_mmio  exec_times\n");
-  // int count = state->entries->size();
-  // for(int i = 0; i < count; i++)
-  // {
-  //   printf("%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d\n",
-  //   (*state->entries)[i]->cksum,
-  //   (*state->entries)[i]->depth,
-  //   (*state->entries)[i]->edges,
-  //   (*state->entries)[i]->streams->size(),
-  //   (*state->entries)[i]->priority,
-  //   (*state->entries)[i]->favorate_stream ? (*state->entries)[i]->favorate_stream : 0,
-  //   (*state->entries)[i]->exit_none ,
-  //   (*state->entries)[i]->exit_outofseed ,
-  //   (*state->entries)[i]->exit_timeout ,
-  //   (*state->entries)[i]->exit_crash ,
-  //   (*state->entries)[i]->exit_pc,
-  //   (*state->entries)[i]->num_mmio,
-  //   (*state->entries)[i]->fuzz_times);
-  // }
+  printf("-----------queue details-----------\n");
+  printf("id        depth     bbls      #streams  prio      favorate  none      seed      timeout   crash     exit_pc   num_mmio  exec_times\n");
+  int count = state->entries->size();
+  for(int i = 0; i < count; i++)
+  {
+    printf("%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d\n",
+    (*state->entries)[i]->cksum,
+    (*state->entries)[i]->depth,
+    (*state->entries)[i]->edges,
+    (*state->entries)[i]->streams->size(),
+    (*state->entries)[i]->priority,
+    (*state->entries)[i]->favorate_stream ? (*state->entries)[i]->favorate_stream : 0,
+    (*state->entries)[i]->exit_none ,
+    (*state->entries)[i]->exit_outofseed ,
+    (*state->entries)[i]->exit_timeout ,
+    (*state->entries)[i]->exit_crash ,
+    (*state->entries)[i]->exit_pc,
+    (*state->entries)[i]->num_mmio,
+    (*state->entries)[i]->fuzz_times);
+  }
   printf("[%d][%d] total exec %d sync:%d edges:%d paths:%d\n",state->cpu,get_cur_time() / 1000, state->total_exec,state->sync_times, edges,state->entries->size());
   
 }
 void save_crash(queue_entry* entry)
 {
-  return;
-  static int crash_index = 1;
-  time_t current_time;
-  struct tm* time_info;
-  static char time_string[80];
-  time(&current_time);
-  time_info = localtime(&current_time);
-  strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", time_info);
-
-  char crash_filename[PATH_MAX];
-  char crash_folder[PATH_MAX];
-  mkdir(out_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-  sprintf(crash_folder,"%s/%s-%d",out_dir, time_string,crash_index++);
-  mkdir(crash_folder, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-  
-  for (auto it = entry->streams->begin(); it != entry->streams->end(); it++)
-  {
-    sprintf(crash_filename,"%s/%x",crash_folder,it->second->id);
-    FILE *f = fopen(crash_filename,"wb");
-    if(!f)
-    {
-      fatal("crash file open error\n");
-    }
-    fwrite(it->second->data,it->second->used,1,f);
-    fclose(f);
-  }
+  save_entry(entry, out_dir);
 }
-void save_entry(queue_entry* entry)
+void save_entry(queue_entry* entry, char *folder)
 {
   pthread_mutex_lock(entry_mutex);
   char entry_filename[PATH_MAX];
@@ -693,7 +671,7 @@ void save_entry(queue_entry* entry)
   struct dirent* dir_entry;
   bool found_entry = false;
 
-  dir = opendir(in_dir);
+  dir = opendir(folder);
   if (dir == NULL) {
       fatal("opendir error");
   }
@@ -717,7 +695,7 @@ void save_entry(queue_entry* entry)
     return;
   }
 
-  sprintf(entry_folder,"%s/%x",in_dir, entry->cksum);
+  sprintf(entry_folder,"%s/%x",folder, entry->cksum);
   mkdir(entry_folder, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   sprintf(entry_metafilename,"%s/%s",entry_folder, "meta.data");
   
@@ -906,13 +884,14 @@ bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     q->cksum = hash32(state->temp_compressed_bits,state->map_size >> 2);
 
     state->entries->push_back(q);
-    save_entry(q);
+    save_entry(q,in_dir);
     state->cksums->insert(q->cksum);
-    show_stat(state);
+    
 
     return true;
   }
-
+  if(unlikely(r == 2))
+    show_stat(state);
   return false;
 }
 void reset_queue(queue_entry* q)
@@ -1069,8 +1048,9 @@ queue_entry* select_entry(FuzzState *state)
   for(int i = 0; i < state->entries->size(); i++)
   {
     (*state->entries)[i]->priority = (*state->entries)[i]->streams->size() == 0 ? 1 : (*state->entries)[i]->streams->size(); //+ ((*state->entries)[i]->edges / 10);
-    // if((*state->entries)[i]->exit_outofseed > (*state->entries)[i]->exit_timeout)
-    //   (*state->entries)[i]->priority *= 1.5;
+    (*state->entries)[i]->priority += (*state->entries)[i]->edges / 10;
+    if((*state->entries)[i]->exit_outofseed > (*state->entries)[i]->exit_timeout)
+      (*state->entries)[i]->priority *= 1.2;
     total_priority += (*state->entries)[i]->priority;
   }
   s32 random_number =  UR(total_priority);
@@ -1145,7 +1125,39 @@ void fuzz_loop(FuzzState *state, int cpu)
     }
     
 }
+void reproduce_crash(FuzzState *state, u32 id)
+{
+  fork_server_up(state);
+  char entry_filename[PATH_MAX];
+  char entry_folder[PATH_MAX];
+  char entry_metafilename[PATH_MAX];
+  u32 exit_info,exit_pc;
+  s32 exit_code;
+  queue_entry* entry = copy_queue(nullptr);
+  sprintf(entry_folder,"%s/%x",out_dir, id);
 
+  DIR* dir;
+  struct dirent* dir_entry;
+
+  dir = opendir(entry_folder);
+  if (dir == NULL) {
+      fatal("opendir error");
+  }
+    
+  while ((dir_entry = readdir(dir)) != NULL) 
+  {
+    if (dir_entry->d_type == DT_REG && !strstr(dir_entry->d_name,"meta.data")) 
+    {
+      u32 stream_id = strtol(dir_entry->d_name,0,16);
+      sprintf(entry_filename,"%s/%x",entry_folder,stream_id);
+      input_stream *tmp = new_stream(stream_id,entry_filename);
+      (*entry->streams)[stream_id] = tmp;  
+    }
+  }
+  exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
+  printf("exit code :%d\n",exit_code);
+
+}
 void init_dir(int argc, char **argv)
 {
   if(argc >= 4)
@@ -1178,15 +1190,15 @@ void init_shared_mutex(void)
   pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
   pthread_mutex_init(entry_mutex, &attr);
 }
-int main(int argc, char **argv)
+int fuzz(int argc, char **argv)
 {
   int status;
   init_dir(argc,argv);
   init_shared_mutex();
   init_count_class16();
   
-  //long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
-  long number_of_processors = 1;
+  long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
+  //long number_of_processors = 1;
   for(int i = 0; i < number_of_processors; i++)
   {
     int pid = fork();
@@ -1196,18 +1208,31 @@ int main(int argc, char **argv)
     {
       FuzzState state;
       fuzzer_init(&state,1 << 16, 100 << 20);
-      run_controlled_process(argc,argv);
+      int pid = run_controlled_process(argc,argv);
+      state.pid = pid;
       fuzz_loop(&state,i);
     }
   }
   wait(&status);
-  // FuzzState state;
-  // fuzzer_init(&state,1 << 16);
-  // run_controlled_process(argc,argv);
-  // fuzz_loop(&state,2);
-  // set<u32> chsums;
-  // vector<queue_entry*> out;
-  // chsums.insert(0x134);
-  // load_entries(&chsums,&out);
+  return 1;
+
+}
+int test_crash(int argc, char **argv)
+{
+  init_dir(argc,argv);
+  init_shared_mutex();
+  init_count_class16();
+  FuzzState state;
+  fuzzer_init(&state,1 << 16, 100 << 20);
+  int pid = run_controlled_process(argc,argv);
+  
+  reproduce_crash(&state, 0x1295dc05);
+  kill(pid,9);
+  return 1;
+
+}
+int main(int argc, char **argv)
+{
+  return fuzz(argc, argv);
 }
 

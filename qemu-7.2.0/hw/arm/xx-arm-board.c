@@ -41,21 +41,14 @@ void xx_insert_nvic_intc(int irq, bool secure)
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
-    NVICState *nvic_state = cpu->env.nvic;
+    //NVICState *nvic_state = cpu->env.nvic;
     //qemu_mutex_lock_iothread();
-    for(int i= 15; i < NVIC_MAX_VECTORS; i ++)
-    {
-            if(nvic_state->vectors[i].enabled && i == irq)
-                armv7m_nvic_set_pending(env->nvic, irq, secure);
-    }
     
-    /*
     if(armv7m_nvic_get_ready_status(env->nvic, irq, secure))
     {
         armv7m_nvic_set_pending(env->nvic, irq, secure);
         //qemu_mutex_unlock_iothread();
     }
-    */
         
 }
 GArray* xx_get_enabled_nvic_irq()
