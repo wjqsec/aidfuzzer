@@ -51,6 +51,18 @@ void xx_insert_nvic_intc(int irq, bool secure)
     }
         
 }
+uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs)
+{
+    CPUState *cs = qemu_get_cpu(0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+    NVICState *nvic_state = env->nvic;
+    *irqs = nvic_state->enabled_irqs;
+    return &nvic_state->enabled_irqs_idx;
+
+}
+
+
 GArray* xx_get_enabled_nvic_irq()
 {
     GArray* ret = g_array_new(FALSE, FALSE, sizeof(int));

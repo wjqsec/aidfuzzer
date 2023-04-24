@@ -94,6 +94,7 @@ void restore_arm_ctx_state(void* state);
 void delete_arm_ctx_state(void* state);
 void insert_nvic_intc(int irq, bool secure);
 GArray* get_enabled_nvic_irq();
+uint32_t* get_enabled_nvic_irq2(uint16_t **irqs);
 void reset_arm_reg();
 void register_arm_do_interrupt_hook(do_arm_interrupt_cb cb);
 void set_armv7_vecbase(hwaddr addr);

@@ -68,6 +68,9 @@ struct SHARED_STREAMS
 GArray* fuzz_streams;
 uint32_t* num_new_streams;
 uint32_t* new_streams;
+uint32_t* num_interesting_vals;
+uint16_t* interesting_vals
+
 void collect_streams()
 {
     struct SHARED_STREAMS *stream;
@@ -88,6 +91,8 @@ void collect_streams()
     num_new_streams = (uint32_t*)ptr;
     new_streams = num_new_streams + 1;
     *num_new_streams = 0;
+    num_interesting_vals = (uint32_t*)(ptr + 500);
+    interesting_vals = (uint16_t*)(num_interesting_vals + 1);
 
 }
 bool discovered_stream(uint32_t stream_id)
@@ -225,7 +230,7 @@ void exit_with_code_start_new(int32_t code)
     run_index++;
     #endif
 
-    
+
 
     static uint32_t buf[128];
     buf[0] = code;
@@ -239,7 +244,7 @@ void exit_with_code_start_new(int32_t code)
     exit_info = 0;
     num_mmio = 0;
     // __afl_prev_loc = 0;
-    // irq_level = 0;
+    irq_level = 0;
     //read(FORKSRV_CTLFD,&record,4);
 
     #ifdef TRACE_DBG
@@ -587,7 +592,6 @@ int main(int argc, char **argv)
         g_array_append_val(fuzz_streams, stream); 
     }
     __afl_map_shm();
-    __afl_prev_loc = 0;
     #endif
 
     #ifdef TRACE_DBG

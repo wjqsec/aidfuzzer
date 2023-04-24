@@ -84,6 +84,9 @@ struct NVICState {
     uint32_t num_irq;
     qemu_irq excpout;
     qemu_irq sysresetreq;
+
+    uint16_t enabled_irqs[NVIC_MAX_VECTORS];
+    uint32_t enabled_irqs_idx;
 };
 
 #endif

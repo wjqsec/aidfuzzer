@@ -134,6 +134,8 @@ typedef void (*xx_set_armv7_vecbase_ptr)(hwaddr addr);
 xx_set_armv7_vecbase_ptr xx_set_armv7_vecbase;
 typedef GArray* (*xx_get_enabled_nvic_irq_ptr)();
 xx_get_enabled_nvic_irq_ptr xx_get_enabled_nvic_irq;
+typedef uint32_t* (*xx_get_enabled_nvic_irq2_ptr)(uint16_t **irqs);
+xx_get_enabled_nvic_irq2_ptr xx_get_enabled_nvic_irq2;
 
 void get_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
@@ -174,6 +176,10 @@ void set_armv7_vecbase(hwaddr addr)
 GArray* get_enabled_nvic_irq()
 {
     return xx_get_enabled_nvic_irq();
+}
+uint32_t* get_enabled_nvic_irq2(uint16_t **irqs)
+{
+    return xx_get_enabled_nvic_irq2(irqs);
 }
 //---------------common
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
@@ -233,6 +239,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_register_arm_do_interrupt_hook = dlsym(handle, "xx_register_arm_do_interrupt_hook");
         xx_set_armv7_vecbase = dlsym(handle, "xx_set_armv7_vecbase");
         xx_get_enabled_nvic_irq = dlsym(handle, "xx_get_enabled_nvic_irq");
+        xx_get_enabled_nvic_irq2 = dlsym(handle, "xx_get_enabled_nvic_irq2");
         break;
     }
 
@@ -261,7 +268,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_get_arm_cpu_state && xx_set_arm_cpu_state && xx_reset_arm_reg &&
         xx_save_arm_ctx_state && xx_restore_arm_ctx_state && xx_delete_arm_ctx_state &&
         xx_insert_nvic_intc && xx_register_arm_do_interrupt_hook && xx_set_armv7_vecbase &&
-        xx_get_enabled_nvic_irq
+        xx_get_enabled_nvic_irq && xx_get_enabled_nvic_irq2
     ))
     {
         printf("symbol not found\n");

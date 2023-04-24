@@ -2378,6 +2378,8 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
             if (value & (1 << i) &&
                 (attrs.secure || s->itns[startvec + i])) {
                 s->vectors[startvec + i].enabled = setval;
+		if(setval == 1)
+		    s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
             }
         }
         nvic_irq_update(s);
@@ -2651,7 +2653,7 @@ static void armv7m_nvic_reset(DeviceState *dev)
             s->itns[i] = true;
         }
     }
-
+    s->enabled_irqs_idx = 0;
     /*
      * We updated state that affects the CPU's MMUidx and thus its hflags;
      * and we can't guarantee that we run before the CPU reset function.

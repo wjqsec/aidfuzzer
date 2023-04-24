@@ -418,6 +418,8 @@ struct FuzzState
     int cpu;
     int pid;
     int sync_times;
+
+    set<u16> *interesting_vals;
 };
 
 #define ENTRY_MUTEX_MEM_SIZE 1024
@@ -559,6 +561,8 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
 
     state->sync_times = 0;
 
+    state->interesting_vals = new vector<u16>();
+
 }
 inline void fork_server_up(FuzzState *state)
 {
@@ -625,6 +629,13 @@ void sync_undiscovered_streams(queue_entry* entry,u32* num_new_streams,u32* new_
   {
     input_stream *stream = new_stream(new_streams[i],nullptr);
     entry->streams->insert({new_streams[i] , stream});
+  }
+}
+void sync_interesting_vals(FuzzState *state,u32* num_interesting_vals,u16* interesting_vals)
+{
+  for(int i = 0; i < *num_interesting_vals ; i++)
+  {
+    state->interesting_vals->insert(interesting_vals[i]);
   }
 }
 void show_stat(FuzzState *state)
@@ -830,15 +841,16 @@ s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
   s32 exit_code;
   u32* num_new_streams;
   u32* new_streams;
-  u32 num_mmio;
+  u32* num_interesting_vals;
+  u16* interesting_vals;
   memset(state->trace_bits,0,state->map_size);
   reset_queue(entry);
   copy_fuzz_data(state,entry,&num_new_streams,&new_streams);
 
   fork_server_runonce(state);
-  exit_code = fork_server_getexit(state,exit_info,exit_pc,&num_mmio);
+  exit_code = fork_server_getexit(state,exit_info,exit_pc,&entry->num_mmio);
   sync_undiscovered_streams(entry,num_new_streams,new_streams);
-  entry->num_mmio = num_mmio;
+  sync_interesting_vals(state,num_interesting_vals,interesting_vals);
   return exit_code;
   
 }
@@ -887,11 +899,11 @@ bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     save_entry(q,in_dir);
     state->cksums->insert(q->cksum);
     
-
+    if(unlikely(r == 2))
+      show_stat(state);
     return true;
   }
-  if(unlikely(r == 2))
-    show_stat(state);
+  
   return false;
 }
 void reset_queue(queue_entry* q)
@@ -1118,7 +1130,7 @@ void fuzz_loop(FuzzState *state, int cpu)
 
         rounds++;   
       }
-      if((rounds & 0xff) == 0)
+      if((rounds & 0xfff) == 0)
         sync_entries(state);
       if((rounds & 0xff) == 0)
         show_stat(state);
@@ -1225,7 +1237,7 @@ int test_crash(int argc, char **argv)
   FuzzState state;
   fuzzer_init(&state,1 << 16, 100 << 20);
   int pid = run_controlled_process(argc,argv);
-  
+  state.pid = pid;
   reproduce_crash(&state, 0x1295dc05);
   kill(pid,9);
   return 1;
