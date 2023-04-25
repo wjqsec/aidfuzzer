@@ -934,7 +934,7 @@ bool armv7m_nvic_get_ready_status(void *opaque, int irq, bool secure)
     int running = nvic_exec_prio(s);
 
     //assert(irq > ARMV7M_EXCP_RESET && irq < s->num_irq);
-    if (irq > ARMV7M_EXCP_RESET && irq < s->num_irq)
+    if (irq <= ARMV7M_EXCP_RESET || irq >= s->num_irq)
     	    return false;
     assert(!secure || banked);
 

@@ -10,6 +10,11 @@
         "xstring": "cpp",
         "xutility": "cpp",
         "random": "cpp",
-        "type_traits": "cpp"
+        "type_traits": "cpp",
+        "thread": "c",
+        "xlocale": "c",
+        "types.h": "c",
+        "system_error": "c",
+        "array": "c"
     }
 }
