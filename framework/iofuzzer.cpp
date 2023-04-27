@@ -469,7 +469,7 @@ inline input_stream *new_stream(u32 id, char *file)
       stream->data = (u8*)malloc(DEFAULT_STREAM_LEN);
       stream->len = DEFAULT_STREAM_LEN;
       for(int i = 0 ; i < (stream->len >> 2) ; i++)
-        ((u32*)stream->data)[i] = 0xffffffff;// UR(0XFFFFFFFF);
+        ((u32*)stream->data)[i] = UR(0XFFFFFFFF);
     }
     
   }
@@ -829,7 +829,7 @@ void try_increased_stream(FuzzState *state,queue_entry* entry,input_stream *stre
   stream->len = len;
   for(int i = (old_len >> 2) ; i < (len >> 2) ; i++)
   {
-    ((u32*)stream->data)[i] = 0xffffffff;//UR(0XFFFFFFFF);
+    ((u32*)stream->data)[i] = UR(0XFFFFFFFF);
   }
 
   exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
@@ -949,7 +949,7 @@ void havoc(FuzzState *state, input_stream* stream)
   #define HAVOC_STACK 32
   #define HAVOC_TOKEN 20
   #define ARITH_MAX   35
-  u32 use_stacking = 1 + UR(stream->len >> 3);
+  u32 use_stacking = 1 + UR(stream->len >> 2);
   s32 len = stream->len;
   u8 *data = stream->data;
   if(len  <= 8 )
@@ -1049,17 +1049,39 @@ void havoc(FuzzState *state, input_stream* stream)
           break;
         }
         case 14:
+        {
+          s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
+          s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
+          s32 val = UR(0xffffffff);
+          *tmp1 = val;
+          *tmp2 = val;
+          break;
+        }
+          
         case 15:
+        {
+          s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
+          s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
+          s32 val = 0;
+          *tmp1 = val;
+          *tmp2 = val;
+          break;
+        }
         case 16:
+        {
+          s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
+          s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
+          s32 val = 0xffffffff;
+          *tmp1 = val;
+          *tmp2 = val;
+          break;
+        }
         case 17:
         case 18:
         case 19:
         {
-          
-          s32* tmp1 = (s32*)(data + UR(len - 7));
-          s32* tmp2 = (s32*)(data + UR(len - 3));
-          *tmp1 = *tmp2 = UR(0xffffffff);
-        } 
+          FLIP_BIT(data,UR(len << 3));
+        }
         default:
         break;
       }
@@ -1254,14 +1276,14 @@ int test_crash(int argc, char **argv)
   fuzzer_init(&state,1 << 16, 100 << 20);
   int pid = run_controlled_process(argc,argv);
   state.pid = pid;
-  reproduce_crash(&state, 0xfff9a2e8);
+  reproduce_crash(&state, 0x102214a5);
   kill(pid,9);
   return 1;
 
 }
 int main(int argc, char **argv)
 {
-  //return test_crash(argc, argv);
-  return fuzz(argc, argv);
+  return test_crash(argc, argv);
+  //return fuzz(argc, argv);
 }
 

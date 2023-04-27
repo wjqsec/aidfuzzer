@@ -33,7 +33,57 @@ struct CONFIG _3dprinter_config =
                 [2 ... 254] = {  NULL, 0, 0 }
     }
 };
+
+struct CONFIG _basic_exercises_config = 
+{
+    .vecbase = 0,
+    .rams = {
+                { "ram", 0x20000000, 0x100000, false, NULL, 0, 0 },
+                { "sram", 0x10000000, 0x8000, false, NULL, 0, 0 },
+                { "text", 0, 0x800000, false, "./bin/fuzzware-experiments-main/01-access-modeling-for-fuzzing/pw-discovery/ARCH_PRO/basic_exercises.bin", 0, 0x800000 },
+                [3 ... 254] = {  NULL, 0, 0, false, NULL, 0, 0  }
+    },
+    .roms = {
+                [0 ... 254] = {  NULL, 0, 0, NULL, 0, 0  }
+    },
+    .mmios = {
+                { "mmio", 0x40000000, 0x20000000},
+                [1 ... 254] = {  NULL, 0, 0 }
+    }
+};
+struct CONFIG _arduino_f103_adc_config = 
+{
+    .vecbase = 0x8000000,
+    .rams = {
+                { "ram", 0x20000000, 0x100000, false, NULL, 0, 0 },
+                { "text",0x8000000, 0x20000, false, "./bin/fuzzware-experiments-main/01-access-modeling-for-fuzzing/p2im-unittests/F103/ARDUINO-F103-ADC/ARDUINO-F103-ADC.bin",0, 0x16430},
+                [2 ... 254] = {  NULL, 0, 0, false, NULL, 0, 0  }
+    },
+    .roms = {
+                [0 ... 254] = {  NULL, 0, 0, NULL, 0, 0  }
+    },
+    .mmios = {
+                { "mmio", 0x40000000, 0x20000000},
+                [1 ... 254] = {  NULL, 0, 0 }
+    }
+};
+struct CONFIG _arduino_f103_gpio_config = 
+{
+    .vecbase = 0x8000000,
+    .rams = {
+                { "ram", 0x20000000, 0x100000, false, NULL, 0, 0 },
+                { "text",0x8000000, 0x20000, false,"./bin/fuzzware-experiments-main/01-access-modeling-for-fuzzing/p2im-unittests/F103/ARDUINO-F103-GPIO/ARDUINO-F103-GPIO.bin",0, 0x13680},
+                [2 ... 254] = {  NULL, 0, 0, false, NULL, 0, 0  }
+    },
+    .roms = {
+                [0 ... 254] = {  NULL, 0, 0, NULL, 0, 0  }
+    },
+    .mmios = {
+                { "mmio", 0x40000000, 0x20000000},
+                [1 ... 254] = {  NULL, 0, 0 }
+    }
+};
 int main(int argc, char **argv)
 {
-    run_config(&_3dprinter_config);
+    run_config(&_arduino_f103_adc_config);
 }

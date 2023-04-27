@@ -15,7 +15,7 @@
 #define likely(_x)   __builtin_expect(!!(_x), 1)
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
-//#define DBG
+#define DBG
 #define CRASH_DBG
 //#define TRACE_DBG
 #define AFL
@@ -337,7 +337,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         should_exit = false;
         return true;
     }
-
+    
     if((execed_bbl_count & 0x1ff) == 0 && !irq_level)
     {
         struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
@@ -367,6 +367,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
             }
         }
     }
+    
     #endif
 
 
