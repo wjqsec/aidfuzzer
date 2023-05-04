@@ -90,5 +90,10 @@ static inline void gen_tb_end(const TranslationBlock *tb, int num_insns)
         tcg_gen_exit_tb(tb, TB_EXIT_REQUESTED);
     }
 }
-
+static inline void gen_op_update_pc(uint64_t new_pc)
+{
+    TCGv_i64 tmp_pc = tcg_const_i64(new_pc);
+    tcg_gen_st_i64(tmp_pc, cpu_env,  offsetof(ArchCPU, parent_obj.precise_pc) - offsetof(ArchCPU, env));
+    tcg_temp_free_i64(tmp_pc);
+}
 #endif

@@ -1,20 +1,11 @@
 {
     "files.associations": {
-        "algorithm": "cpp",
-        "*.inc": "c",
-        "vector": "cpp",
-        "xtree": "cpp",
-        "utility": "cpp",
-        "set": "cpp",
-        "initializer_list": "cpp",
-        "xstring": "cpp",
-        "xutility": "cpp",
-        "random": "cpp",
-        "type_traits": "cpp",
-        "thread": "c",
-        "xlocale": "c",
-        "types.h": "c",
-        "system_error": "c",
-        "array": "c"
+        "initializer_list": "c",
+        "random": "c",
+        "type_traits": "c",
+        "vector": "c",
+        "xstring": "c",
+        "xtree": "c",
+        "xutility": "c"
     }
 }

@@ -9590,6 +9590,7 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
+    gen_op_update_pc(dc->pc_curr);
     disas_arm_insn(dc, insn);
 
     arm_post_translate_insn(dc);
@@ -9730,6 +9731,7 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
             arm_skip_unless(dc, cond);
         }
     }
+    gen_op_update_pc(dc->pc_curr);
     if (is_16bit) {
         disas_thumb_insn(dc, insn);
     } else {

@@ -199,10 +199,14 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
     memory_region_reset_dirty(mr, 0, size, DIRTY_MEMORY_VGA);
     memory_region_set_readonly(mr, readonly);
 
-    memory_region_add_subregion(ram_space,start,mr);
+
+
     MemoryRegion *old = find_mr_by_addr(start,size);
     if(old)
-          memory_region_del_subregion(ram_space,old);
+	  memory_region_add_subregion_overlap(ram_space,start,mr,old->priority+1);
+    else
+          memory_region_add_subregion(ram_space,start,mr);
+          //memory_region_del_subregion(ram_space,old);
 
     xx_ram_regions[xx_num_ram_regions].name = strdup(name);
     xx_ram_regions[xx_num_ram_regions].start = start;
@@ -232,8 +236,11 @@ void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 
     MemoryRegion *old = find_mr_by_addr(start,size);
     if(old)
-          memory_region_del_subregion(ram_space,old);
-    memory_region_add_subregion(ram_space,start,mr);
+          memory_region_add_subregion_overlap(ram_space,start,mr,old->priority+1);
+    else
+          memory_region_add_subregion(ram_space,start,mr);
+
+
 
     xx_rom_regions[xx_num_rom_regions].name = strdup(name);
     xx_rom_regions[xx_num_rom_regions].start = start;
@@ -277,9 +284,9 @@ void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, v
     
     MemoryRegion *old = find_mr_by_addr(start,size);
     if(old)
-          memory_region_del_subregion(ram_space,old);
-    memory_region_add_subregion(ram_space,start,mr);
-
+          memory_region_add_subregion_overlap(ram_space,start,mr,old->priority+1);
+    else
+          memory_region_add_subregion(ram_space,start,mr);
 
     xx_mmio_regions[xx_num_mmio_regions].name = strdup(name);
     xx_mmio_regions[xx_num_mmio_regions].start = start;

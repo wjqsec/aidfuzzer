@@ -25,6 +25,8 @@ struct ARM_CPU_STATE
 {
     uint32_t regs[16];
     uint64_t xregs[32];
+    uint64_t precise_pc;
+    uint32_t xpsr;
 };
 struct ARM_NVIC_ALL_STATE
 {
@@ -91,6 +93,8 @@ void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
     {
         state->xregs[i] = env->xregs[i];
     }
+    state->precise_pc = cs->precise_pc;
+    state->xpsr = xpsr_read(env);
 }
 void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
 {

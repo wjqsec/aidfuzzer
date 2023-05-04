@@ -1,0 +1,683 @@
+#include <stdbool.h>
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <errno.h> 
+#include <sys/types.h>
+#include <sys/shm.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <glib.h>
+#include <string.h>
+#include <kk_ihex_write.h>
+#include <ihex.h>
+#include "xx.h"
+#include "simulator.h"
+#define likely(_x)   __builtin_expect(!!(_x), 1)
+#define unlikely(_x)  __builtin_expect(!!(_x), 0)
+
+//#define DBG
+#define CRASH_DBG
+//#define TRACE_DBG
+#define AFL
+
+#define FORKSRV_CTLFD          198
+#define FORKSRV_DATAFD          200
+
+#define EXIT_NONE 0
+#define EXIT_TIMEOUT 1
+#define EXIT_OUTOFSEED 2
+#define EXIT_CRASH 3
+
+#define IRQ_PER_EXEC 100
+struct CONFIG* global_config;
+
+uint8_t *__afl_share_data;
+uint8_t *__afl_area_ptr;
+uint32_t __afl_prev_loc;
+
+int irq_level = 0;
+
+FILE *flog;
+FILE *f_crash_log;
+
+uint64_t execed_bbl_count = 1;
+uint32_t max_bbl_exec = 1000000;
+uint32_t irq_per_bbls;
+
+
+
+bool should_exit = false;
+uint32_t exit_code = 0;
+uint32_t exit_info;
+uint32_t num_mmio;
+uint64_t exit_pc;
+
+GArray* bbl_records;
+
+uint32_t run_index;
+
+struct SHARED_STREAMS
+{
+    uint32_t stream_id;
+    uint32_t len;
+    uint32_t *used;
+    uint8_t *data;
+};
+GArray* fuzz_streams;
+uint32_t* num_new_streams;
+uint32_t* new_streams;
+uint32_t* num_interesting_vals;
+uint16_t* interesting_vals;
+
+void collect_streams()
+{
+    struct SHARED_STREAMS *stream;
+    int i;
+    uint32_t len = *(uint32_t*)__afl_share_data;
+    uint8_t *ptr = __afl_share_data + 4;
+    for(i = 0; i < len;i++)
+    {
+        stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
+        stream->stream_id = *(uint32_t*)ptr;
+        stream->len = *(uint32_t*)(ptr+4);
+        stream->used = (uint32_t*)(ptr+8);
+        stream->data = (uint8_t*)(ptr+12);
+        ptr += 12 + stream->len;
+    }
+    stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
+    stream->stream_id = 0;
+    num_new_streams = (uint32_t*)ptr;
+    new_streams = num_new_streams + 1;
+    *num_new_streams = 0;
+    num_interesting_vals = (uint32_t*)(ptr + 500);
+    interesting_vals = (uint16_t*)(num_interesting_vals + 1);
+
+}
+bool discovered_stream(uint32_t stream_id)
+{
+    for(int i = 0; i < *num_new_streams; i++)
+    {
+        if(new_streams[i] == stream_id)
+            return true;
+    }
+    return false;
+}
+struct SHARED_STREAMS* find_stream(uint32_t stream_id)
+{
+    struct SHARED_STREAMS *ret = NULL, *tmp;
+    for (int i = 0; ; i++) 
+    {
+        tmp = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
+        if(tmp->stream_id == 0)
+            break;
+        if(tmp->stream_id == stream_id)
+        {
+            ret = tmp;
+            break;
+        }
+    }
+    return ret;
+}
+
+void __afl_map_shm(void) {
+
+  char *id_str = getenv("__AFL_SHM_ID");
+  if (id_str) {
+    uint32_t shm_id = atoi(id_str);
+    __afl_area_ptr = shmat(shm_id, NULL, 0);
+    if (__afl_area_ptr == (void *)-1) _exit(1);
+  }
+
+  id_str = getenv("__AFL_SHM_SHARE");
+  if (id_str) {
+    uint32_t shm_id = atoi(id_str);
+    __afl_share_data = shmat(shm_id, NULL, 0);
+    if (__afl_share_data == (void *)-1) _exit(1);
+  }
+
+}
+
+struct SNAPSHOT_MEM_SEG
+{
+    uint8_t *data;
+    hwaddr start;
+    uint32_t len;
+};
+struct ARMM_SNAPSHOT
+{
+    #define NUM_MEM_SNAPSHOT 255
+    struct SNAPSHOT_MEM_SEG mems[NUM_MEM_SNAPSHOT];
+    void *arm_ctx;
+};
+
+struct ARMM_SNAPSHOT *org_snap, *new_snap;
+struct ARMM_SNAPSHOT* arm_take_snapshot()
+{
+    struct ARMM_SNAPSHOT *snap = (struct ARMM_SNAPSHOT*)malloc(sizeof(struct ARMM_SNAPSHOT));
+    snap->arm_ctx = save_arm_ctx_state();
+
+    for(int i = 0; i < NUM_MEM_SNAPSHOT ; i ++)
+    {
+        snap->mems[i].len = 0;
+        if(global_config->rams[i].size && !global_config->rams[i].readonly)
+        {
+            snap->mems[i].len = global_config->rams[i].size;
+            snap->mems[i].start = global_config->rams[i].start;
+            snap->mems[i].data = (uint8_t*)malloc(snap->mems[i].len);
+            read_ram(snap->mems[i].start,snap->mems[i].len,snap->mems[i].data);
+        }
+    }
+
+    return snap;    
+}
+
+void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
+{
+    static uint8_t dirty_bits[0x1000];
+    restore_arm_ctx_state(snap->arm_ctx);
+    int page_size = target_pagesize();
+    for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
+    {
+        if(snap->mems[num_mem].len ==0)
+            break;
+        int num_pages = snap->mems[num_mem].len / page_size;
+        
+        // write_ram(snap->mems[num_mem].start,snap->mems[num_mem].len,snap->mems[num_mem].data);
+        
+        get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, (unsigned long*)dirty_bits);
+        for(int i = 0 ; i < num_pages ; i++)
+        {
+            if(1 & (dirty_bits[i / 8] >> (i & 7)))
+            {
+                uint32_t offset = page_size * i;
+                //fprintf(flog,"restore memory %x\n",snap->mems[num_mem].start + offset);
+                write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
+            }
+            
+        }  
+    }
+    for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
+    {
+        if(snap->mems[num_mem].len ==0)
+            break;
+        clear_dirty_mem(snap->mems[num_mem].start, snap->mems[num_mem].len);
+    }
+}
+
+void start_new()
+{
+    static uint32_t buf[16];
+    read(FORKSRV_CTLFD,buf,4);  // start new run
+    irq_per_bbls = max_bbl_exec / IRQ_PER_EXEC;
+}
+void report_irqs()
+{
+    int i = 0;
+    uint16_t *irqs;
+    uint32_t* num_irqs = get_enabled_nvic_irq2(&irqs);
+    for(; i < *num_irqs; i++)
+    {
+        interesting_vals[i] = irqs[i];
+    }
+    *num_interesting_vals = i;
+}
+void exit_with_code_start_new(int32_t code)
+{
+    
+    #ifdef DBG
+    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, code,exit_pc);
+    run_index++;
+    #endif
+
+    
+    
+    report_irqs();
+    static uint32_t buf[128];
+    buf[0] = code;
+    buf[1] = exit_info;
+    buf[2] = exit_pc;
+    buf[3] = num_mmio;
+
+    write(FORKSRV_CTLFD+1 , buf,16);        
+    arm_restore_snapshot(new_snap);
+    execed_bbl_count = 1;
+    exit_info = 0;
+    num_mmio = 0;
+    // __afl_prev_loc = 0;
+    irq_level = 0;
+    //read(FORKSRV_CTLFD,&record,4);
+
+    #ifdef TRACE_DBG
+    uint32_t record;
+    if(record)
+    {
+        fprintf(flog,"trace:\n");
+        for (int i = 0; i < bbl_records->len; i++) 
+        {
+           fprintf(flog,"%-8x\n",g_array_index(bbl_records, hwaddr, i));
+        }
+        fprintf(flog,"end\n");
+        g_array_set_size(bbl_records, 0);
+    }
+    #endif
+
+    start_new();
+    
+    collect_streams();
+    
+    
+}
+FILE *state_file;
+void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
+{
+    *eptr = '\0';
+    fputs(buffer,state_file);
+}
+void dump_state(hwaddr mmio_addr)
+{
+    int i;
+    uint8_t *buf;
+    char state_filename[PATH_MAX];
+    struct ARM_CPU_STATE state;
+    struct ihex_state ihex;
+    get_arm_cpu_state(&state);
+    sprintf(state_filename,"%s/state/state_%x",global_config->project_dir,mmio_addr);
+    state_file = fopen(state_filename,"w");
+    fprintf(state_file, "r0=0x%08x\n"
+                        "r1=0x%08x\n"
+                        "r2=0x%08x\n"
+                        "r3=0x%08x\n"
+                        "r4=0x%08x\n"
+                        "r5=0x%08x\n"
+                        "r6=0x%08x\n"
+                        "r7=0x%08x\n"
+                        "r8=0x%08x\n"
+                        "r9=0x%08x\n"
+                        "r10=0x%08x\n"
+                        "r11=0x%08x\n"
+                        "r12=0x%08x\n"
+                        "lr=0x%08x\n"
+                        "pc=0x%08x\n"
+                        "sp=0x%08x\n"
+                        "xpsr=0x%08x\n",
+        state.regs[0],
+        state.regs[1],
+        state.regs[2],
+        state.regs[3],
+        state.regs[4],
+        state.regs[5],
+        state.regs[6],
+        state.regs[7],
+        state.regs[8],
+        state.regs[9],
+        state.regs[10],
+        state.regs[11],
+        state.regs[12],
+        state.regs[14],
+        (uint32_t)state.precise_pc,
+        state.regs[13],
+        state.xpsr
+    );
+    ihex_init(&ihex);
+    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    {
+        if(global_config->rams[i].size == 0)
+            break;
+        buf = (uint8_t *)malloc(global_config->rams[i].size);
+        read_ram(global_config->rams[i].start,global_config->rams[i].size,buf);
+        ihex_write_at_address(&ihex, global_config->rams[i].start);
+        ihex_write_bytes(&ihex, buf, global_config->rams[i].size);
+        // ihex_set_data(ihex,global_config->rams[i].start,buf,global_config->rams[i].size);
+        printf("start %x\n",global_config->rams[i].start);
+        free(buf);
+    }
+    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    {
+        if(global_config->roms[i].size == 0)
+            break;
+        buf = (uint8_t *)malloc(global_config->roms[i].size);
+        read_ram(global_config->roms[i].start,global_config->roms[i].size,buf);
+        ihex_write_at_address(&ihex, global_config->roms[i].start);
+        ihex_write_bytes(&ihex, buf, global_config->roms[i].size);
+        // ihex_set_data(ihex,global_config->roms[i].start,buf,global_config->roms[i].size);
+        printf("start %x\n",global_config->roms[i].start);
+        free(buf);
+    }
+    ihex_end_write(&ihex);
+    //ihex_dump_file(ihex, state_file);
+    fclose(state_file);
+    printf("dump state over\n");
+
+}
+uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
+{
+
+    addr = (hwaddr)opaque + addr;
+    uint64_t ret = 0;
+    #ifdef AFL
+
+    int32_t len;
+    uint32_t stream_id = addr & 0xfffffff0;
+    
+    struct SHARED_STREAMS* stream =  find_stream(stream_id);
+
+    if(!stream)
+    {
+        if(!discovered_stream(stream_id))
+        {
+            new_streams[*num_new_streams] = stream_id;
+            (*num_new_streams)++;
+            dump_state(addr);
+            exit(0);
+        }
+        should_exit = true;
+        exit_code = EXIT_OUTOFSEED;
+        exit_info = stream_id;
+
+    }
+    else
+    {
+        if(stream->len - *stream->used < size)
+        {
+            should_exit = true;
+            exit_code = EXIT_OUTOFSEED;
+            exit_info = stream_id;
+        }
+        else
+        {
+            num_mmio++;
+            memcpy(&ret,stream->data + *stream->used,size);
+            *stream->used += size;
+        }
+    }
+    
+
+    
+    #endif
+
+    #ifdef DBG
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->mmio read pc:%p offset:%x val:%x\n",run_index, state.regs[15],addr,ret);
+    #endif
+
+    return ret;
+}
+
+void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
+{
+    addr = (hwaddr)opaque + addr;
+    #ifdef DBG
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, state.regs[15],addr,data);
+    #endif
+}
+
+
+bool arm_exec_bbl(regval pc,uint32_t id)
+{
+
+    #ifdef AFL
+    
+    if(unlikely(execed_bbl_count >= max_bbl_exec))
+    {
+        exit_with_code_start_new(EXIT_TIMEOUT);
+        return true;
+    }
+    if(unlikely(should_exit))  //run out of seed
+    {
+        exit_with_code_start_new(exit_code);
+        should_exit = false;
+        return true;
+    }
+    
+    if((execed_bbl_count % irq_per_bbls) == 0 && !irq_level)
+    {
+        struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
+        if(!stream)
+        {
+            if(!discovered_stream(0xffffffff))
+            {
+                new_streams[*num_new_streams] = 0xffffffff;
+                (*num_new_streams)++;
+            }
+            exit_with_code_start_new(EXIT_NONE);
+            return true;
+        }
+        else
+        {
+            if(stream->len - *stream->used < 2)
+            {
+                exit_with_code_start_new(EXIT_NONE);
+                return true;
+            }
+            else
+            {
+                insert_nvic_intc(*(uint16_t*)(stream->data + *stream->used),false);
+                // if(*(uint16_t*)(stream->data + *stream->used) != 0xffff)
+                //     printf("insert %x\n",*(uint16_t*)(stream->data + *stream->used));
+                *stream->used += 2;
+            }
+        }
+    }
+    
+    #endif
+
+
+
+    #ifdef DBG
+    fprintf(flog,"%d->bbl pc:%p\n",run_index, pc);
+    #endif
+    
+    #ifdef AFL
+
+    // __afl_area_ptr[id ^ __afl_prev_loc] ++;
+    // __afl_prev_loc = id >> 1;
+    __afl_area_ptr[id] ++;
+    exit_pc = pc;
+    execed_bbl_count++;
+
+
+
+    #endif
+
+    #ifdef TRACE_DBG
+    g_array_append_val(bbl_records, pc);
+    #endif 
+    return false;
+    
+
+    
+}
+bool arm_cpu_do_interrupt_hook(int32_t exec_index)
+{  
+
+    if(exec_index == EXCP_IRQ)
+        irq_level++;
+    if(exec_index == EXCP_EXCEPTION_EXIT)
+        irq_level--;
+    
+    if(exec_index == EXCP_SWI || exec_index == EXCP_IRQ || exec_index == EXCP_EXCEPTION_EXIT)
+    {
+        return true;
+    }
+
+    #ifdef CRASH_DBG
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    uint32_t sp0, sp1,sp2;
+    read_ram(state.regs[13],4, &sp0);
+    read_ram(state.regs[13] + 4,4, &sp1);
+    read_ram(state.regs[13] + 8,4, &sp2);
+    fprintf(f_crash_log,"crash index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
+    state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
+    #endif
+    #ifdef AFL
+    // struct ARM_CPU_STATE tmp_state;
+
+    // get_arm_cpu_state(&state);
+    // exit_pc = tmp_state.regs[15];
+    exit_with_code_start_new(EXIT_CRASH);
+    return false;
+    #endif
+    
+    return true;
+}
+void post_thread_exec(int exec_ret)
+{
+
+    insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
+
+    #ifdef DBG
+    struct ARM_CPU_STATE state;
+
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
+    #endif
+}
+void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
+{
+    #ifdef DBG
+    fprintf(flog,"%d->ins icmp pc:%p\n",run_index, pc);
+    #endif
+}
+
+
+hwaddr snapshot_point = 0;
+uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
+{
+    static bool found = false;
+    if(!found)
+    {
+        struct ARM_CPU_STATE state;
+        get_arm_cpu_state(&state);
+        snapshot_point = state.regs[15];
+        found = true;
+    }
+    return 0;
+    
+}
+void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
+
+bool exec_bbl_snapshot(regval pc,uint32_t id)
+{
+    int i;
+    static bool returned = false;
+    if(snapshot_point == pc)
+    {
+        register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
+        register_post_thread_exec_hook(post_thread_exec);
+        register_exec_bbl_hook(arm_exec_bbl);
+        for(i = 0; i < 255 ; i++)
+        {
+            if(global_config->mmios[i].size == 0)
+                break;
+            add_mmio_region(global_config->mmios[i].name,global_config->mmios[i].start, global_config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)global_config->mmios[i].start);
+        }
+        new_snap = arm_take_snapshot();
+        arm_restore_snapshot(new_snap);
+        #ifdef AFL
+        uint32_t tmp; 
+        write(FORKSRV_CTLFD+1 , &tmp,4);  //forkserver up
+        start_new();
+        collect_streams();
+        #endif
+        return true;
+    }
+    else if(snapshot_point && !returned)
+    {
+        arm_restore_snapshot(org_snap);
+        returned = true;
+        return true;
+    }
+    return false;
+}
+
+
+void init()
+{
+    char path_buffer[PATH_MAX];
+    sprintf(path_buffer,"%s/log",global_config->project_dir);
+    mkdir(path_buffer, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    sprintf(path_buffer,"%s/log/log.txt",global_config->project_dir);
+    flog = fopen(path_buffer,"w");
+    sprintf(path_buffer,"%s/log/crash.txt",global_config->project_dir);
+    f_crash_log = fopen(path_buffer,"w");
+    setbuf(flog,0);
+    setbuf(f_crash_log,0);
+    sprintf(path_buffer,"%s/state",global_config->project_dir);
+    mkdir(path_buffer, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    srand(time(NULL));
+    #ifdef AFL
+    struct SHARED_STREAMS* stream;
+    fuzz_streams = g_array_new(FALSE, FALSE, sizeof(struct SHARED_STREAMS*));
+    for(int i = 0; i < 200 ;i ++)
+    {
+        stream = (struct SHARED_STREAMS *)malloc(sizeof(struct SHARED_STREAMS));
+        g_array_append_val(fuzz_streams, stream); 
+    }
+    __afl_map_shm();
+    #endif
+
+    
+    #ifdef TRACE_DBG
+    bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));
+    #endif
+}
+int run_config(struct CONFIG *config)
+{
+    int i = 0;
+    global_config = config;
+    init();
+    struct Simulator *simulator;
+    simulator = create_simulator(ARM,false);
+    if(config->vecbase)
+        set_armv7_vecbase(config->vecbase);
+    init_simulator(simulator);
+
+    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    {
+        if(config->rams[i].size == 0)
+            break;
+        add_ram_region(config->rams[i].name,config->rams[i].start, config->rams[i].size,config->rams[i].readonly);
+        if(config->rams[i].file)
+        {
+            load_file_ram(config->rams[i].file,config->rams[i].start,config->rams[i].file_offset,config->rams[i].file_size);
+        }
+        else
+        {
+            uint8_t *buf = (uint8_t *)malloc(config->rams[i].size);
+            memset(buf,0,config->rams[i].size);
+            write_ram(config->rams[i].start,config->rams[i].size,buf);
+            free(buf);
+        }
+    }
+    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    {
+        if(config->roms[i].size == 0)
+            break;
+        add_rom_region(config->roms[i].name,config->roms[i].start, config->roms[i].size);
+        if(config->roms[i].file)
+        {
+            load_file_rom(config->roms[i].file,config->roms[i].start,config->roms[i].file_offset,config->roms[i].file_size);
+        }
+            
+    }
+    
+    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    {
+        if(config->mmios[i].size == 0)
+            break;
+        add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->mmios[i].start);
+    }
+    reset_arm_reg();
+    
+    register_exec_bbl_hook(exec_bbl_snapshot);
+    org_snap = arm_take_snapshot();
+    exec_simulator(simulator);
+}
