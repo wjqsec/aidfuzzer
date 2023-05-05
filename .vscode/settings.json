@@ -6,6 +6,10 @@
         "vector": "c",
         "xstring": "c",
         "xtree": "c",
-        "xutility": "c"
+        "xutility": "c",
+        "set": "cpp",
+        "map": "cpp",
+        "*.inc": "cpp",
+        "utility": "cpp"
     }
 }

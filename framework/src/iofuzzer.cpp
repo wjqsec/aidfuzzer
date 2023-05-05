@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <linux/limits.h>
 #include <sys/types.h>
 #include <string.h>
 #include <algorithm>         /* Definition of AT_* constants */
@@ -13,7 +14,6 @@
 #include <sys/syscall.h>      /* Definition of SYS_* constants */
 #include <dirent.h>
 #include <sys/time.h>
-#include <linux/limits.h>
 #include <sys/shm.h>
 #include <fcntl.h>              /* Definition of O_* constants */
 #include <sys/stat.h>
@@ -352,26 +352,30 @@ inline static u64 get_cur_time(void) {
   return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
 
 }
-void handler(int sig) {
-  void *array[10];
-  size_t size;
 
-  // get void*'s for all entries on the stack
-  size = backtrace(array, 10);
-
-  // print out all the frames to stderr
-  fprintf(stderr, "Error: signal %d:\n", sig);
-  backtrace_symbols_fd(array, size, STDERR_FILENO);
-  exit(1);
-}
-
-
+struct input_model
+{
+    int mode;
+    #define MODEL_VALUE_SET 0
+    #define MODEL_BIT_EXTRACT 1
+    #define MODEL_CONSTANT 2
+    #define MODEL_PASSTHROUGH 3
+    #define MODEL_NONE 4
+    u32 mask;
+    u32 left_shift;
+    u32 size;
+    u32 access_size;
+    set<u32> *values;
+    u32 constant_val;
+    u32 init_val;
+};
 struct input_stream
 {
     u32 id;
     u8 *data;
     s32 len;
     s32 used;
+    struct input_model *model;
 };
 
 struct queue_entry
@@ -420,13 +424,28 @@ struct FuzzState
     int pid;
     int sync_times;
 
-    set<u16> *interesting_vals;
+    set<u16> *irq_vals;
+    map<u32,struct input_model*> *models;
+    
 };
 
 #define ENTRY_MUTEX_MEM_SIZE 1024
 #define ENTRY_MUTEX_KEY 1234
 pthread_mutex_t *entry_mutex;
-char *in_dir, *out_dir;
+
+char  in_dir[PATH_MAX];
+char  out_dir[PATH_MAX];
+
+char  queue_dir[PATH_MAX];
+char  crash_dir[PATH_MAX];
+
+char  log_dir[PATH_MAX];
+
+char  state_dir[PATH_MAX];
+char  state_backup_dir[PATH_MAX];
+char  model_dir[PATH_MAX];
+char  model_file[PATH_MAX];
+
 
 
 s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc);
@@ -458,19 +477,12 @@ inline input_stream *new_stream(u32 id, char *file)
   }
   else
   {
-    // if(id == 0x40013800 || id == 0x40004400)
-    // {
-    //   stream->data = (u8*)malloc(DEFAULT_STATUS_STREAM_LEN);
-    //   stream->len = DEFAULT_STATUS_STREAM_LEN;
-    //   memset(stream->data,0x80,stream->len);
-    // }
-    // else
-    {
-      stream->data = (u8*)malloc(DEFAULT_STREAM_LEN);
-      stream->len = DEFAULT_STREAM_LEN;
-      for(int i = 0 ; i < (stream->len >> 2) ; i++)
-        ((u32*)stream->data)[i] = UR(0XFFFFFFFF);
-    }
+    
+    stream->data = (u8*)malloc(DEFAULT_STREAM_LEN);
+    stream->len = DEFAULT_STREAM_LEN;
+    for(int i = 0 ; i < (stream->len >> 2) ; i++)
+      ((u32*)stream->data)[i] = UR(0XFFFFFFFF);
+    
     
   }
   return stream;
@@ -564,7 +576,9 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
 
     state->sync_times = 0;
 
-    state->interesting_vals = new set<u16>();
+    state->irq_vals = new set<u16>();
+    state->models = new map<u32,struct input_model*>();
+    
 
 }
 inline void fork_server_up(FuzzState *state)
@@ -591,14 +605,20 @@ s32 fork_server_getexit(FuzzState *state,u32 *exit_info, u32 *exit_pc, u32 *num_
 }
 
 
-int run_controlled_process(int argc,char *old_argv[])
+int run_controlled_process(char *cmd, bool need_dump_state)
 {
 	pid_t pid;
 	char *child_arg[1000];
-	int i;
-	for(i= 3; i<argc;i++) 
-		child_arg[i-3] = old_argv[i];
-	child_arg[i-3] = NULL;
+
+  child_arg[0] = cmd;
+  if(need_dump_state)
+    child_arg[1] = (char *)"y";
+  else
+    child_arg[1] = (char *)"n";
+
+	child_arg[2] = state_dir;
+  child_arg[3] = log_dir;
+	child_arg[4] = NULL;
 	pid = fork();
 	if (pid < 0) fatal("fork error\n");
 	else if(!pid)
@@ -628,19 +648,22 @@ void copy_fuzz_data(FuzzState *state,queue_entry* entry,u32** num_new_streams,u3
   *new_streams = (u32*)(ptr + 4);
   
 }
-void sync_undiscovered_streams(queue_entry* entry,u32* num_new_streams,u32* new_streams)
+bool sync_undiscovered_streams(queue_entry* entry,u32* num_new_streams,u32* new_streams)
 {
+  bool found_new_stream = false;
   for(int i = 0; i < *num_new_streams ; i++)
   {
     input_stream *stream = new_stream(new_streams[i],nullptr);
     entry->streams->insert({new_streams[i] , stream});
+    found_new_stream = true;
   }
+  return found_new_stream;
 }
-void sync_interesting_vals(FuzzState *state,u32* num_interesting_vals,u16* interesting_vals)
+void sync_irq_vals(FuzzState *state,u32* num_irq_vals,u16* irq_vals)
 {
-  for(int i = 0; i < *num_interesting_vals ; i++)
+  for(int i = 0; i < *num_irq_vals ; i++)
   {
-    state->interesting_vals->insert(interesting_vals[i]);
+    state->irq_vals->insert(irq_vals[i]);
   }
 }
 void show_stat(FuzzState *state)
@@ -674,7 +697,7 @@ void show_stat(FuzzState *state)
 }
 void save_crash(queue_entry* entry)
 {
-  save_entry(entry, out_dir);
+  save_entry(entry, crash_dir);
 }
 void save_entry(queue_entry* entry, char *folder)
 {
@@ -742,7 +765,7 @@ queue_entry* load_entry(u32 id)
   char entry_metafilename[PATH_MAX];
   queue_entry *entry = copy_queue(nullptr);
 
-  sprintf(entry_folder,"%s/%x",in_dir, id);
+  sprintf(entry_folder,"%s/%x",queue_dir, id);
   sprintf(entry_metafilename,"%s/%s",entry_folder, "meta.data");
 
   FILE *f = fopen(entry_metafilename,"rb");
@@ -780,7 +803,7 @@ void sync_entries(FuzzState *state)
   s32 exit_code;
   struct dirent* dir_entry;
 
-  dir = opendir(in_dir);
+  dir = opendir(queue_dir);
   if (dir == NULL)
       fatal("opendir error");
 
@@ -811,8 +834,106 @@ void sync_entries(FuzzState *state)
     free_queue(entry);
 
   }
+}
 
-  
+void run_modelling()
+{
+  DIR* dir;
+  struct dirent* dir_entry;
+  dir = opendir(state_dir);
+  if (dir == NULL) {
+      fatal("opendir error");
+  }
+  char cmd[PATH_MAX];
+  while ((dir_entry = readdir(dir)) != NULL) 
+  {
+    if (dir_entry->d_type == DT_REG && strcmp(dir_entry->d_name,".") && strcmp(dir_entry->d_name,"..")) 
+    {
+      printf("model file:%s\n",dir_entry->d_name);
+      sprintf(cmd,"%s/run_docker.sh %s fuzzware model ./state/%s -c ./model/model.yml > /dev/null","/home/w/hd/iofuzzer/fuzzware",out_dir,dir_entry->d_name);
+      system(cmd);
+      sprintf(cmd,"mv %s/%s %s/",state_dir,dir_entry->d_name,state_backup_dir);
+      system(cmd);
+      
+      printf("model file:%s end\n",dir_entry->d_name);
+    }
+  }
+  closedir(dir);
+}
+void parse_models(map<u32,struct input_model*> * models)
+{
+  bool begin = false;
+  u32 mmio_id;
+  int mode;
+  char line[PATH_MAX];
+  struct input_model *model = NULL;
+  set<u32> *vals;
+  FILE *fp = fopen(model_file , "r");
+  if(fp == NULL) 
+  {
+    fatal("error open model file\n");
+  }
+  while(fgets(line, PATH_MAX, fp))
+  {
+    if(strstr(line,"unmodeled:"))
+      begin = false;
+    if(strstr(line,"mmio_models:"))
+      begin = true;
+    if(!begin)
+      continue;
+    if(strstr(line,"constant:"))
+      mode = MODEL_CONSTANT;
+    if(strstr(line,"set:"))
+      mode = MODEL_VALUE_SET;
+    if(strstr(line,"passthrough:"))
+      mode = MODEL_PASSTHROUGH;
+    if(strstr(line,"bitextract:"))
+      mode = MODEL_BIT_EXTRACT;
+
+    if(char *mmio_str = strstr(line,"_mmio_"))
+    {
+      
+      if(model)
+      {
+        model->mode = mode;
+        model->values = vals;
+        (*models)[mmio_id] = model;
+      }
+      if(mode == MODEL_VALUE_SET)
+      {
+        vals = new set<u32>();
+      }
+      else
+      {
+        vals = nullptr;
+      }
+      mmio_id = strtol(mmio_str + strlen("_mmio_"), 0, 16);
+      model = (struct input_model*)malloc(sizeof(struct input_model));
+
+    }
+    
+    if(strstr(line,"access_size: "))
+      model->access_size = strtol(strstr(line,"access_size: ") + strlen("access_size: "), 0, 16);
+    if(strstr(line,"left_shift: "))
+      model->left_shift = strtol(strstr(line,"left_shift: ") + strlen("left_shift: "),0,16);
+    if(strstr(line,"mask: "))
+      model->mask = strtol(strstr(line,"mask: ") + strlen("mask: "),0,16);
+    if(strstr(line,"size: ") && !strstr(line,"access_size: "))
+      model->size = strtol(strstr(line,"size: ") + strlen("size: "),0,16);
+    if(strstr(line,"init_val: "))
+      model->init_val = strtol(strstr(line,"init_val: ") + strlen("init_val: "),0,16);
+    if(strstr(line,"val: ") && !strstr(line,"init_val: "))
+      model->constant_val = strtol(strstr(line,"val: ") + strlen("val: "),0,16);
+    if(strstr(line,"- "))
+      vals->insert(strtol(strstr(line,"- ") + strlen("- "),0,16));
+  }
+  if(model)
+  {
+    model->mode = mode;
+    model->values = vals;
+    (*models)[mmio_id] = model;
+  }
+  fclose(fp);
 }
 void try_increased_stream(FuzzState *state,queue_entry* entry,input_stream *stream)
 {
@@ -849,17 +970,23 @@ s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
   s32 exit_code;
   u32* num_new_streams;
   u32* new_streams;
-  u32* num_interesting_vals;
-  u16* interesting_vals;
+  u32* num_irq_vals;
+  u16* irq_vals;
+  bool found_new_streams = false;
   memset(state->trace_bits,0,state->map_size);
   reset_queue(entry);
   copy_fuzz_data(state,entry,&num_new_streams,&new_streams);
-  num_interesting_vals = (u32*)(((u8*)num_new_streams) + 500);
-  interesting_vals = (u16*)(num_interesting_vals + 1);
+  num_irq_vals = (u32*)(((u8*)num_new_streams) + 500);
+  irq_vals = (u16*)(num_irq_vals + 1);
   fork_server_runonce(state);
   exit_code = fork_server_getexit(state,exit_info,exit_pc,&entry->num_mmio);
-  sync_undiscovered_streams(entry,num_new_streams,new_streams);
-  sync_interesting_vals(state,num_interesting_vals,interesting_vals);
+  found_new_streams = sync_undiscovered_streams(entry,num_new_streams,new_streams);
+  if(found_new_streams)
+  {
+    run_modelling();
+    parse_models(state->models);
+  }
+  sync_irq_vals(state,num_irq_vals,irq_vals);
   return exit_code;
   
 }
@@ -906,7 +1033,7 @@ bool fuzz_one_post(FuzzState *state,queue_entry* entry, s32 exit_code, u32 exit_
     q->cksum = hash32(state->temp_compressed_bits,state->map_size >> 2);
     state->entries->push_back(q);
     state->cksums_entries->insert({q->cksum , q});
-    save_entry(q,in_dir);
+    save_entry(q,queue_dir);
     state->cksums->insert(q->cksum);
     
     if(unlikely(r == 2))
@@ -959,10 +1086,10 @@ void havoc(FuzzState *state, input_stream* stream)
   {
     if(stream->id == 0xffffffff)   //for irq
     {
-      if(state->interesting_vals->size() == 0)
+      if(state->irq_vals->size() == 0)
           break;
-      auto it = state->interesting_vals->begin();
-      std::advance(it, UR(state->interesting_vals->size()));
+      auto it = state->irq_vals->begin();
+      std::advance(it, UR(state->irq_vals->size()));
       u16* tmp = (u16*)(data + (UR(len - 1) & 0xfffffffe));
       *tmp = *it;
     }
@@ -1184,7 +1311,7 @@ void reproduce_crash(FuzzState *state, u32 id)
   u32 exit_info,exit_pc;
   s32 exit_code;
   queue_entry* entry = copy_queue(nullptr);
-  sprintf(entry_folder,"%s/%x",out_dir, id);
+  sprintf(entry_folder,"%s/%x",crash_dir, id);
 
   DIR* dir;
   struct dirent* dir_entry;
@@ -1204,6 +1331,7 @@ void reproduce_crash(FuzzState *state, u32 id)
       (*entry->streams)[stream_id] = tmp;  
     }
   }
+  closedir(dir);
   exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
   printf("exit code :%d\n",exit_code);
 
@@ -1212,16 +1340,30 @@ void init_dir(int argc, char **argv)
 {
   if(argc >= 4)
   {
-    in_dir = strdup(argv[1]);
-    out_dir = strdup(argv[2]);
+    strcpy(in_dir,argv[1]);
+    strcpy(out_dir,argv[2]);
   }
   else
   {
     printf("Usage: %s [%s] [%s] [%s] ...\n",argv[0], "in_dir", "out_dir","bin");
     exit(0);
   }
+  sprintf(queue_dir,"%s",in_dir);
+  sprintf(crash_dir,"%s/crash/",out_dir);
+  sprintf(log_dir,"%s/log/",out_dir);
+  sprintf(state_dir,"%s/state/",out_dir);
+  sprintf(state_backup_dir,"%s/state_backup/",out_dir);
+  sprintf(model_dir,"%s/model/",out_dir);
+  sprintf(model_file,"%s/model.yml",model_dir);
+
   mkdir(in_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(out_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(queue_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(crash_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(log_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(state_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(state_backup_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(model_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 }
 void init_shared_mutex(void)
 {
@@ -1243,10 +1385,6 @@ void init_shared_mutex(void)
 int fuzz(int argc, char **argv)
 {
   int status;
-  init_dir(argc,argv);
-  init_shared_mutex();
-  init_count_class16();
-  
   //long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
   long number_of_processors = 1;
   for(int i = 0; i < number_of_processors; i++)
@@ -1258,7 +1396,7 @@ int fuzz(int argc, char **argv)
     {
       FuzzState state;
       fuzzer_init(&state,1 << 16, 100 << 20);
-      int pid = run_controlled_process(argc,argv);
+      int pid = run_controlled_process(argv[3],i == 0);
       state.pid = pid;
       fuzz_loop(&state,i);
     }
@@ -1269,12 +1407,10 @@ int fuzz(int argc, char **argv)
 }
 int test_crash(int argc, char **argv)
 {
-  init_dir(argc,argv);
-  init_shared_mutex();
-  init_count_class16();
+  
   FuzzState state;
   fuzzer_init(&state,1 << 16, 100 << 20);
-  int pid = run_controlled_process(argc,argv);
+  int pid = run_controlled_process(argv[3],false);
   state.pid = pid;
   reproduce_crash(&state, 0x102214a5);
   kill(pid,9);
@@ -1283,6 +1419,32 @@ int test_crash(int argc, char **argv)
 }
 int main(int argc, char **argv)
 {
+  init_dir(argc,argv);
+  init_shared_mutex();
+  init_count_class16();
+  // map<u32,struct input_model*> models;
+  // parse_models("/home/w/hd/iofuzzer/xxfuzzer/framework/target/fuzzware-experiments/04-crash-analysis/36/config.yml", &models);
+  // for (auto it = models.begin(); it != models.end(); it++)
+  // {
+  //   printf("id:%08x  mode:%x  mask:%x  left_shift:%x  size:%x  access_size:%x  constant_val:%x  init_val:%x\n",it->first, it->second->mode,
+  //   it->second->mask,
+  //   it->second->left_shift,
+  //   it->second->size,
+  //   it->second->access_size,
+  //   it->second->constant_val,
+  //   it->second->init_val    
+  //   );
+  //   if(it->second->values)
+  //   {
+  //     printf("valus: ");
+  //     for (auto it2 = it->second->values->begin(); it2 != it->second->values->end(); it2++)
+  //     {
+  //       printf("%x ",*it2);
+  //     }
+  //     printf("\n");
+  //   }
+  // }
+  
   //return test_crash(argc, argv);
   return fuzz(argc, argv);
 }

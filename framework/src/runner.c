@@ -13,10 +13,8 @@
 #include "xx.h"
 #include "simulator.h"
 
-
 struct CONFIG _3dprinter_config = 
 {
-    .project_dir = "/home/w/hd/iofuzzer/xxfuzzer/framework/target/example",
     .vecbase = 0x8000000,
     .rams = {
                 { "zero", 0, 0x1000, false, NULL, 0, 0 },
@@ -37,7 +35,6 @@ struct CONFIG _3dprinter_config =
 
 struct CONFIG _basic_exercises_config = 
 {
-    .project_dir = "/home/w/hd/iofuzzer/xxfuzzer/framework/target/example",
     .vecbase = 0,
     .rams = {
                 { "ram", 0x20000000, 0x100000, false, NULL, 0, 0 },
@@ -55,7 +52,6 @@ struct CONFIG _basic_exercises_config =
 };
 struct CONFIG _arduino_f103_adc_config = 
 {
-    .project_dir = "/home/w/hd/iofuzzer/xxfuzzer/framework/target/example",
     .vecbase = 0x8000000,
     .rams = {
                 { "ram", 0x20000000, 0x100000, false, NULL, 0, 0 },
@@ -72,7 +68,6 @@ struct CONFIG _arduino_f103_adc_config =
 };
 struct CONFIG _arduino_f103_gpio_config = 
 {
-    .project_dir = "/home/w/hd/iofuzzer/xxfuzzer/framework/target/example",
     .vecbase = 0x8000000,
     .rams = {
                 { "ram", 0x20000000, 0x100000, false, NULL, 0, 0 },
@@ -89,5 +84,6 @@ struct CONFIG _arduino_f103_gpio_config =
 };
 int main(int argc, char **argv)
 {
+    init(argc,argv);
     run_config(&_3dprinter_config);
 }

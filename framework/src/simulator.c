@@ -12,7 +12,6 @@
 #include <glib.h>
 #include <string.h>
 #include <kk_ihex_write.h>
-#include <ihex.h>
 #include "xx.h"
 #include "simulator.h"
 #define likely(_x)   __builtin_expect(!!(_x), 1)
@@ -31,7 +30,6 @@
 #define EXIT_OUTOFSEED 2
 #define EXIT_CRASH 3
 
-#define IRQ_PER_EXEC 100
 struct CONFIG* global_config;
 
 uint8_t *__afl_share_data;
@@ -45,8 +43,6 @@ FILE *f_crash_log;
 
 uint64_t execed_bbl_count = 1;
 uint32_t max_bbl_exec = 1000000;
-uint32_t irq_per_bbls;
-
 
 
 bool should_exit = false;
@@ -58,6 +54,10 @@ uint64_t exit_pc;
 GArray* bbl_records;
 
 uint32_t run_index;
+
+bool need_dump_state = false;
+char *state_dir;
+char *log_dir;
 
 struct SHARED_STREAMS
 {
@@ -211,7 +211,7 @@ void start_new()
 {
     static uint32_t buf[16];
     read(FORKSRV_CTLFD,buf,4);  // start new run
-    irq_per_bbls = max_bbl_exec / IRQ_PER_EXEC;
+
 }
 void report_irqs()
 {
@@ -284,7 +284,7 @@ void dump_state(hwaddr mmio_addr)
     struct ARM_CPU_STATE state;
     struct ihex_state ihex;
     get_arm_cpu_state(&state);
-    sprintf(state_filename,"%s/state/state_%x",global_config->project_dir,mmio_addr);
+    sprintf(state_filename,"%s/state_%x",state_dir,mmio_addr);
     state_file = fopen(state_filename,"w");
     fprintf(state_file, "r0=0x%08x\n"
                         "r1=0x%08x\n"
@@ -330,8 +330,7 @@ void dump_state(hwaddr mmio_addr)
         read_ram(global_config->rams[i].start,global_config->rams[i].size,buf);
         ihex_write_at_address(&ihex, global_config->rams[i].start);
         ihex_write_bytes(&ihex, buf, global_config->rams[i].size);
-        // ihex_set_data(ihex,global_config->rams[i].start,buf,global_config->rams[i].size);
-        printf("start %x\n",global_config->rams[i].start);
+
         free(buf);
     }
     for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
@@ -342,14 +341,12 @@ void dump_state(hwaddr mmio_addr)
         read_ram(global_config->roms[i].start,global_config->roms[i].size,buf);
         ihex_write_at_address(&ihex, global_config->roms[i].start);
         ihex_write_bytes(&ihex, buf, global_config->roms[i].size);
-        // ihex_set_data(ihex,global_config->roms[i].start,buf,global_config->roms[i].size);
-        printf("start %x\n",global_config->roms[i].start);
+
         free(buf);
     }
     ihex_end_write(&ihex);
-    //ihex_dump_file(ihex, state_file);
+
     fclose(state_file);
-    printf("dump state over\n");
 
 }
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
@@ -360,9 +357,9 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #ifdef AFL
 
     int32_t len;
-    uint32_t stream_id = addr & 0xfffffff0;
+    uint32_t stream_id = addr ;//& 0xfffffff0;
     
-    struct SHARED_STREAMS* stream =  find_stream(stream_id);
+    struct SHARED_STREAMS * stream =  find_stream(stream_id);
 
     if(!stream)
     {
@@ -370,8 +367,8 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
         {
             new_streams[*num_new_streams] = stream_id;
             (*num_new_streams)++;
-            dump_state(addr);
-            exit(0);
+            if(need_dump_state)
+                dump_state(addr);
         }
         should_exit = true;
         exit_code = EXIT_OUTOFSEED;
@@ -435,7 +432,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         return true;
     }
     
-    if((execed_bbl_count % irq_per_bbls) == 0 && !irq_level)
+    if((execed_bbl_count & 0x1ff) == 0 && !irq_level)
     {
         struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
         if(!stream)
@@ -458,8 +455,6 @@ bool arm_exec_bbl(regval pc,uint32_t id)
             else
             {
                 insert_nvic_intc(*(uint16_t*)(stream->data + *stream->used),false);
-                // if(*(uint16_t*)(stream->data + *stream->used) != 0xffff)
-                //     printf("insert %x\n",*(uint16_t*)(stream->data + *stream->used));
                 *stream->used += 2;
             }
         }
@@ -531,7 +526,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 void post_thread_exec(int exec_ret)
 {
 
-    insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
+    //insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
 
     #ifdef DBG
     struct ARM_CPU_STATE state;
@@ -599,19 +594,25 @@ bool exec_bbl_snapshot(regval pc,uint32_t id)
 }
 
 
-void init()
+void init(int argc, char **argv)
 {
+    if(argc < 4)
+    {
+        printf("Usage: %s %s %s %s\n", argv[0], "dump_state(y/n)", "dump_dir","log_dir");
+        exit(0);
+    }
+    log_dir = argv[3];
+    state_dir = argv[2];
+    if(argv[1][0] == 'y')
+        need_dump_state = true;
     char path_buffer[PATH_MAX];
-    sprintf(path_buffer,"%s/log",global_config->project_dir);
-    mkdir(path_buffer, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    sprintf(path_buffer,"%s/log/log.txt",global_config->project_dir);
+    sprintf(path_buffer,"%s/log.txt",log_dir);
     flog = fopen(path_buffer,"w");
-    sprintf(path_buffer,"%s/log/crash.txt",global_config->project_dir);
+    sprintf(path_buffer,"%s/crash.txt",log_dir);
     f_crash_log = fopen(path_buffer,"w");
+
     setbuf(flog,0);
     setbuf(f_crash_log,0);
-    sprintf(path_buffer,"%s/state",global_config->project_dir);
-    mkdir(path_buffer, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     srand(time(NULL));
     #ifdef AFL
     struct SHARED_STREAMS* stream;
@@ -629,11 +630,12 @@ void init()
     bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));
     #endif
 }
+
 int run_config(struct CONFIG *config)
 {
     int i = 0;
     global_config = config;
-    init();
+
     struct Simulator *simulator;
     simulator = create_simulator(ARM,false);
     if(config->vecbase)
