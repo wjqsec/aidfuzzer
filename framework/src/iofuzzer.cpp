@@ -54,7 +54,7 @@ using namespace std;
 #define DEFAULT_STREAM_LEN 0x100
 #define MAX_STREAM_LEN 0x100000000
 
-
+#define MAIN_CPU 0
 #define INTERESTING_8 \
   -128,          /* Overflow signed 8-bit when decremented  */ \
   -1,            /*                                         */ \
@@ -375,7 +375,7 @@ struct input_stream
     u8 *data;
     s32 len;
     s32 used;
-    struct input_model *model;
+    //struct input_model *model;
 };
 
 struct queue_entry
@@ -648,14 +648,22 @@ void copy_fuzz_data(FuzzState *state,queue_entry* entry,u32** num_new_streams,u3
   *new_streams = (u32*)(ptr + 4);
   
 }
-bool sync_undiscovered_streams(queue_entry* entry,u32* num_new_streams,u32* new_streams)
+bool sync_undiscovered_streams(vector<queue_entry*> *entries,u32* num_new_streams,u32* new_streams)
 {
   bool found_new_stream = false;
+  ;
   for(int i = 0; i < *num_new_streams ; i++)
   {
-    input_stream *stream = new_stream(new_streams[i],nullptr);
-    entry->streams->insert({new_streams[i] , stream});
-    found_new_stream = true;
+    for(queue_entry* entry : *entries)
+    {
+      if(entry->streams->find(new_streams[i]) == entry->streams->end())
+      {
+        input_stream *stream = new_stream(new_streams[i],nullptr);
+        entry->streams->insert({new_streams[i] , stream});
+        found_new_stream = true;
+      }
+    }
+   
   }
   return found_new_stream;
 }
@@ -668,7 +676,7 @@ void sync_irq_vals(FuzzState *state,u32* num_irq_vals,u16* irq_vals)
 }
 void show_stat(FuzzState *state)
 {
-  if(state->cpu != 0)
+  if(state->cpu != MAIN_CPU)
     return;
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   printf("[%d][%d] total exec %d sync:%d edges:%d paths:%d\n",state->cpu,get_cur_time() / 1000, state->total_exec,state->sync_times, edges,state->entries->size());
@@ -839,39 +847,38 @@ void sync_entries(FuzzState *state)
 void run_modelling()
 {
   DIR* dir;
+  char cmd[PATH_MAX];
   struct dirent* dir_entry;
   dir = opendir(state_dir);
   if (dir == NULL) {
       fatal("opendir error");
   }
-  char cmd[PATH_MAX];
+  
   while ((dir_entry = readdir(dir)) != NULL) 
   {
     if (dir_entry->d_type == DT_REG && strcmp(dir_entry->d_name,".") && strcmp(dir_entry->d_name,"..")) 
     {
-      printf("model file:%s\n",dir_entry->d_name);
       sprintf(cmd,"%s/run_docker.sh %s fuzzware model ./state/%s -c ./model/model.yml > /dev/null","/home/w/hd/iofuzzer/fuzzware",out_dir,dir_entry->d_name);
       system(cmd);
       sprintf(cmd,"mv %s/%s %s/",state_dir,dir_entry->d_name,state_backup_dir);
       system(cmd);
-      
-      printf("model file:%s end\n",dir_entry->d_name);
+      printf("model file:%s\n",dir_entry->d_name);
     }
   }
   closedir(dir);
 }
-void parse_models(map<u32,struct input_model*> * models)
+void sync_models(map<u32,struct input_model*> * models)
 {
   bool begin = false;
   u32 mmio_id;
   int mode;
   char line[PATH_MAX];
   struct input_model *model = NULL;
-  set<u32> *vals;
+  set<u32> *vals = NULL;
   FILE *fp = fopen(model_file , "r");
   if(fp == NULL) 
   {
-    fatal("error open model file\n");
+    return;
   }
   while(fgets(line, PATH_MAX, fp))
   {
@@ -881,6 +888,7 @@ void parse_models(map<u32,struct input_model*> * models)
       begin = true;
     if(!begin)
       continue;
+
     if(strstr(line,"constant:"))
       mode = MODEL_CONSTANT;
     if(strstr(line,"set:"))
@@ -892,13 +900,7 @@ void parse_models(map<u32,struct input_model*> * models)
 
     if(char *mmio_str = strstr(line,"_mmio_"))
     {
-      
-      if(model)
-      {
-        model->mode = mode;
-        model->values = vals;
-        (*models)[mmio_id] = model;
-      }
+      mmio_id = strtol(mmio_str + strlen("_mmio_"), 0, 16);
       if(mode == MODEL_VALUE_SET)
       {
         vals = new set<u32>();
@@ -907,9 +909,10 @@ void parse_models(map<u32,struct input_model*> * models)
       {
         vals = nullptr;
       }
-      mmio_id = strtol(mmio_str + strlen("_mmio_"), 0, 16);
       model = (struct input_model*)malloc(sizeof(struct input_model));
-
+      model->mode = mode;
+      model->values = vals;
+      (*models)[mmio_id] = model;
     }
     
     if(strstr(line,"access_size: "))
@@ -927,12 +930,7 @@ void parse_models(map<u32,struct input_model*> * models)
     if(strstr(line,"- "))
       vals->insert(strtol(strstr(line,"- ") + strlen("- "),0,16));
   }
-  if(model)
-  {
-    model->mode = mode;
-    model->values = vals;
-    (*models)[mmio_id] = model;
-  }
+
   fclose(fp);
 }
 void try_increased_stream(FuzzState *state,queue_entry* entry,input_stream *stream)
@@ -980,12 +978,12 @@ s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
   irq_vals = (u16*)(num_irq_vals + 1);
   fork_server_runonce(state);
   exit_code = fork_server_getexit(state,exit_info,exit_pc,&entry->num_mmio);
-  found_new_streams = sync_undiscovered_streams(entry,num_new_streams,new_streams);
-  if(found_new_streams)
+  found_new_streams = sync_undiscovered_streams(state->entries,num_new_streams,new_streams);
+  if(found_new_streams && state->cpu == MAIN_CPU)
   {
     run_modelling();
-    parse_models(state->models);
   }
+  sync_models(state->models);
   sync_irq_vals(state,num_irq_vals,irq_vals);
   return exit_code;
   
@@ -1079,8 +1077,30 @@ void havoc(FuzzState *state, input_stream* stream)
   u32 use_stacking = 1 + UR(stream->len >> 2);
   s32 len = stream->len;
   u8 *data = stream->data;
-  if(len  <= 8 )
-    return;
+  struct input_model *model;
+
+  if(state->models->find(stream->id) != state->models->end())
+  {
+    model = (*state->models)[stream->id];
+    if(model->mode == MODEL_CONSTANT)
+    {
+      for(int i =0 ; i < (len >> 2) ; i ++)
+      {
+        ((u32*)data)[i] = model->constant_val;
+      }
+      return;
+    }
+    else if (model->mode == MODEL_VALUE_SET)
+    {
+      for(int i =0 ; i < (len >> 2) ; i ++)
+      {
+        auto it = model->values->begin();
+        std::advance(it, UR(model->values->size()));
+        ((u32*)data)[i] = *it;
+      }
+      return;
+    }
+  }
 
   for (s32 i = 0; i < use_stacking; i++) 
   {
@@ -1257,6 +1277,7 @@ void fuzz_loop(FuzzState *state, int cpu)
 
     fork_server_up(state);
 
+    sync_models(state->models);
     sync_entries(state);
 
     u8 *org_buf = (u8 *)malloc(MAX_STREAM_LEN);
@@ -1385,8 +1406,8 @@ void init_shared_mutex(void)
 int fuzz(int argc, char **argv)
 {
   int status;
-  //long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
-  long number_of_processors = 1;
+  long number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
+  //long number_of_processors = 1;
   for(int i = 0; i < number_of_processors; i++)
   {
     int pid = fork();
@@ -1396,7 +1417,7 @@ int fuzz(int argc, char **argv)
     {
       FuzzState state;
       fuzzer_init(&state,1 << 16, 100 << 20);
-      int pid = run_controlled_process(argv[3],i == 0);
+      int pid = run_controlled_process(argv[3],i == MAIN_CPU);
       state.pid = pid;
       fuzz_loop(&state,i);
     }

@@ -10,6 +10,10 @@
         "set": "cpp",
         "map": "cpp",
         "*.inc": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "system_error": "cpp",
+        "array": "cpp",
+        "list": "cpp",
+        "xhash": "cpp"
     }
 }
