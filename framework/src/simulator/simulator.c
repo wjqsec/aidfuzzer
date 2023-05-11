@@ -13,26 +13,19 @@
 #include <string.h>
 #include <kk_ihex_write.h>
 #include "xx.h"
+#include "config.h"
 #include "simulator.h"
 #define likely(_x)   __builtin_expect(!!(_x), 1)
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
-//#define DBG
-#define CRASH_DBG
-//#define TRACE_DBG
-#define AFL
 
-#define FORKSRV_CTLFD          198
-#define FORKSRV_DATAFD          200
 
-#define EXIT_NONE 0
-#define EXIT_TIMEOUT 1
-#define EXIT_OUTOFSEED 2
-#define EXIT_CRASH 3
+struct SIMULATOR_CONFIG* global_config;
 
-struct CONFIG* global_config;
+uint8_t *__afl_share_stream_data;
+uint8_t *__afl_undiscover_stream_data;
+uint8_t *__afl_irq_data;
 
-uint8_t *__afl_share_data;
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
@@ -48,10 +41,12 @@ uint32_t max_bbl_exec = 1000000;
 bool should_exit = false;
 uint32_t exit_code = 0;
 uint32_t exit_info;
+
 uint32_t num_mmio;
 uint64_t exit_pc;
 
 GArray* bbl_records;
+GArray* dumped_state_ids;
 
 uint32_t run_index;
 
@@ -69,15 +64,21 @@ struct SHARED_STREAMS
 GArray* fuzz_streams;
 uint32_t* num_new_streams;
 uint32_t* new_streams;
-uint32_t* num_interesting_vals;
-uint16_t* interesting_vals;
+uint32_t* num_irq_vals;
+uint16_t* irq_vals;
+
+static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
+{
+#define GOLDEN_RATIO_64 0x61C8864680B583EBull
+        return val * GOLDEN_RATIO_64 >> (64 - bits);
+}
 
 void collect_streams()
 {
     struct SHARED_STREAMS *stream;
     int i;
-    uint32_t len = *(uint32_t*)__afl_share_data;
-    uint8_t *ptr = __afl_share_data + 4;
+    uint32_t len = *(uint32_t*)__afl_share_stream_data;
+    uint8_t *ptr = __afl_share_stream_data + 4;
     for(i = 0; i < len;i++)
     {
         stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
@@ -89,11 +90,12 @@ void collect_streams()
     }
     stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
     stream->stream_id = 0;
-    num_new_streams = (uint32_t*)ptr;
+
+    num_new_streams = (uint32_t*)__afl_undiscover_stream_data;
     new_streams = num_new_streams + 1;
     *num_new_streams = 0;
-    num_interesting_vals = (uint32_t*)(ptr + 500);
-    interesting_vals = (uint16_t*)(num_interesting_vals + 1);
+    num_irq_vals = (uint32_t*)__afl_irq_data;
+    irq_vals = (uint16_t*)(num_irq_vals + 1);
 
 }
 bool discovered_stream(uint32_t stream_id)
@@ -124,18 +126,32 @@ struct SHARED_STREAMS* find_stream(uint32_t stream_id)
 
 void __afl_map_shm(void) {
 
-  char *id_str = getenv("__AFL_SHM_ID");
+  char *id_str = getenv(SHM_ENV_VAR);
   if (id_str) {
     uint32_t shm_id = atoi(id_str);
     __afl_area_ptr = shmat(shm_id, NULL, 0);
     if (__afl_area_ptr == (void *)-1) _exit(1);
   }
 
-  id_str = getenv("__AFL_SHM_SHARE");
+  id_str = getenv(SHM_SHARE_STREAM_VAR);
   if (id_str) {
     uint32_t shm_id = atoi(id_str);
-    __afl_share_data = shmat(shm_id, NULL, 0);
-    if (__afl_share_data == (void *)-1) _exit(1);
+    __afl_share_stream_data = shmat(shm_id, NULL, 0);
+    if (__afl_share_stream_data == (void *)-1) _exit(1);
+  }
+
+  id_str = getenv(SHM_SHARE_UNDISCOVER_STREAM_VAR);
+  if (id_str) {
+    uint32_t shm_id = atoi(id_str);
+    __afl_undiscover_stream_data = shmat(shm_id, NULL, 0);
+    if (__afl_undiscover_stream_data == (void *)-1) _exit(1);
+  }
+
+  id_str = getenv(SHM_SHARE_IRQ_VAR);
+  if (id_str) {
+    uint32_t shm_id = atoi(id_str);
+    __afl_irq_data = shmat(shm_id, NULL, 0);
+    if (__afl_irq_data == (void *)-1) _exit(1);
   }
 
 }
@@ -220,9 +236,9 @@ void report_irqs()
     uint32_t* num_irqs = get_enabled_nvic_irq2(&irqs);
     for(; i < *num_irqs; i++)
     {
-        interesting_vals[i] = irqs[i];
+        irq_vals[i] = irqs[i];
     }
-    *num_interesting_vals = i;
+    *num_irq_vals = i;
 }
 void exit_with_code_start_new(int32_t code)
 {
@@ -232,7 +248,7 @@ void exit_with_code_start_new(int32_t code)
     run_index++;
     #endif
 
-    
+    //printf("exit_code = %x pc = %x\n", code,exit_pc);
     
     report_irqs();
     static uint32_t buf[128];
@@ -276,15 +292,23 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
     *eptr = '\0';
     fputs(buffer,state_file);
 }
-void dump_state(hwaddr mmio_addr)
+void dump_state(uint32_t mmio_id)
 {
     int i;
     uint8_t *buf;
     char state_filename[PATH_MAX];
     struct ARM_CPU_STATE state;
     struct ihex_state ihex;
+
+    for(i = 0 ;i < dumped_state_ids->len ; i++)
+    {
+        if(g_array_index(dumped_state_ids, uint32_t, i) == mmio_id)
+            return;
+    }
+    g_array_append_val(dumped_state_ids, mmio_id); 
+
     get_arm_cpu_state(&state);
-    sprintf(state_filename,"%s/state_%x",state_dir,mmio_addr);
+    sprintf(state_filename,"%s/state_%x",state_dir,mmio_id);
     state_file = fopen(state_filename,"w");
     fprintf(state_file, "r0=0x%08x\n"
                         "r1=0x%08x\n"
@@ -356,23 +380,29 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint64_t ret = 0;
     #ifdef AFL
 
+    if(should_exit)
+        return ret;
     int32_t len;
-    uint32_t stream_id = addr ;//& 0xfffffff0;
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    uint32_t stream_id = hash_64(addr,32) ^ hash_64(state.precise_pc,32) ;//& 0xfffffff0;
     
+
     struct SHARED_STREAMS * stream =  find_stream(stream_id);
 
     if(!stream)
     {
+
         if(!discovered_stream(stream_id))
         {
             new_streams[*num_new_streams] = stream_id;
             (*num_new_streams)++;
             if(need_dump_state)
-                dump_state(addr);
+                dump_state(stream_id);
+            should_exit = true;
+            exit_code = EXIT_NONE;
+            exit_info = stream_id;
         }
-        should_exit = true;
-        exit_code = EXIT_OUTOFSEED;
-        exit_info = stream_id;
 
     }
     else
@@ -396,9 +426,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #endif
 
     #ifdef DBG
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio read pc:%p offset:%x val:%x\n",run_index, state.regs[15],addr,ret);
+    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, state.precise_pc,addr,ret,stream_id);
     #endif
 
     return ret;
@@ -410,7 +438,7 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, state.regs[15],addr,data);
+    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, state.precise_pc,addr,data);
     #endif
 }
 
@@ -432,7 +460,8 @@ bool arm_exec_bbl(regval pc,uint32_t id)
         return true;
     }
     
-    if((execed_bbl_count & 0x1ff) == 0 && !irq_level)
+    #ifdef ENABLE_IRQ
+    if((execed_bbl_count & 0xff) == 0 && !irq_level)
     {
         struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
         if(!stream)
@@ -442,14 +471,16 @@ bool arm_exec_bbl(regval pc,uint32_t id)
                 new_streams[*num_new_streams] = 0xffffffff;
                 (*num_new_streams)++;
             }
-            exit_with_code_start_new(EXIT_NONE);
+            exit_info = 0xffffffff;
+            exit_with_code_start_new(EXIT_OUTOFSEED);
             return true;
         }
         else
         {
             if(stream->len - *stream->used < 2)
             {
-                exit_with_code_start_new(EXIT_NONE);
+                exit_info = 0xffffffff;
+                exit_with_code_start_new(EXIT_OUTOFSEED);
                 return true;
             }
             else
@@ -459,7 +490,8 @@ bool arm_exec_bbl(regval pc,uint32_t id)
             }
         }
     }
-    
+    #endif
+
     #endif
 
 
@@ -582,6 +614,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id)
         start_new();
         collect_streams();
         #endif
+        printf("finish snapshot, start fuzzing execution\n");
         return true;
     }
     else if(snapshot_point && !returned)
@@ -623,15 +656,16 @@ void init(int argc, char **argv)
         g_array_append_val(fuzz_streams, stream); 
     }
     __afl_map_shm();
+    dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
     #endif
-
+    
     
     #ifdef TRACE_DBG
     bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));
     #endif
 }
 
-int run_config(struct CONFIG *config)
+int run_config(struct SIMULATOR_CONFIG *config)
 {
     int i = 0;
     global_config = config;
@@ -642,7 +676,7 @@ int run_config(struct CONFIG *config)
         set_armv7_vecbase(config->vecbase);
     init_simulator(simulator);
 
-    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
         if(config->rams[i].size == 0)
             break;
@@ -659,7 +693,7 @@ int run_config(struct CONFIG *config)
             free(buf);
         }
     }
-    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
         if(config->roms[i].size == 0)
             break;
@@ -671,7 +705,7 @@ int run_config(struct CONFIG *config)
             
     }
     
-    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
         if(config->mmios[i].size == 0)
             break;

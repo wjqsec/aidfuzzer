@@ -11,9 +11,11 @@
 #include <glib.h>
 #include <string.h>
 #include "xx.h"
+#include "config.h"
 #include "simulator.h"
 
-struct CONFIG _3dprinter_config = 
+
+struct SIMULATOR_CONFIG _3dprinter_config = 
 {
     .vecbase = 0x8000000,
     .rams = {
@@ -33,7 +35,7 @@ struct CONFIG _3dprinter_config =
     }
 };
 
-struct CONFIG _basic_exercises_config = 
+struct SIMULATOR_CONFIG _basic_exercises_config = 
 {
     .vecbase = 0,
     .rams = {
@@ -50,7 +52,7 @@ struct CONFIG _basic_exercises_config =
                 [1 ... 254] = {  NULL, 0, 0 }
     }
 };
-struct CONFIG _arduino_f103_adc_config = 
+struct SIMULATOR_CONFIG _arduino_f103_adc_config = 
 {
     .vecbase = 0x8000000,
     .rams = {
@@ -66,7 +68,7 @@ struct CONFIG _arduino_f103_adc_config =
                 [1 ... 254] = {  NULL, 0, 0 }
     }
 };
-struct CONFIG _arduino_f103_gpio_config = 
+struct SIMULATOR_CONFIG _arduino_f103_gpio_config = 
 {
     .vecbase = 0x8000000,
     .rams = {

@@ -130,6 +130,7 @@ void* xx_save_arm_ctx_state()
 }
 void xx_restore_arm_ctx_state(void* state)
 {
+    qemu_devices_reset(SHUTDOWN_CAUSE_SNAPSHOT_LOAD);
     struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
     CPUState *cs = qemu_get_cpu(0);
     ARMCPU *cpu = ARM_CPU(cs);

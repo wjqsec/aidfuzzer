@@ -1,3 +1,5 @@
+
+#define MAX_NUM_MEM_REGION 255
 struct RAM
 {
     char *name;
@@ -23,12 +25,10 @@ struct MMIO
     hwaddr start;
     hwaddr size;
 };
-struct CONFIG
+struct SIMULATOR_CONFIG
 {
     hwaddr vecbase;
-    struct RAM rams[255];
-    struct ROM roms[255];
-    struct MMIO mmios[255];
+    struct RAM rams[MAX_NUM_MEM_REGION];
+    struct ROM roms[MAX_NUM_MEM_REGION];
+    struct MMIO mmios[MAX_NUM_MEM_REGION];
 };
-int run_config(struct CONFIG *config);
-void init(int argc, char **argv);
