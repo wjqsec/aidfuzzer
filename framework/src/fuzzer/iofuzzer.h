@@ -2,6 +2,7 @@
 #define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
 #define SHM_SHARE_IRQ_VAR         "__AFL_IRQ_SHARE"
 #define SHM_SHARE_UNDISCOVER_STREAM_VAR         "__AFL_UNDISCOVER_STREAM_SHARE"
+#define SHM_SHARE_FUZZ_QUEUE_VAR "__AFL_QUEUE_SHARE"
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -26,8 +27,14 @@ typedef int64_t  s64;
 #define FUZZ_OUTPUT 0x3
 #define ACK 0x4
 
-#define DEFAULT_STREAM_LEN 0x200
-#define MAX_STREAM_LEN 0x2000000
+
+#define MAX_STREAM_LEN 0x6000000
+#define DEFAULT_STREAM_LEN 0x400
+
+#define DEFAULT_ELEMENT_SIZE 4
+#define DEFAULT_IRQ_ELEMENT_SIZE 2
+
+#define IRQ_STREAM_ID 0xffffffff
 
 #define MAIN_CPU 0
 
@@ -36,6 +43,15 @@ typedef int64_t  s64;
 
 #define ENTRY_MUTEX_MEM_SIZE 1024
 #define ENTRY_MUTEX_KEY 1234
+
+#define SHARE_FUZZDATA_SIZE 2 << 30
+#define FUZZ_COVERAGE_SIZE 1 << 16
+
+#define MODEL_VALUE_SET 0
+#define MODEL_BIT_EXTRACT 1
+#define MODEL_CONSTANT 2
+#define MODEL_PASSTHROUGH 3
+#define MODEL_NONE 4
 
 inline static u64 get_cur_time(void) {
 

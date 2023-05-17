@@ -41,13 +41,14 @@ enum XX_CPU_TYPE
     X86,
     ARM
 };
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
 exec_bbl_cb exec_bbl_func;
 
 typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 exec_ins_icmp_cb exec_ins_icmp_func;
 
-
+int64_t bbl_counts;
+#define MILISECONS_PER_BBL 10000
 struct DirtyBitmapSnapshot {
     ram_addr_t start;
     ram_addr_t end;
@@ -511,7 +512,7 @@ static void xx_kick_vcpu_thread(CPUState *unused)
 }
 static int64_t xx_icount_get(void)
 {
-	return 0;
+	return bbl_counts * MILISECONS_PER_BBL;
 }
 
 
@@ -545,8 +546,8 @@ static void xx_accel_ops_init(AccelOpsClass *ops)
     ops->create_vcpu_thread = xx_start_vcpu_thread;
     ops->kick_vcpu_thread = xx_kick_vcpu_thread;
     ops->handle_interrupt = xx_icount_handle_interrupt;
-    //ops->get_virtual_clock = xx_icount_get;
-    //ops->get_elapsed_ticks = xx_icount_get;
+    ops->get_virtual_clock = xx_icount_get;
+    ops->get_elapsed_ticks = xx_icount_get;
 
     ops->supports_guest_debug = tcg_supports_guest_debug;
     ops->insert_breakpoint = tcg_insert_breakpoint;

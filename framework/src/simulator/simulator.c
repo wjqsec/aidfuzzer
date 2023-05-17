@@ -15,16 +15,24 @@
 #include "xx.h"
 #include "config.h"
 #include "simulator.h"
-#define likely(_x)   __builtin_expect(!!(_x), 1)
-#define unlikely(_x)  __builtin_expect(!!(_x), 0)
-
 
 
 struct SIMULATOR_CONFIG* global_config;
+#include "snapshot.h"
+#define likely(_x)   __builtin_expect(!!(_x), 1)
+#define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
+#define IRQ_STREAM_ID 0xffffffff
+
+struct ARMM_SNAPSHOT *org_snap, *new_snap;
+
+
+
+uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
 uint8_t *__afl_undiscover_stream_data;
 uint8_t *__afl_irq_data;
+
 
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
@@ -34,16 +42,16 @@ int irq_level = 0;
 FILE *flog;
 FILE *f_crash_log;
 
-uint64_t execed_bbl_count = 1;
+
 uint32_t max_bbl_exec = 1000000;
 
 
 bool should_exit = false;
 uint32_t exit_code = 0;
 uint32_t exit_info;
-
-uint32_t num_mmio;
 uint64_t exit_pc;
+uint32_t num_mmio;
+
 
 GArray* bbl_records;
 GArray* dumped_state_ids;
@@ -57,15 +65,22 @@ char *log_dir;
 struct SHARED_STREAMS
 {
     uint32_t stream_id;
-    uint32_t len;
-    uint32_t *used;
+    int32_t len;
+    int32_t used;
+    uint32_t type;
+    int32_t element_size;
+    int32_t left_shift;
     uint8_t *data;
 };
+
+
 GArray* fuzz_streams;
-uint32_t* num_new_streams;
+int32_t* num_new_streams;
 uint32_t* new_streams;
-uint32_t* num_irq_vals;
+
+int32_t* num_irq_vals;
 uint16_t* irq_vals;
+
 
 static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
 {
@@ -75,30 +90,30 @@ static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
 
 void collect_streams()
 {
+
     struct SHARED_STREAMS *stream;
-    int i;
-    uint32_t len = *(uint32_t*)__afl_share_stream_data;
-    uint8_t *ptr = __afl_share_stream_data + 4;
-    for(i = 0; i < len;i++)
+    int i = 0;
+    uint32_t *current_queue_offset = (uint32_t *)__afl_share_fuzz_queue_data;
+    uint32_t offset;
+    uint8_t *ptr;
+    while((offset = current_queue_offset[i]) != 0xffffffff)
     {
+        ptr = __afl_share_stream_data + offset;
         stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
         stream->stream_id = *(uint32_t*)ptr;
-        stream->len = *(uint32_t*)(ptr+4);
-        stream->used = (uint32_t*)(ptr+8);
-        stream->data = (uint8_t*)(ptr+12);
-        ptr += 12 + stream->len;
+        stream->len = *(int32_t*)(ptr + sizeof(stream->stream_id));
+        stream->used = 0;
+        stream->type = *(uint32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len));
+        stream->element_size = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type));
+        stream->left_shift = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size));
+        stream->data = (uint8_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift));
+        i++;
     }
+
     stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
     stream->stream_id = 0;
-
-    num_new_streams = (uint32_t*)__afl_undiscover_stream_data;
-    new_streams = num_new_streams + 1;
-    *num_new_streams = 0;
-    num_irq_vals = (uint32_t*)__afl_irq_data;
-    irq_vals = (uint16_t*)(num_irq_vals + 1);
-
 }
-bool discovered_stream(uint32_t stream_id)
+inline bool discovered_stream(uint32_t stream_id)
 {
     for(int i = 0; i < *num_new_streams; i++)
     {
@@ -107,14 +122,17 @@ bool discovered_stream(uint32_t stream_id)
     }
     return false;
 }
-struct SHARED_STREAMS* find_stream(uint32_t stream_id)
+inline struct SHARED_STREAMS* find_stream(uint32_t stream_id)
 {
     struct SHARED_STREAMS *ret = NULL, *tmp;
     for (int i = 0; ; i++) 
     {
+        
         tmp = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
+
         if(tmp->stream_id == 0)
             break;
+        
         if(tmp->stream_id == stream_id)
         {
             ret = tmp;
@@ -126,108 +144,56 @@ struct SHARED_STREAMS* find_stream(uint32_t stream_id)
 
 void __afl_map_shm(void) {
 
-  char *id_str = getenv(SHM_ENV_VAR);
-  if (id_str) {
+    char *id_str = getenv(SHM_ENV_VAR);
+    if (id_str) {
     uint32_t shm_id = atoi(id_str);
     __afl_area_ptr = shmat(shm_id, NULL, 0);
     if (__afl_area_ptr == (void *)-1) _exit(1);
-  }
+    }
 
-  id_str = getenv(SHM_SHARE_STREAM_VAR);
-  if (id_str) {
+    id_str = getenv(SHM_SHARE_STREAM_VAR);
+    if (id_str) {
     uint32_t shm_id = atoi(id_str);
     __afl_share_stream_data = shmat(shm_id, NULL, 0);
     if (__afl_share_stream_data == (void *)-1) _exit(1);
-  }
+    }
 
-  id_str = getenv(SHM_SHARE_UNDISCOVER_STREAM_VAR);
-  if (id_str) {
+    id_str = getenv(SHM_SHARE_UNDISCOVER_STREAM_VAR);
+    if (id_str) {
     uint32_t shm_id = atoi(id_str);
     __afl_undiscover_stream_data = shmat(shm_id, NULL, 0);
     if (__afl_undiscover_stream_data == (void *)-1) _exit(1);
-  }
+    }
 
-  id_str = getenv(SHM_SHARE_IRQ_VAR);
-  if (id_str) {
+    id_str = getenv(SHM_SHARE_IRQ_VAR);
+    if (id_str) {
     uint32_t shm_id = atoi(id_str);
     __afl_irq_data = shmat(shm_id, NULL, 0);
     if (__afl_irq_data == (void *)-1) _exit(1);
-  }
+    }
+
+    id_str = getenv(SHM_SHARE_FUZZ_QUEUE_VAR);
+    if (id_str) {
+    uint32_t shm_id = atoi(id_str);
+    __afl_share_fuzz_queue_data = shmat(shm_id, NULL, 0);
+    if (__afl_share_fuzz_queue_data == (void *)-1) _exit(1);
+    }
+
+    num_new_streams = (uint32_t*)__afl_undiscover_stream_data;
+    new_streams = num_new_streams + 1;
+
+    num_irq_vals = (uint32_t*)__afl_irq_data;
+    irq_vals = (uint16_t*)(num_irq_vals + 1);
 
 }
 
-struct SNAPSHOT_MEM_SEG
-{
-    uint8_t *data;
-    hwaddr start;
-    uint32_t len;
-};
-struct ARMM_SNAPSHOT
-{
-    #define NUM_MEM_SNAPSHOT 255
-    struct SNAPSHOT_MEM_SEG mems[NUM_MEM_SNAPSHOT];
-    void *arm_ctx;
-};
 
-struct ARMM_SNAPSHOT *org_snap, *new_snap;
-struct ARMM_SNAPSHOT* arm_take_snapshot()
-{
-    struct ARMM_SNAPSHOT *snap = (struct ARMM_SNAPSHOT*)malloc(sizeof(struct ARMM_SNAPSHOT));
-    snap->arm_ctx = save_arm_ctx_state();
 
-    for(int i = 0; i < NUM_MEM_SNAPSHOT ; i ++)
-    {
-        snap->mems[i].len = 0;
-        if(global_config->rams[i].size && !global_config->rams[i].readonly)
-        {
-            snap->mems[i].len = global_config->rams[i].size;
-            snap->mems[i].start = global_config->rams[i].start;
-            snap->mems[i].data = (uint8_t*)malloc(snap->mems[i].len);
-            read_ram(snap->mems[i].start,snap->mems[i].len,snap->mems[i].data);
-        }
-    }
-
-    return snap;    
-}
-
-void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
-{
-    static uint8_t dirty_bits[0x1000];
-    restore_arm_ctx_state(snap->arm_ctx);
-    int page_size = target_pagesize();
-    for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
-    {
-        if(snap->mems[num_mem].len ==0)
-            break;
-        int num_pages = snap->mems[num_mem].len / page_size;
-        
-        // write_ram(snap->mems[num_mem].start,snap->mems[num_mem].len,snap->mems[num_mem].data);
-        
-        get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, (unsigned long*)dirty_bits);
-        for(int i = 0 ; i < num_pages ; i++)
-        {
-            if(1 & (dirty_bits[i / 8] >> (i & 7)))
-            {
-                uint32_t offset = page_size * i;
-                //fprintf(flog,"restore memory %x\n",snap->mems[num_mem].start + offset);
-                write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
-            }
-            
-        }  
-    }
-    for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
-    {
-        if(snap->mems[num_mem].len ==0)
-            break;
-        clear_dirty_mem(snap->mems[num_mem].start, snap->mems[num_mem].len);
-    }
-}
 
 void start_new()
 {
-    static uint32_t buf[16];
-    read(FORKSRV_CTLFD,buf,4);  // start new run
-
+    uint32_t tmp;
+    read(FORKSRV_CTLFD,&tmp,4);  // start new run
 }
 void report_irqs()
 {
@@ -240,11 +206,11 @@ void report_irqs()
     }
     *num_irq_vals = i;
 }
-void exit_with_code_start_new(int32_t code)
+void exit_with_code_start_new()
 {
     
     #ifdef DBG
-    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, code,exit_pc);
+    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_code,exit_pc);
     run_index++;
     #endif
 
@@ -252,20 +218,21 @@ void exit_with_code_start_new(int32_t code)
     
     report_irqs();
     static uint32_t buf[128];
-    buf[0] = code;
+    buf[0] = exit_code;
     buf[1] = exit_info;
     buf[2] = exit_pc;
     buf[3] = num_mmio;
 
     write(FORKSRV_CTLFD+1 , buf,16);        
     arm_restore_snapshot(new_snap);
-    execed_bbl_count = 1;
+
     exit_info = 0;
     num_mmio = 0;
     // __afl_prev_loc = 0;
     irq_level = 0;
     //read(FORKSRV_CTLFD,&record,4);
-
+    should_exit = false;
+    
     #ifdef TRACE_DBG
     uint32_t record;
     if(record)
@@ -281,7 +248,7 @@ void exit_with_code_start_new(int32_t code)
     #endif
 
     start_new();
-    
+    *num_new_streams = 0;
     collect_streams();
     
     
@@ -373,6 +340,72 @@ void dump_state(uint32_t mmio_id)
     fclose(state_file);
 
 }
+void prepare_exit(uint32_t code,uint32_t info,uint64_t pc)
+{
+    should_exit = true;
+    exit_code = code;
+    exit_info = info;
+    exit_pc = pc;
+}
+void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precise_pc)
+{
+    switch(stream->type)
+    {
+        case MODEL_VALUE_SET:
+        {
+            uint32_t num_values = *(uint32_t *)(stream->data);
+            uint32_t *value_set = (uint32_t *)(stream->data + sizeof(uint32_t));
+            uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            if(unlikely(stream->used == 0))
+                stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            if(stream->len - stream->used < stream->element_size)
+            {
+                *out = value_set[0];  //give it a default one
+                prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+            }
+                
+            else
+            {
+                *out = value_set[fuzz_data[stream->used] % num_values];
+                stream->used += stream->element_size;
+            }    
+        }
+        break;
+        case MODEL_BIT_EXTRACT:
+        {
+
+        }
+        break;
+        case MODEL_CONSTANT:
+        {
+            *out = *(uint32_t*)(stream->data);
+        }
+        break;
+        case MODEL_PASSTHROUGH:
+        {
+
+        }
+        break;
+        case MODEL_NONE:
+        {
+            if(stream->len - stream->used < stream->element_size)
+            prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+            else
+            {
+                *out = *(uint32_t*)(stream->data + stream->used);
+                stream->used += stream->element_size;
+            }    
+        }
+        break;
+        default:
+        {
+            printf("wrong stream type:%d\n",stream->type);
+            exit(0);
+        }
+        break;
+    }    
+}
+
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
 
@@ -382,7 +415,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     if(should_exit)
         return ret;
-    int32_t len;
+
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
     uint32_t stream_id = hash_64(addr,32) ^ hash_64(state.precise_pc,32) ;//& 0xfffffff0;
@@ -392,35 +425,22 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     if(!stream)
     {
-
         if(!discovered_stream(stream_id))
         {
             new_streams[*num_new_streams] = stream_id;
             (*num_new_streams)++;
             if(need_dump_state)
                 dump_state(stream_id);
-            should_exit = true;
-            exit_code = EXIT_NONE;
-            exit_info = stream_id;
+            prepare_exit(EXIT_NONE,stream_id,state.precise_pc);
         }
 
     }
     else
     {
-        if(stream->len - *stream->used < size)
-        {
-            should_exit = true;
-            exit_code = EXIT_OUTOFSEED;
-            exit_info = stream_id;
-        }
-        else
-        {
-            num_mmio++;
-            memcpy(&ret,stream->data + *stream->used,size);
-            *stream->used += size;
-        }
+        num_mmio++;
+        get_fuzz_data(stream, &ret,state.precise_pc);     
     }
-    
+
 
     
     #endif
@@ -443,51 +463,37 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 }
 
 
-bool arm_exec_bbl(regval pc,uint32_t id)
+bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
 
     #ifdef AFL
     
-    if(unlikely(execed_bbl_count >= max_bbl_exec))
+    if(unlikely(bbl >= max_bbl_exec))
     {
-        exit_with_code_start_new(EXIT_TIMEOUT);
+        prepare_exit(EXIT_TIMEOUT,0,pc);
+        exit_with_code_start_new();
         return true;
     }
     if(unlikely(should_exit))  //run out of seed
     {
-        exit_with_code_start_new(exit_code);
-        should_exit = false;
+        exit_with_code_start_new();
         return true;
     }
     
     #ifdef ENABLE_IRQ
-    if((execed_bbl_count & 0xff) == 0 && !irq_level)
+    if(bbl != 0 && (bbl & 0x1ff) == 0)// && !irq_level)
     {
-        struct SHARED_STREAMS* stream =  find_stream(0xffffffff);
+        struct SHARED_STREAMS* stream =  find_stream(IRQ_STREAM_ID);
         if(!stream)
         {
-            if(!discovered_stream(0xffffffff))
-            {
-                new_streams[*num_new_streams] = 0xffffffff;
-                (*num_new_streams)++;
-            }
-            exit_info = 0xffffffff;
-            exit_with_code_start_new(EXIT_OUTOFSEED);
-            return true;
+            printf("fatal:not irq stream found\n");
+            exit(0);
         }
         else
         {
-            if(stream->len - *stream->used < 2)
-            {
-                exit_info = 0xffffffff;
-                exit_with_code_start_new(EXIT_OUTOFSEED);
-                return true;
-            }
-            else
-            {
-                insert_nvic_intc(*(uint16_t*)(stream->data + *stream->used),false);
-                *stream->used += 2;
-            }
+            uint64_t irq;
+            get_fuzz_data(stream, &irq,pc);     
+            insert_nvic_intc(irq,false);
         }
     }
     #endif
@@ -505,8 +511,7 @@ bool arm_exec_bbl(regval pc,uint32_t id)
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
     __afl_area_ptr[id] ++;
-    exit_pc = pc;
-    execed_bbl_count++;
+    
 
 
 
@@ -591,7 +596,7 @@ uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
 }
 void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
 
-bool exec_bbl_snapshot(regval pc,uint32_t id)
+bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
 {
     int i;
     static bool returned = false;

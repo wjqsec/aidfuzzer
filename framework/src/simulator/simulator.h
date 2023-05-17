@@ -2,7 +2,7 @@
 #define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
 #define SHM_SHARE_IRQ_VAR         "__AFL_IRQ_SHARE"
 #define SHM_SHARE_UNDISCOVER_STREAM_VAR         "__AFL_UNDISCOVER_STREAM_SHARE"
-
+#define SHM_SHARE_FUZZ_QUEUE_VAR "__AFL_QUEUE_SHARE"
 //#define DBG
 #define CRASH_DBG
 //#define TRACE_DBG
@@ -15,6 +15,13 @@
 #define EXIT_TIMEOUT 1
 #define EXIT_OUTOFSEED 2
 #define EXIT_CRASH 3
+
+#define MODEL_VALUE_SET 0
+#define MODEL_BIT_EXTRACT 1
+#define MODEL_CONSTANT 2
+#define MODEL_PASSTHROUGH 3
+#define MODEL_NONE 4
+
 
 #define ENABLE_IRQ
 int run_config(struct SIMULATOR_CONFIG *config);

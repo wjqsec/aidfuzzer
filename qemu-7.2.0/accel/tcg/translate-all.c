@@ -752,7 +752,7 @@ void page_collection_unlock(struct page_collection *set)
  * Isolate the portion of code gen which can setjmp/longjmp.
  * Return the size of the generated code, or negative on error.
  */
-typedef bool (*exec_bbl_cb)(uint64_t pc);
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl);
 extern exec_bbl_cb exec_bbl_func;
 extern TCGv_env cpu_env;
 static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)

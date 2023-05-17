@@ -14,6 +14,7 @@
 #include "hw/arm/boot.h"
 #include "sysemu/reset.h"
 
+extern int64_t bbl_counts;
 #define SYSCLK_FRQ 25000000
 #define REFCLK_FRQ (1 * 1000 * 1000)
 typedef uint64_t regval;
@@ -130,6 +131,7 @@ void* xx_save_arm_ctx_state()
 }
 void xx_restore_arm_ctx_state(void* state)
 {
+    bbl_counts = 0;
     qemu_devices_reset(SHUTDOWN_CAUSE_SNAPSHOT_LOAD);
     struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
     CPUState *cs = qemu_get_cpu(0);

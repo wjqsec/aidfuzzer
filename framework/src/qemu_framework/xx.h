@@ -106,7 +106,7 @@ typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
 typedef void (*pre_thread_exec_cb)(); 
-typedef bool (*exec_bbl_cb)(regval pc,uint32_t id);
+typedef bool (*exec_bbl_cb)(regval pc,uint32_t id,int64_t bbl);
 typedef void (*exec_ins_icmp_cb)(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
 

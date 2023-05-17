@@ -32,22 +32,23 @@
 #include "tcg/tcg.h"
 #include "qemu/timer.h"
 /* 32-bit helpers */
-
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id); 
+extern int64_t bbl_counts;
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
 extern exec_bbl_cb exec_bbl_func;
 typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 extern exec_ins_icmp_cb exec_ins_icmp_func;
 uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
-    bool should_exit = exec_bbl_func(pc,id);
     static uint64_t e = 0;
-    if((e++ & 0xff) == 0)
-	qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+    bool should_exit = exec_bbl_func(pc,id,bbl_counts);
     if(should_exit)
     {
 	    CPUState *cpu = env_cpu(env);
 	    cpu_loop_exit(cpu);
     }
+    bbl_counts++;
+    //if((e++ & 0xff) == 0)
+	qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
     return 1;
 }
 uint64_t HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)
