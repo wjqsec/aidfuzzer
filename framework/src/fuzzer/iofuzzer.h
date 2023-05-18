@@ -28,7 +28,7 @@ typedef int64_t  s64;
 #define ACK 0x4
 
 
-#define MAX_STREAM_LEN 0x6000000
+#define MAX_STREAM_LEN 0xa00000
 #define DEFAULT_STREAM_LEN 0x400
 
 #define DEFAULT_ELEMENT_SIZE 4
@@ -44,7 +44,7 @@ typedef int64_t  s64;
 #define ENTRY_MUTEX_MEM_SIZE 1024
 #define ENTRY_MUTEX_KEY 1234
 
-#define SHARE_FUZZDATA_SIZE 2 << 30
+#define SHARE_FUZZDATA_SIZE 3 << 30
 #define FUZZ_COVERAGE_SIZE 1 << 16
 
 #define MODEL_VALUE_SET 0
