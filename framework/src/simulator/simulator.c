@@ -353,43 +353,67 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
     {
         case MODEL_VALUE_SET:
         {
+
             uint32_t num_values = *(uint32_t *)(stream->data);
+
             uint32_t *value_set = (uint32_t *)(stream->data + sizeof(uint32_t));
+
             uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
+
             if(unlikely(stream->used == 0))
                 stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            
             if(stream->len - stream->used < stream->element_size)
             {
+
                 *out = value_set[0];  //give it a default one
                 prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+
             }
                 
             else
             {
-                *out = value_set[fuzz_data[stream->used] % num_values];
+
+                *out = value_set[fuzz_data[stream->used]];
                 stream->used += stream->element_size;
+
             }    
         }
         break;
-        case MODEL_BIT_EXTRACT:
-        {
-
-        }
-        break;
+        
         case MODEL_CONSTANT:
         {
             *out = *(uint32_t*)(stream->data);
         }
         break;
-        case MODEL_PASSTHROUGH:
+        case MODEL_BIT_EXTRACT:
         {
-
+            if(stream->len - stream->used < stream->element_size)
+            {
+                prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+            }
+            else
+            {
+                memcpy(out,stream->data + stream->used,stream->element_size);
+                *out = *out << stream->left_shift;
+                stream->used += stream->element_size;
+            }
         }
         break;
+        case MODEL_PASSTHROUGH:
+        // {
+
+        // }
+        // break;
+        
+        // {
+
+        // }
+        // break;
         case MODEL_NONE:
         {
             if(stream->len - stream->used < stream->element_size)
-            prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+                prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
             else
             {
                 *out = *(uint32_t*)(stream->data + stream->used);
@@ -403,7 +427,7 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
             exit(0);
         }
         break;
-    }    
+    } 
 }
 
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
