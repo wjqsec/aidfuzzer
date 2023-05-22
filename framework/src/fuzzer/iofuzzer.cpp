@@ -107,7 +107,7 @@ struct FuzzState
 
     vector<queue_entry*> *entries;
     map<u32,queue_entry*> *cksums_entries;
-    map<u32,input_stream*> *all_streams;
+    vector<input_stream*> *all_streams;
 
     u8 *temp_compressed_bits;
 
@@ -145,7 +145,7 @@ void free_queue(queue_entry* q);
 bool fuzz_one_post(FuzzState *state,queue_entry* entry, input_stream *fuzzed_stream, s32 exit_code, u32 exit_info, u32 exit_pc);
 void save_entry(queue_entry* entry, char *folder);
 void sync_models(FuzzState *state);
-void havoc(FuzzState *state, input_stream* stream);
+void havoc(FuzzState *state,queue_entry* q, input_stream* stream);
 void find_all_streams_save_queue(FuzzState *state,queue_entry* entry);
 
 
@@ -266,19 +266,33 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
         }
       }
     }
-    (*state->all_streams)[*stream->stream_id] = stream;
+    
   }
-
+  state->all_streams->push_back(stream);
   update_stream_ptr(state, sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->mode) + sizeof(stream->element_size) + sizeof(stream->left_shift) + *stream->len);
   return stream;
 }
-inline input_stream *increase_stream(FuzzState *state,input_stream *old , u32 new_len)
+input_stream *find_specific_stream(FuzzState *state,u32 id, s32 len)
 {
-  u32 old_len = *old->len;
-  *old->len = new_len;
-  input_stream *q = allocate_new_stream(state,*old->stream_id, nullptr, old , 0, 0);  //will copy some dirty data from shared stream, doesn't matter as long as it doesn't crash, won't
-  *old->len = old_len;
-  return q;
+  for(input_stream *stream : *state->all_streams)
+  {
+    if(*stream->stream_id == id && *stream->len == len)
+      return stream;
+  }
+  return nullptr;
+}
+inline input_stream *increase_stream(FuzzState *state,input_stream *old , s32 new_len)
+{
+  input_stream *stream = find_specific_stream(state,*old->stream_id, new_len);
+  if(!stream)
+  {
+    u32 old_len = *old->len;
+    *old->len = new_len;
+    stream = allocate_new_stream(state,*old->stream_id, nullptr, old , 0, 0);  //will copy some dirty data from shared stream, doesn't matter as long as it doesn't crash, won't
+    *old->len = old_len;
+  }
+ 
+  return stream;
 }
 
 inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
@@ -378,7 +392,7 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
 
     state->entries = new vector<struct queue_entry*>();
     state->cksums_entries = new map<u32, struct queue_entry*>();
-    state->all_streams = new map<u32, input_stream*>();
+    state->all_streams = new vector<input_stream*>();
     state->models = new map<u32,struct input_model*>();
     state->streamid_mmioaddr_mapping = new map<u32,u32>();
 
@@ -454,15 +468,11 @@ bool sync_undiscovered_streams(FuzzState *state,queue_entry* q)
 
   for(int i = 0; i < *num_new_streams ; i++)
   {
-    input_stream *stream = nullptr;
-    if(state->all_streams->count(new_streams[i]) > 0)
-    {
-      stream = (*state->all_streams)[new_streams[i]];
-    }
-    else
-    {
+    input_stream *stream = find_specific_stream(state,new_streams[i],DEFAULT_STREAM_LEN);
+
+    if(!stream)
       stream = allocate_new_stream(state,new_streams[i],nullptr,nullptr,DEFAULT_STREAM_LEN,DEFAULT_ELEMENT_SIZE);
-    }
+    
     (*q->streams)[new_streams[i]] = stream;
   }
 
@@ -484,27 +494,46 @@ void show_stat(FuzzState *state)
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
   printf("[%d][%d] total exec %d sync:%d edges:%d paths:%d\n",state->cpu,get_cur_time() / 1000, state->total_exec,state->sync_times, edges,state->entries->size());
 
-  printf("\n-----------queue details-----------\n");
-  printf("id        depth     bbls      #streams  prio      favorate             none      seed      timeout   crash     exit_pc   num_mmio  exec_times\n");
+  // printf("\n-----------queue details-----------\n");
+  // printf("id        depth     bbls      #streams  prio      favorate             none      seed      timeout   crash     exit_pc   num_mmio  exec_times\n");
   //int count = state->cksums_entries->size();
-  for (auto it = state->cksums_entries->begin(); it != state->cksums_entries->end(); it++)
-  {
-    printf("%-10x%-10d%-10d%-10d%-10d%-10x:%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d\n",
-    it->second->cksum,
-    it->second->depth,
-    it->second->edges,
-    it->second->streams->size(),
-    it->second->priority,
-    it->second->favorate_stream ? it->second->favorate_stream : 0,
-    state->streamid_mmioaddr_mapping->find(it->second->favorate_stream) == state->streamid_mmioaddr_mapping->end() ? 0 : (*state->streamid_mmioaddr_mapping)[it->second->favorate_stream],
-    it->second->exit_none ,
-    it->second->exit_outofseed ,
-    it->second->exit_timeout ,
-    it->second->exit_crash ,
-    it->second->exit_pc,
-    it->second->num_mmio,
-    it->second->fuzz_times);
-  }
+  // for (auto it = state->cksums_entries->begin(); it != state->cksums_entries->end(); it++)
+  // {
+  //   printf("%-10x%-10d%-10d%-10d%-10d%-10x:%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d\n",
+  //   it->second->cksum,
+  //   it->second->depth,
+  //   it->second->edges,
+  //   it->second->streams->size(),
+  //   it->second->priority,
+  //   it->second->favorate_stream ? it->second->favorate_stream : 0,
+  //   state->streamid_mmioaddr_mapping->find(it->second->favorate_stream) == state->streamid_mmioaddr_mapping->end() ? 0 : (*state->streamid_mmioaddr_mapping)[it->second->favorate_stream],
+  //   it->second->exit_none ,
+  //   it->second->exit_outofseed ,
+  //   it->second->exit_timeout ,
+  //   it->second->exit_crash ,
+  //   it->second->exit_pc,
+  //   it->second->num_mmio,
+  //   it->second->fuzz_times);
+  // }
+
+  // for(queue_entry *q : *state->entries)
+  // {
+  //   printf("%-10x%-10d%-10d%-10d%-10d%-10x:%-10x%-10d%-10d%-10d%-10d%-10x%-10d%-10d\n",
+  //   q->cksum,
+  //   q->depth,
+  //   q->edges,
+  //   q->streams->size(),
+  //   q->priority,
+  //   q->favorate_stream ? q->favorate_stream : 0,
+  //   state->streamid_mmioaddr_mapping->find(q->favorate_stream) == state->streamid_mmioaddr_mapping->end() ? 0 : (*state->streamid_mmioaddr_mapping)[q->favorate_stream],
+  //   q->exit_none ,
+  //   q->exit_outofseed ,
+  //   q->exit_timeout ,
+  //   q->exit_crash ,
+  //   q->exit_pc,
+  //   q->num_mmio,
+  //   q->fuzz_times);
+  // }
   
 }
 void save_crash(queue_entry* entry)
@@ -660,7 +689,7 @@ void sync_entries(FuzzState *state)
   printf("-------------------sync entry finish----------------------\n");
 }
 
-void run_modelling()
+void run_modelling(FuzzState *state)
 {
   DIR* dir;
   char cmd[PATH_MAX];
@@ -675,10 +704,14 @@ void run_modelling()
   {
     if (dir_entry->d_type == DT_REG && strcmp(dir_entry->d_name,".") && strcmp(dir_entry->d_name,"..")) 
     {
-      printf("start model file:%s\n",dir_entry->d_name);
-      sprintf(cmd,"%s/run_docker.sh %s fuzzware model ./state/%s -c ./model/model.yml > /dev/null","/home/w/hd/iofuzzer/fuzzware",out_dir,dir_entry->d_name);
-      system(cmd);
-      printf("model file done:%s\n",dir_entry->d_name);
+      u32 id = strtol(dir_entry->d_name + strlen("state_"),0,16);
+      if(state->models->find(id) == state->models->end())
+      {
+        printf("start model file:%s\n",dir_entry->d_name);
+        sprintf(cmd,"%s/run_docker.sh %s fuzzware model ./state/%s -c ./model/model.yml > /dev/null","/home/w/hd/iofuzzer/fuzzware",out_dir,dir_entry->d_name);
+        system(cmd);
+        printf("model file done:%s\n",dir_entry->d_name);
+      }
       sprintf(cmd,"mv %s/%s %s/",state_dir,dir_entry->d_name,state_backup_dir);
       system(cmd);
     }
@@ -703,11 +736,9 @@ void sync_models(FuzzState *state)
   while(fgets(line, PATH_MAX, fp))
   {
     if(strstr(line,"unmodeled:"))
-      begin = false;
-    if(strstr(line,"mmio_models:"))
-      begin = true;
-    if(!begin)
-      continue;
+      mode = MODEL_NONE;
+    // if(strstr(line,"mmio_models:"))
+    //   begin = true;
 
     if(strstr(line,"constant:"))
       mode = MODEL_CONSTANT;
@@ -781,7 +812,7 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry)
   do
   {
     fuzz_one(state,entry,&exit_info,&exit_pc);
-    run_modelling();
+    run_modelling(state);
     sync_models(state);
     sync_irq_vals(state,entry);
     found_new_streams = sync_undiscovered_streams(state,entry);
@@ -856,7 +887,7 @@ bool fuzz_one_post(FuzzState *state,queue_entry* entry, input_stream *fuzzed_str
     u32 _bf = (_b); \
     _arf[(_bf) >> 3] ^= (128 >> ((_bf) & 7)); \
   } while (0)
-void havoc(FuzzState *state, input_stream* stream)
+void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
 {
   #define HAVOC_STACK 32
   #define HAVOC_TOKEN 20
@@ -875,6 +906,18 @@ void havoc(FuzzState *state, input_stream* stream)
       data[UR(len)] = UR(*value_set_len_ptr);
     return;      
   }
+
+  // if(*stream->stream_id == IRQ_STREAM_ID)
+  // {
+  //   for (i = 0; i < use_stacking; i++) 
+  //   {
+  //     auto it = q->irq_vals->begin();
+  //     u16* tmp = (u16*)(data + (UR(len - 1) & 0xfffffffe));
+  //     advance(it,UR(q->irq_vals->size()));
+  //     *tmp = *it;
+  //   }
+  //   return;      
+  // }
 
   for (i = 0; i < use_stacking; i++) 
   {
@@ -1070,7 +1113,7 @@ void fuzz_loop(FuzzState *state, int cpu)
           len = *it->second->len;  
           memcpy(org_buf, it->second->data, len);
 
-          havoc(state, it->second);
+          havoc(state,entry, it->second);
 
           exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
 
@@ -1080,31 +1123,18 @@ void fuzz_loop(FuzzState *state, int cpu)
         }  
 
       }
-      // if(entry->exit_outofseed >= 0x1000)
-      // {
-      //   input_stream *favorate_stream = nullptr;
-      //   u32 favorate_id;
-      //   for(input_stream *s : *entry->streams)
-      //   {
-      //     if(*s->stream_id == entry->favorate_stream)
-      //     {
-      //       favorate_stream = s;
-      //       favorate_id = entry->favorate_stream;
-      //       break;
-      //     }
-      //   }
-      //   if(favorate_stream != nullptr && *favorate_stream->len < MAX_STREAM_LEN)
-      //   {
-      //     queue_entry *q = copy_queue(state,entry);
-           
-      //     remove_if(q->streams->begin(),q->streams->end(), [favorate_id](input_stream *stream) 
-      //                         { 
-      //                             return *stream->stream_id == favorate_id; 
-      //                         }   );
-      //     q->streams->push_back(increase_stream(state,favorate_stream,MAX_STREAM_LEN));
-      //     find_all_streams_save_queue(state,q);
-      //   }
-      // }
+      if(entry->exit_outofseed >= 0x1000)
+      {
+        input_stream *favorate_stream = (*entry->streams)[entry->favorate_stream];
+        if(favorate_stream != nullptr && *favorate_stream->len < MAX_STREAM_LEN)
+        {
+          queue_entry *q = copy_queue(state,entry);
+          input_stream *increased_stream = increase_stream(state,favorate_stream,MAX_STREAM_LEN);
+          
+          (*q->streams)[*favorate_stream->stream_id] = increased_stream;
+          find_all_streams_save_queue(state,q);
+        }
+      }
       // {
       //   queue_entry* tmp = copy_queue(entry);
       //   havoc_entry(state,entry);
