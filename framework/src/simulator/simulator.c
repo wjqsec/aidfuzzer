@@ -81,6 +81,8 @@ uint32_t* new_streams;
 int32_t* num_irq_vals;
 uint16_t* irq_vals;
 
+uint16_t *irqs;
+uint32_t *num_irqs;
 
 static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
 {
@@ -198,8 +200,6 @@ void start_new()
 void report_irqs()
 {
     int i = 0;
-    uint16_t *irqs;
-    uint32_t* num_irqs = get_enabled_nvic_irq2(&irqs);
     for(; i < *num_irqs; i++)
     {
         irq_vals[i] = irqs[i];
@@ -358,7 +358,7 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
 
             uint32_t *value_set = (uint32_t *)(stream->data + sizeof(uint32_t));
 
-            uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            // uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
 
             if(unlikely(stream->used == 0))
                 stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
@@ -373,8 +373,9 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
                 
             else
             {
-
-                *out = value_set[fuzz_data[stream->used]];
+                uint32_t tmp = 0;
+                memcpy(&tmp,stream->data + stream->used,stream->element_size);
+                *out = value_set[tmp % num_values];
                 stream->used += stream->element_size;
 
             }    
@@ -401,22 +402,18 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
         }
         break;
         case MODEL_PASSTHROUGH:
-        // {
+        {
+            
+        }
+        break;
 
-        // }
-        // break;
-        
-        // {
-
-        // }
-        // break;
         case MODEL_NONE:
         {
             if(stream->len - stream->used < stream->element_size)
                 prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
             else
             {
-                *out = *(uint32_t*)(stream->data + stream->used);
+                memcpy(out,stream->data + stream->used,stream->element_size);
                 stream->used += stream->element_size;
             }    
         }
@@ -505,7 +502,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     }
     
     #ifdef ENABLE_IRQ
-    if(bbl != 0 && (bbl & 0x1ff) == 0)// && !irq_level)
+    if(bbl != 0 && *num_irqs && (bbl & 0xff) == 0)// && !irq_level)
     {
         struct SHARED_STREAMS* stream =  find_stream(IRQ_STREAM_ID);
         if(!stream)
@@ -515,9 +512,9 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
         }
         else
         {
-            uint64_t irq;
-            get_fuzz_data(stream, &irq,pc);     
-            insert_nvic_intc(irq,false);
+            uint64_t tmp;
+            get_fuzz_data(stream, &tmp,pc);     
+            insert_nvic_intc(irqs[tmp % (*num_irqs)],false);
         }
     }
     #endif
@@ -640,6 +637,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         #ifdef AFL
         uint32_t tmp; 
         write(FORKSRV_CTLFD+1 , &tmp,4);  //forkserver up
+        num_irqs = get_enabled_nvic_irq2(&irqs);
         start_new();
         collect_streams();
         #endif

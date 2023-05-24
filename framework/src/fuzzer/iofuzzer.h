@@ -28,11 +28,11 @@ typedef int64_t  s64;
 #define ACK 0x4
 
 
-#define MAX_STREAM_LEN 0xa00000
-#define DEFAULT_STREAM_LEN 0x400
+#define MAX_STREAM_LEN 0x500000
+#define DEFAULT_STREAM_LEN 0x20000
 
 #define DEFAULT_ELEMENT_SIZE 4
-#define DEFAULT_IRQ_ELEMENT_SIZE 2
+#define DEFAULT_IRQ_ELEMENT_SIZE 1
 
 #define IRQ_STREAM_ID 0xffffffff
 

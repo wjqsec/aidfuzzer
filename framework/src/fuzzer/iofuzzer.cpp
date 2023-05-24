@@ -85,6 +85,8 @@ struct queue_entry
 #define DEFAULT_PRIORITY 1
     s32 priority;
 
+    bool increased;
+
 };
 struct FuzzState
 {
@@ -243,6 +245,7 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
           {
             *stream->left_shift = 0;
             *stream->element_size = 4;
+            *stream->len = 4;
             fuzz_data_ptr = stream->data;
             *(u32*)fuzz_data_ptr = it->second->constant_val;
           }
@@ -250,6 +253,7 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
           {
             *stream->left_shift = 0;
             *stream->element_size = 1;
+            *stream->len = 4;
           }
           if(*stream->mode == MODEL_BIT_EXTRACT)
           {
@@ -309,6 +313,7 @@ inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
   entry->cksum = 0;
   entry->edges = 0;
   entry->depth = 0;
+  entry->increased = false;
 
   entry->streams = new map<u32,input_stream*>();
   entry->irq_vals = new set<u16>();
@@ -492,7 +497,7 @@ void show_stat(FuzzState *state)
   if(state->cpu != MAIN_CPU)
     return;
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
-  printf("[%d][%d] total exec %d sync:%d edges:%d paths:%d\n",state->cpu,get_cur_time() / 1000, state->total_exec,state->sync_times, edges,state->entries->size());
+  printf("[%d][%d] total exec %d sync:%d edges:%d paths:%d used pool:%x \n",state->cpu,get_cur_time() / 1000, state->total_exec,state->sync_times, edges,state->entries->size(),state->shared_stream_used);
 
   // printf("\n-----------queue details-----------\n");
   // printf("id        depth     bbls      #streams  prio      favorate             none      seed      timeout   crash     exit_pc   num_mmio  exec_times\n");
@@ -1123,18 +1128,20 @@ void fuzz_loop(FuzzState *state, int cpu)
         }  
 
       }
-      if(entry->exit_outofseed >= 0x1000)
-      {
-        input_stream *favorate_stream = (*entry->streams)[entry->favorate_stream];
-        if(favorate_stream != nullptr && *favorate_stream->len < MAX_STREAM_LEN)
-        {
-          queue_entry *q = copy_queue(state,entry);
-          input_stream *increased_stream = increase_stream(state,favorate_stream,MAX_STREAM_LEN);
+      // if(entry->exit_outofseed >= 3 && !entry->increased)
+      // {
+      //   input_stream *favorate_stream = (*entry->streams)[entry->favorate_stream];
+      //   if(favorate_stream != nullptr && *favorate_stream->len < MAX_STREAM_LEN)
+      //   {
+      //     entry->increased = true;
+      //     queue_entry *q = copy_queue(state,entry);
+      //     input_stream *increased_stream = increase_stream(state,favorate_stream,MAX_STREAM_LEN);
           
-          (*q->streams)[*favorate_stream->stream_id] = increased_stream;
-          find_all_streams_save_queue(state,q);
-        }
-      }
+      //     (*q->streams)[*favorate_stream->stream_id] = increased_stream;
+          
+      //     find_all_streams_save_queue(state,q);
+      //   }
+      // }
       // {
       //   queue_entry* tmp = copy_queue(entry);
       //   havoc_entry(state,entry);
