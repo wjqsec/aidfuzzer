@@ -60,8 +60,11 @@ xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
 typedef void (*xx_add_rom_region_ptr)(char *name,hwaddr start, hwaddr size);
 xx_add_rom_region_ptr xx_add_rom_region;
 
-// typedef void (*xx_modify_mmio_cb_ptr)(hwaddr start, hwaddr size, void * mmio_read_cb, void * mmio_write_cb,void * opaque);
-// xx_modify_mmio_cb_ptr xx_modify_mmio_cb;
+typedef void* (*xx_insert_nostop_watchpoint_ptr)(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb);
+xx_insert_nostop_watchpoint_ptr xx_insert_nostop_watchpoint;
+
+typedef void (*xx_delete_nostop_watchpoint_ptr)(void *watchpoint);
+xx_delete_nostop_watchpoint_ptr xx_delete_nostop_watchpoint;
 //------------------------x86
 typedef void (*xx_register_x86_cpu_do_interrupt_hook_ptr)(x86_cpu_do_interrupt_cb cb);
 xx_register_x86_cpu_do_interrupt_hook_ptr xx_register_x86_cpu_do_interrupt_hook;
@@ -137,6 +140,9 @@ xx_get_enabled_nvic_irq_ptr xx_get_enabled_nvic_irq;
 typedef uint32_t* (*xx_get_enabled_nvic_irq2_ptr)(uint16_t **irqs);
 xx_get_enabled_nvic_irq2_ptr xx_get_enabled_nvic_irq2;
 
+typedef hwaddr (*xx_get_arm_precise_pc_ptr)();
+xx_get_arm_precise_pc_ptr xx_get_arm_precise_pc;
+
 void get_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
     xx_get_arm_cpu_state(state);
@@ -181,6 +187,10 @@ uint32_t* get_enabled_nvic_irq2(uint16_t **irqs)
 {
     return xx_get_enabled_nvic_irq2(irqs);
 }
+hwaddr get_arm_precise_pc()
+{
+    return xx_get_arm_precise_pc();
+}
 //---------------common
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
 {
@@ -215,7 +225,8 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     xx_target_pagesize = dlsym(handle, "xx_target_pagesize");
     xx_register_exec_ins_icmp_hook = dlsym(handle, "xx_register_exec_ins_icmp_hook");
     xx_add_rom_region = dlsym(handle, "xx_add_rom_region");
-    //xx_modify_mmio_cb = dlsym(handle, "xx_modify_mmio_cb");
+    xx_insert_nostop_watchpoint = dlsym(handle, "xx_insert_nostop_watchpoint");
+    xx_delete_nostop_watchpoint = dlsym(handle, "xx_delete_nostop_watchpoint");
     switch (cpu_type)
     {
         case X86:
@@ -240,6 +251,7 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_set_armv7_vecbase = dlsym(handle, "xx_set_armv7_vecbase");
         xx_get_enabled_nvic_irq = dlsym(handle, "xx_get_enabled_nvic_irq");
         xx_get_enabled_nvic_irq2 = dlsym(handle, "xx_get_enabled_nvic_irq2");
+        xx_get_arm_precise_pc = dlsym(handle, "xx_get_arm_precise_pc");
         break;
     }
 
@@ -248,10 +260,11 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
     set_xx_cpu_type && xx_ram_rw && xx_add_ram_regions && 
     xx_add_mmio_regions && main_loop_should_exit && main_loop_wait 
     && xx_clear_dirty_mem && xx_get_dirty_pages && xx_register_exec_bbl_hook &&
-    xx_target_pagesize && xx_register_exec_ins_icmp_hook && xx_add_rom_region
+    xx_target_pagesize && xx_register_exec_ins_icmp_hook && xx_add_rom_region && 
+    xx_insert_nostop_watchpoint && xx_delete_nostop_watchpoint
     ))
     {
-        printf("symbol not found\n");
+        printf("common symbol not found\n");
         exit(0);
     }
     if(cpu_type == X86 && !(
@@ -261,17 +274,17 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_delete_x86_ctx_state
     ))
     {
-        printf("symbol not found\n");
+        printf("x86 symbol not found\n");
         exit(0);
     }
     if(cpu_type == ARM && !(
         xx_get_arm_cpu_state && xx_set_arm_cpu_state && xx_reset_arm_reg &&
         xx_save_arm_ctx_state && xx_restore_arm_ctx_state && xx_delete_arm_ctx_state &&
         xx_insert_nvic_intc && xx_register_arm_do_interrupt_hook && xx_set_armv7_vecbase &&
-        xx_get_enabled_nvic_irq && xx_get_enabled_nvic_irq2
+        xx_get_enabled_nvic_irq && xx_get_enabled_nvic_irq2 && xx_get_arm_precise_pc
     ))
     {
-        printf("symbol not found\n");
+        printf("arm symbol not found\n");
         exit(0);
     }
 
@@ -334,6 +347,19 @@ void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 {
     xx_register_exec_ins_icmp_hook(cb);
 }
+
+void* insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb)
+{
+    return xx_insert_nostop_watchpoint(addr, len, flag,cb);
+}
+
+void delete_nostop_watchpoint(void *watchpoint)
+{
+    xx_delete_nostop_watchpoint(watchpoint);
+}
+
+
+
 void load_file_ram(char *filename,hwaddr addr, int file_offset, int size)
 {
     FILE *fptr = fopen(filename,"rb");
@@ -386,6 +412,7 @@ void exec_simulator(struct Simulator *s)
         }
         else
         {
+            printf("exit simulating\n");
             break;
         }
     }

@@ -23,6 +23,6 @@
 #define MODEL_NONE 4
 
 
-#define ENABLE_IRQ
+//#define ENABLE_IRQ
 int run_config(struct SIMULATOR_CONFIG *config);
 void init(int argc, char **argv);

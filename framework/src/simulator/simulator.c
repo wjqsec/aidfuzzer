@@ -259,7 +259,7 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
     *eptr = '\0';
     fputs(buffer,state_file);
 }
-void dump_state(uint32_t mmio_id)
+void dump_state(uint32_t mmio_id, bool use_precise_pc)
 {
     int i;
     uint8_t *buf;
@@ -308,7 +308,7 @@ void dump_state(uint32_t mmio_id)
         state.regs[11],
         state.regs[12],
         state.regs[14],
-        (uint32_t)state.precise_pc,
+        use_precise_pc ? (uint32_t)get_arm_precise_pc() : state.regs[15],
         state.regs[13],
         state.xpsr
     );
@@ -431,6 +431,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
 
     addr = (hwaddr)opaque + addr;
+    uint64_t precise_pc = get_arm_precise_pc();
     uint64_t ret = 0;
     #ifdef AFL
 
@@ -439,7 +440,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    uint32_t stream_id = hash_64(addr,32) ^ hash_64(state.precise_pc,32) ;//& 0xfffffff0;
+    uint32_t stream_id = hash_64(addr,32) ^ hash_64(precise_pc,32) ;//& 0xfffffff0;
     
 
     struct SHARED_STREAMS * stream =  find_stream(stream_id);
@@ -451,15 +452,15 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
             new_streams[*num_new_streams] = stream_id;
             (*num_new_streams)++;
             if(need_dump_state)
-                dump_state(stream_id);
-            prepare_exit(EXIT_NONE,stream_id,state.precise_pc);
+                dump_state(stream_id,true);
+            prepare_exit(EXIT_NONE,stream_id,precise_pc);
         }
 
     }
     else
     {
         num_mmio++;
-        get_fuzz_data(stream, &ret,state.precise_pc);     
+        get_fuzz_data(stream, &ret,precise_pc);     
     }
 
 
@@ -467,7 +468,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #endif
 
     #ifdef DBG
-    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, state.precise_pc,addr,ret,stream_id);
+    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id);
     #endif
 
     return ret;
@@ -479,7 +480,7 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, state.precise_pc,addr,data);
+    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, get_arm_precise_pc(),addr,data);
     #endif
 }
 
@@ -515,6 +516,9 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
             uint64_t tmp;
             get_fuzz_data(stream, &tmp,pc);     
             insert_nvic_intc(irqs[tmp % (*num_irqs)],false);
+            #ifdef DBG
+            fprintf(flog,"insert irq %d\n",irqs[tmp % (*num_irqs)]);
+            #endif
         }
     }
     #endif
@@ -546,8 +550,25 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
     
 }
+void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr)
+{
+    if(!irq_level)
+    {
+        insert_nvic_intc(53,false);
+        insert_nvic_intc(54,false);
+        fprintf(flog,"%d->nostop_watchpoint_exec %x\n",run_index,vaddr);
+    }
+        
+}
+void *bp = NULL;
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
+    struct ARM_CPU_STATE state;
+    #ifdef DBG
+    
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->arm_cpu_do_interrupt irq:%d pc:%x\n",run_index, exec_index,state.regs[15]);
+    #endif
 
     if(exec_index == EXCP_IRQ)
         irq_level++;
@@ -558,9 +579,8 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     {
         return true;
     }
-
+    
     #ifdef CRASH_DBG
-    struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
     uint32_t sp0, sp1,sp2;
     read_ram(state.regs[13],4, &sp0);
@@ -581,6 +601,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     
     return true;
 }
+
 void post_thread_exec(int exec_ret)
 {
 
@@ -634,6 +655,8 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         }
         new_snap = arm_take_snapshot();
         arm_restore_snapshot(new_snap);
+        bp = insert_nostop_watchpoint(0x20001168,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
+        bp = insert_nostop_watchpoint(0x20001180,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
         #ifdef AFL
         uint32_t tmp; 
         write(FORKSRV_CTLFD+1 , &tmp,4);  //forkserver up
@@ -666,9 +689,9 @@ void init(int argc, char **argv)
     if(argv[1][0] == 'y')
         need_dump_state = true;
     char path_buffer[PATH_MAX];
-    sprintf(path_buffer,"%s/log.txt",log_dir);
+    sprintf(path_buffer,"%s/simulator_log.txt",log_dir);
     flog = fopen(path_buffer,"w");
-    sprintf(path_buffer,"%s/crash.txt",log_dir);
+    sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
     f_crash_log = fopen(path_buffer,"w");
 
     setbuf(flog,0);

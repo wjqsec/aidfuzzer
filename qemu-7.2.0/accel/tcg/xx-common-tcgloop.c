@@ -41,6 +41,11 @@ enum XX_CPU_TYPE
     X86,
     ARM
 };
+enum XX_CPU_TYPE xx_cpu_type;
+enum XX_CPU_TYPE get_xx_cpu_type(){ return xx_cpu_type; }
+void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
+
+
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
 exec_bbl_cb exec_bbl_func;
 
@@ -49,6 +54,7 @@ exec_ins_icmp_cb exec_ins_icmp_func;
 
 int64_t bbl_counts;
 #define MILISECONS_PER_BBL 10000
+
 struct DirtyBitmapSnapshot {
     ram_addr_t start;
     ram_addr_t end;
@@ -60,11 +66,22 @@ int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
 int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
 int tcg_gdbstub_supported_sstep_flags(void);
 
+
+MemTxResult xx_ram_rw(hwaddr addr,hwaddr len,void *buf, bool is_write);
+MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len);
+void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly);
+void xx_add_rom_region(char *name,hwaddr start, hwaddr size);
+void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb,void *opaque);
+void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size);
+void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
+void xx_register_exec_bbl_hook(exec_bbl_cb cb);
+void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb);
+int xx_thread_loop(bool debug);
+int xx_target_pagesize(void);
+
 extern bool tcg_allowed;
 
-enum XX_CPU_TYPE xx_cpu_type;
-enum XX_CPU_TYPE get_xx_cpu_type(){ return xx_cpu_type; }
-void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
+
 
 
 
@@ -119,37 +136,7 @@ MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len)
 {
     address_space_write_rom(&address_space_memory,addr,MEMTXATTRS_UNSPECIFIED,buf,len);
 }
-/*
-static bool check_mem_overlap(hwaddr start, hwaddr size)
-{
-    int i;
-    hwaddr end = start + size;
-    for(i=0; i < xx_num_ram_regions;i++)
-    {
-        if(
-            !(start >= xx_ram_regions[i].start + xx_ram_regions[i].size || end <= xx_ram_regions[i].start)
-        )
-        return true;
-    }
-    for(i=0; i < xx_num_mmio_regions;i++)
-    {
-        if(
-            !(start >= xx_mmio_regions[i].start + xx_mmio_regions[i].size || end <= xx_mmio_regions[i].start)
-        )
-        return true;
-    }
-    return false;
-}
-static bool check_mem_addr_and_size(hwaddr start, hwaddr size)
-{
-    hwaddr page_size = TARGET_PAGE_BITS == 0 ? 4 << 10 : 1 << TARGET_PAGE_BITS;
-    if(start & (page_size -1) != 0 || size & (page_size - 1) != 0)
-    {
-        return false;
-    }
-    return true;
-}
-*/
+
 static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
 {
     MemoryRegion *mr = NULL;
@@ -182,15 +169,9 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
 {
     if(xx_num_ram_regions >= XX_MEM_REGIONS_MAX)
         return;
-    /*
-    if(check_mem_overlap(start,size))
-        return;
-    if(!check_mem_addr_and_size(start,size))
-        return;
-    */
 
     MemoryRegion *ram_space = get_system_memory();
-    MemoryRegion *mmio_space = get_system_io();
+    //MemoryRegion *mmio_space = get_system_io();
     
 
     
@@ -206,8 +187,8 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
     if(old)
 	  memory_region_add_subregion_overlap(ram_space,start,mr,old->priority+1);
     else
-          memory_region_add_subregion(ram_space,start,mr);
-          //memory_region_del_subregion(ram_space,old);
+        memory_region_add_subregion(ram_space,start,mr);
+        //memory_region_del_subregion(ram_space,old);
 
     xx_ram_regions[xx_num_ram_regions].name = strdup(name);
     xx_ram_regions[xx_num_ram_regions].start = start;
@@ -215,21 +196,15 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
     xx_ram_regions[xx_num_ram_regions].readonly = readonly;
     xx_ram_regions[xx_num_ram_regions].mr = mr;
     xx_num_ram_regions++;
-    printf("add ram %x-%x %s readonly:%d\n",start, start+size,name,readonly);
+    printf("add ram %lu-%lu %s readonly:%d\n",start, start+size,name,readonly);
 }
 void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 {
     if(xx_num_rom_regions >= XX_MEM_REGIONS_MAX)
 	    return;
-    /*
-    if(check_mem_overlap(start,size))
-	    return;
-    if(!check_mem_addr_and_size(start,size))
-	    return;
-    */
 
     MemoryRegion *ram_space = get_system_memory();
-    MemoryRegion *mmio_space = get_system_io();
+    //MemoryRegion *mmio_space = get_system_io();
     
 
     MemoryRegion *mr = g_new0(MemoryRegion, 1);
@@ -248,21 +223,16 @@ void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
     xx_rom_regions[xx_num_rom_regions].size = size;
     xx_rom_regions[xx_num_rom_regions].mr = mr;
     xx_num_rom_regions++;
-    printf("add rom %x-%x %s\n",start, start+size,name);
+    printf("add rom %lu-%lu %s\n",start, start+size,name);
 }
 void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb,void *opaque)
 {
     if(xx_num_mmio_regions >= XX_MEM_REGIONS_MAX)
         return;
-    /*
-    if(check_mem_overlap(start,size))
-        return;
-    if(!check_mem_addr_and_size(start,size))
-        return;
-    */
+
 
     MemoryRegion *ram_space = get_system_memory();
-    MemoryRegion *mmio_space = get_system_io();
+    //MemoryRegion *mmio_space = get_system_io();
 
     struct MemoryRegionOps *ops = g_new0(MemoryRegionOps, 1);
     ops->read = read_cb;
@@ -279,9 +249,7 @@ void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, v
     ops->impl.unaligned = true;
     MemoryRegion *mr = g_new0(MemoryRegion, 1);
     memory_region_init_io(mr,NULL,ops,opaque,name,size);
-            //memory_region_add_subregion(mmio_space,xx_mmio_regions[i].start,mr);
-        // memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
-        // memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
+          
     
     MemoryRegion *old = find_mr_by_addr(start,size);
     if(old)
@@ -297,20 +265,10 @@ void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, v
     xx_mmio_regions[xx_num_mmio_regions].opaque = opaque;
     xx_mmio_regions[xx_num_mmio_regions].mr = mr;
     xx_num_mmio_regions++;
-    printf("add mmio %x-%x %s\n",start, start+size,name);
+    printf("add mmio %lu-%lu %s\n",start, start+size,name);
 }
-/*
-void xx_modify_mmio_cb(hwaddr start, hwaddr size, void* mmio_read_cb, void* mmio_write_cb,void * opaque)
-{
-	MemoryRegion *mr = find_mr_by_addr(start,size);
-	if (! mr || !mr->ops)
-		return;
-	mr->opaque = opaque;
-	mr->ops->read = mmio_read_cb;
-	mr->ops->write = mmio_write_cb;
-}
-*/
-RAMBlock *qemu_get_ram_block(ram_addr_t addr);
+
+
 void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
 {
     MemoryRegion *mr = find_mr_by_addr(addr,size);
@@ -318,7 +276,7 @@ void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
     memory_region_clear_dirty_bitmap(mr, addr - mr->addr, size);
     //printf("clear dirty pages %p-%p\n",addr,addr+size);
 }
-int xx_target_pagesize()
+int xx_target_pagesize(void)
 {
     return 1 << TARGET_PAGE_BITS;
 }
@@ -326,8 +284,7 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 {
     int num_page_in_byte = 0;
     hwaddr page_size = TARGET_PAGE_BITS == 0 ? 4 << 10 : 1 << TARGET_PAGE_BITS;
-    //if(!check_mem_addr_and_size(addr,size))
-    //    return;
+
     MemoryRegion *mr = find_mr_by_addr(addr,size);
     if(!mr)
         return;
@@ -341,59 +298,6 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 }
 
 
-void xx_init_mem(MachineState *machine)
-{
-
-    return;      
-    MemoryRegion *ram_space = get_system_memory();
-    MemoryRegion *mmio_space = get_system_io();
-    int i;
-    for(i=0; i < xx_num_ram_regions;i++)
-    {
-        MemoryRegion *mr = g_new0(MemoryRegion, 1);
-        memory_region_init_ram(mr,NULL,xx_ram_regions[i].name,xx_ram_regions[i].size,0);
-        memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
-        memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
-	memory_region_set_readonly(mr, xx_ram_regions[i].readonly);
-        memory_region_add_subregion(ram_space,xx_ram_regions[i].start,mr);
-        xx_ram_regions[i].mr = mr;
-        printf("add ram %x-%x %s readonly:%d\n",xx_ram_regions[i].start, xx_ram_regions[i].start+xx_ram_regions[i].size, xx_ram_regions[i].name,xx_ram_regions[i].readonly);
-    }
-    for(i = 0 ; i < xx_num_rom_regions ; i++)
-    {
-        MemoryRegion *mr = g_new0(MemoryRegion, 1);
-	memory_region_init_rom(mr,NULL,xx_rom_regions[i].name,xx_rom_regions[i].size,0);
-        memory_region_add_subregion(ram_space,xx_rom_regions[i].start,mr);
-	xx_rom_regions[i].mr = mr;
-	printf("add rom %x-%x %s\n",xx_rom_regions[i].start, xx_rom_regions[i].start+xx_rom_regions[i].size, xx_rom_regions[i].name);
-    }
-    for(i=0; i < xx_num_mmio_regions;i++)
-    {
-        struct MemoryRegionOps *ops = g_new0(MemoryRegionOps, 1);
-        ops->read = xx_mmio_regions[i].read_cb;
-        ops->write = xx_mmio_regions[i].write_cb;
-        ops->read_with_attrs = 0;
-        ops->write_with_attrs = 0;
-        ops->endianness = DEVICE_NATIVE_ENDIAN;
-        ops->valid.min_access_size = 1;
-        ops->valid.max_access_size = 8;
-        ops->valid.unaligned = true;
-        ops->valid.accepts = NULL;
-        ops->impl.min_access_size = 1;
-        ops->impl.max_access_size = 8;
-        ops->impl.unaligned = true;
-        MemoryRegion *mr = g_new0(MemoryRegion, 1);
-        memory_region_init_io(mr,NULL,ops,xx_mmio_regions[i].opaque,xx_mmio_regions[i].name,xx_mmio_regions[i].size);
-	    //memory_region_add_subregion(mmio_space,xx_mmio_regions[i].start,mr);
-        // memory_region_set_log(mr, true, DIRTY_MEMORY_VGA);
-        // memory_region_reset_dirty(mr, 0, xx_ram_regions[i].size, DIRTY_MEMORY_VGA);
-        memory_region_add_subregion(ram_space,xx_mmio_regions[i].start,mr);
-        xx_mmio_regions[i].mr = mr;
-
-        printf("add mmio %x-%x %s\n",xx_mmio_regions[i].start, xx_mmio_regions[i].start+xx_mmio_regions[i].size, xx_mmio_regions[i].name);
-    }
-}
-
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
@@ -406,6 +310,20 @@ void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
     exec_ins_icmp_func = cb;
     CPUState *cpu = qemu_get_cpu(0);
     tlb_flush(cpu);
+}
+void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb)
+{
+    CPUWatchpoint *wp;
+    CPUState *cpu = qemu_get_cpu(0);
+    //cpu_watchpoint_insert(cpu,0x20001160,4, BP_MEM_ACCESS |BP_CALLBACK_ONLY_NO_STOP ,&wp);
+    cpu_watchpoint_insert(cpu,addr,len, flag | BP_CALLBACK_ONLY_NO_STOP ,&wp);
+    wp->callback = cb;
+    return wp;
+}
+void xx_delete_nostop_watchpoint(void *watchpoint)
+{
+    CPUState *cpu = qemu_get_cpu(0);
+    cpu_watchpoint_remove_by_ref(cpu, (CPUWatchpoint *)watchpoint);
 }
 
 
@@ -423,11 +341,11 @@ int xx_thread_loop(bool debug)
         
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
-		CPUClass *cc = CPU_GET_CLASS(cpu);
+		//CPUClass *cc = CPU_GET_CLASS(cpu);
 
         init = true;
     }
-    //qemu_mutex_unlock_iothread();
+
     if(!cpu->stop && !cpu->exit_request)
     {
         if(!cpu_work_list_empty(cpu))
@@ -437,7 +355,6 @@ int xx_thread_loop(bool debug)
 		if(cpu_can_run(cpu))
 		{
 			cpu_exec_start(cpu);
-			//CPUClass *cc = CPU_GET_CLASS(cpu);
 			r = cpu_exec(cpu);
 			cpu_exec_end(cpu);
 			switch (r)
@@ -447,9 +364,18 @@ int xx_thread_loop(bool debug)
                 case EXCP_HLT:
                 break;
                 case EXCP_DEBUG:
-                cpu_handle_guest_debug(cpu);
-                runstate_set(RUN_STATE_DEBUG);
-                vm_state_notify(0,RUN_STATE_DEBUG);
+                if(debug)
+                {
+                    cpu_handle_guest_debug(cpu);
+                    runstate_set(RUN_STATE_DEBUG);
+                    vm_state_notify(0,RUN_STATE_DEBUG);
+                }
+                else
+                {
+                    //printf("hit %x\n",cpu->watchpoint_hit->vaddr);
+                    //cpu_watchpoint_remove_by_ref(cpu,wp);
+                }
+                
                 break;
 				case EXCP_HALTED:
                 break;
@@ -498,6 +424,7 @@ static void xx_start_vcpu_thread(CPUState *cpu)
     //cpu->thread_id = first_cpu->thread_id;
     cpu->can_do_io = 1;
     cpu->created = true;
+
     
 }
 
@@ -553,6 +480,7 @@ static void xx_accel_ops_init(AccelOpsClass *ops)
     ops->insert_breakpoint = tcg_insert_breakpoint;
     ops->remove_breakpoint = tcg_remove_breakpoint;
     ops->remove_all_breakpoints = tcg_remove_all_breakpoints;
+
 }
 
 static void xx_accel_ops_class_init(ObjectClass *oc, void *data)

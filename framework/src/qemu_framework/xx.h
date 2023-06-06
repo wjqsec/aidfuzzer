@@ -22,6 +22,9 @@ struct Simulator
 #define EXCP_YIELD      0x10004 /* cpu wants to yield timeslice to another */
 #define EXCP_ATOMIC     0x10005 /* stop-the-world and emulate atomic */
 
+#define BP_MEM_READ           0x01
+#define BP_MEM_WRITE          0x02
+#define BP_MEM_ACCESS         (BP_MEM_READ | BP_MEM_WRITE)
 
 //----------------x86
 struct X86_CPU_STATE
@@ -83,7 +86,6 @@ struct ARM_CPU_STATE
 {
     uint32_t regs[16]; 
     uint64_t xregs[32];
-    hwaddr precise_pc;
     uint32_t xpsr;
 };
 
@@ -100,6 +102,7 @@ uint32_t* get_enabled_nvic_irq2(uint16_t **irqs);
 void reset_arm_reg();
 void register_arm_do_interrupt_hook(do_arm_interrupt_cb cb);
 void set_armv7_vecbase(hwaddr addr);
+hwaddr get_arm_precise_pc();
 //===================common
 
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
@@ -109,7 +112,7 @@ typedef void (*pre_thread_exec_cb)();
 typedef bool (*exec_bbl_cb)(regval pc,uint32_t id,int64_t bbl);
 typedef void (*exec_ins_icmp_cb)(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
-
+typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr);
 
 
 
@@ -135,6 +138,9 @@ void load_file_rom(char *filename,hwaddr addr, int file_offset, int size);
 int target_pagesize();
 void clear_dirty_mem(hwaddr start, hwaddr size);
 void get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
+
+void *insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb);
+void delete_nostop_watchpoint(void *watchpoint);
 
 
 

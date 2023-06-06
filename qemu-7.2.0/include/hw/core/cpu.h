@@ -219,6 +219,7 @@ struct CPUWatchpoint {
     vaddr hitaddr;
     MemTxAttrs hitattrs;
     int flags; /* BP_* */
+    void (*callback)(vaddr,vaddr,vaddr); 
     QTAILQ_ENTRY(CPUWatchpoint) entry;
 };
 
@@ -921,6 +922,7 @@ void cpu_single_step(CPUState *cpu, int enabled);
 #define BP_WATCHPOINT_HIT_READ 0x40
 #define BP_WATCHPOINT_HIT_WRITE 0x80
 #define BP_WATCHPOINT_HIT (BP_WATCHPOINT_HIT_READ | BP_WATCHPOINT_HIT_WRITE)
+#define BP_CALLBACK_ONLY_NO_STOP 0X100
 
 int cpu_breakpoint_insert(CPUState *cpu, vaddr pc, int flags,
                           CPUBreakpoint **breakpoint);
