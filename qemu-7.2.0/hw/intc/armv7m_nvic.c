@@ -2378,11 +2378,16 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
             if (value & (1 << i) &&
                 (attrs.secure || s->itns[startvec + i])) {
                 s->vectors[startvec + i].enabled = setval;
-		if(setval == 1)
-		    s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
+                nvic_irq_update(s);
+                if(setval == 1)
+                {
+                    s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
+                    armv7m_nvic_set_pending(s, startvec + i, 0);  // dry run the newly enabled irq
+                }
             }
         }
-        nvic_irq_update(s);
+        
+		    
         goto exit_ok;
     case 0x200 ... 0x23f: /* NVIC Set pend */
         /* the special logic in armv7m_nvic_set_pending()

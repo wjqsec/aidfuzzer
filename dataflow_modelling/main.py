@@ -104,7 +104,7 @@ def contains_all_key(item_one, item_two):
     return len(item_two) > len(item_one) 
 
 
-project, initial_state, cfg = from_state_file('/home/w/hd/iofuzzer/out/state/state_ffffffff',None)
+project, initial_state, cfg = from_state_file('/home/w/hd/iofuzzer/out/state/state_irq_08001d04',None)
 
 
 initial_state.inspect.b('mem_read',when=angr.BP_BEFORE,action=mem_read_before)

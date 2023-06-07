@@ -143,6 +143,11 @@ xx_get_enabled_nvic_irq2_ptr xx_get_enabled_nvic_irq2;
 typedef hwaddr (*xx_get_arm_precise_pc_ptr)();
 xx_get_arm_precise_pc_ptr xx_get_arm_precise_pc;
 
+typedef void (*xx_register_arm_exec_interrupt_pre_hook_ptr)(exec_arm_interrupt_pre_cb cb);
+xx_register_arm_exec_interrupt_pre_hook_ptr xx_register_arm_exec_interrupt_pre_hook;
+typedef bool (*xx_get_arm_v7m_is_handler_mode_ptr)();
+xx_get_arm_v7m_is_handler_mode_ptr xx_get_arm_v7m_is_handler_mode;
+
 void get_arm_cpu_state(struct ARM_CPU_STATE *state)
 {
     xx_get_arm_cpu_state(state);
@@ -190,6 +195,14 @@ uint32_t* get_enabled_nvic_irq2(uint16_t **irqs)
 hwaddr get_arm_precise_pc()
 {
     return xx_get_arm_precise_pc();
+}
+void register_arm_exec_interrupt_pre_hook(exec_arm_interrupt_pre_cb cb)
+{
+    xx_register_arm_exec_interrupt_pre_hook(cb);
+}
+bool get_arm_v7m_is_handler_mode()
+{
+    return xx_get_arm_v7m_is_handler_mode();
 }
 //---------------common
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
@@ -252,6 +265,8 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_get_enabled_nvic_irq = dlsym(handle, "xx_get_enabled_nvic_irq");
         xx_get_enabled_nvic_irq2 = dlsym(handle, "xx_get_enabled_nvic_irq2");
         xx_get_arm_precise_pc = dlsym(handle, "xx_get_arm_precise_pc");
+        xx_register_arm_exec_interrupt_pre_hook = dlsym(handle, "xx_register_arm_exec_interrupt_pre_hook");
+        xx_get_arm_v7m_is_handler_mode = dlsym(handle, "xx_get_arm_v7m_is_handler_mode");
         break;
     }
 
@@ -281,7 +296,8 @@ struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
         xx_get_arm_cpu_state && xx_set_arm_cpu_state && xx_reset_arm_reg &&
         xx_save_arm_ctx_state && xx_restore_arm_ctx_state && xx_delete_arm_ctx_state &&
         xx_insert_nvic_intc && xx_register_arm_do_interrupt_hook && xx_set_armv7_vecbase &&
-        xx_get_enabled_nvic_irq && xx_get_enabled_nvic_irq2 && xx_get_arm_precise_pc
+        xx_get_enabled_nvic_irq && xx_get_enabled_nvic_irq2 && xx_get_arm_precise_pc &&
+        xx_register_arm_exec_interrupt_pre_hook && xx_get_arm_v7m_is_handler_mode
     ))
     {
         printf("arm symbol not found\n");

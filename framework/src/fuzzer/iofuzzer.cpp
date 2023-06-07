@@ -748,9 +748,9 @@ void run_modelling(FuzzState *state)
   
   while ((dir_entry = readdir(dir)) != NULL) 
   {
-    if (dir_entry->d_type == DT_REG && strcmp(dir_entry->d_name,".") && strcmp(dir_entry->d_name,"..")) 
+    if (dir_entry->d_type == DT_REG  && strstr(dir_entry->d_name,"state_model_")) 
     {
-      u32 id = strtol(dir_entry->d_name + strlen("state_"),0,16);
+      u32 id = strtol(dir_entry->d_name + strlen("state_model_"),0,16);
       if(state->models->find(id) == state->models->end())
       {
         printf("start model file:%s\n",dir_entry->d_name);

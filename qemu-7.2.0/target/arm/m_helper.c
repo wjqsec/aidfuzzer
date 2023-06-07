@@ -37,9 +37,18 @@
 
 typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
 do_arm_interrupt_cb do_arm_interrupt_func;
+
+typedef void (*exec_arm_interrupt_pre_cb)(int irq);
+exec_arm_interrupt_pre_cb exec_arm_interrupt_pre_func;
+
+
 void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
 {
     do_arm_interrupt_func = cb;
+}
+void xx_register_arm_exec_interrupt_pre_hook(exec_arm_interrupt_pre_cb cb)
+{
+    exec_arm_interrupt_pre_func = cb;
 }
 
 static void v7m_msr_xpsr(CPUARMState *env, uint32_t mask,
@@ -986,6 +995,9 @@ static void v7m_exception_taken(ARMCPU *cpu, uint32_t lr, bool dotailchain,
     env->regs[15] = addr & 0xfffffffe;
     env->thumb = addr & 1;
     arm_rebuild_hflags(env);
+
+    if(exec_arm_interrupt_pre_func)
+        exec_arm_interrupt_pre_func(exc);
 }
 
 static void v7m_update_fpccr(CPUARMState *env, uint32_t frameptr,
@@ -2202,9 +2214,13 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
 
     bool should_continue = true;
     if(do_arm_interrupt_func)
-	    should_continue = do_arm_interrupt_func(cs->exception_index);
+    {
+        should_continue = do_arm_interrupt_func(cs->exception_index);
+    }
+	    
     if(!should_continue)
 	    return;
+    
     arm_log_exception(cs);
 
     /*

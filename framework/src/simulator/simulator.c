@@ -37,7 +37,7 @@ uint8_t *__afl_irq_data;
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
-int irq_level = 0;
+
 
 FILE *flog;
 FILE *f_crash_log;
@@ -229,7 +229,7 @@ void exit_with_code_start_new()
     exit_info = 0;
     num_mmio = 0;
     // __afl_prev_loc = 0;
-    irq_level = 0;
+
     //read(FORKSRV_CTLFD,&record,4);
     should_exit = false;
     
@@ -259,7 +259,7 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
     *eptr = '\0';
     fputs(buffer,state_file);
 }
-void dump_state(uint32_t mmio_id, bool use_precise_pc)
+void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix)
 {
     int i;
     uint8_t *buf;
@@ -275,7 +275,7 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc)
     g_array_append_val(dumped_state_ids, mmio_id); 
 
     get_arm_cpu_state(&state);
-    sprintf(state_filename,"%s/state_%x",state_dir,mmio_id);
+    sprintf(state_filename,"%s/state_%s_%08x",state_dir,prefix,mmio_id);
     state_file = fopen(state_filename,"w");
     fprintf(state_file, "r0=0x%08x\n"
                         "r1=0x%08x\n"
@@ -452,7 +452,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
             new_streams[*num_new_streams] = stream_id;
             (*num_new_streams)++;
             if(need_dump_state)
-                dump_state(stream_id,true);
+                dump_state(stream_id,true,"model");
             prepare_exit(EXIT_NONE,stream_id,precise_pc);
         }
 
@@ -489,7 +489,13 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
 
     #ifdef AFL
-    
+    static bool dumped = false;
+    if(pc == 0x8001D04 && !dumped) 
+    {
+        dump_state(pc,false,"irq");
+        dumped = true;
+    }
+
     if(unlikely(bbl >= max_bbl_exec))
     {
         prepare_exit(EXIT_TIMEOUT,0,pc);
@@ -503,7 +509,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     }
     
     #ifdef ENABLE_IRQ
-    if(bbl != 0 && *num_irqs && (bbl & 0xff) == 0)// && !irq_level)
+    if(bbl != 0 && *num_irqs && (bbl & 0xff) == 0)
     {
         struct SHARED_STREAMS* stream =  find_stream(IRQ_STREAM_ID);
         if(!stream)
@@ -552,8 +558,9 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 }
 void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr)
 {
-    if(!irq_level)
+    if(!get_arm_v7m_is_handler_mode())
     {
+       
         insert_nvic_intc(53,false);
         insert_nvic_intc(54,false);
         fprintf(flog,"%d->nostop_watchpoint_exec %x\n",run_index,vaddr);
@@ -563,17 +570,13 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr)
 void *bp = NULL;
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
+    
     struct ARM_CPU_STATE state;
     #ifdef DBG
-    
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->arm_cpu_do_interrupt irq:%d pc:%x\n",run_index, exec_index,state.regs[15]);
+    fprintf(flog,"%d->arm_cpu_do_interrupt exeception:%d pc:%x\n",run_index, exec_index,state.regs[15]);
     #endif
 
-    if(exec_index == EXCP_IRQ)
-        irq_level++;
-    if(exec_index == EXCP_EXCEPTION_EXIT)
-        irq_level--;
     
     if(exec_index == EXCP_SWI || exec_index == EXCP_IRQ || exec_index == EXCP_EXCEPTION_EXIT)
     {
@@ -591,17 +594,20 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
     #endif
     #ifdef AFL
-    // struct ARM_CPU_STATE tmp_state;
-
-    // get_arm_cpu_state(&state);
-    // exit_pc = tmp_state.regs[15];
     exit_with_code_start_new(EXIT_CRASH);
     return false;
     #endif
     
     return true;
 }
-
+void exec_arm_interrupt_pre_hook(int irq)
+{
+    struct ARM_CPU_STATE state;
+    #ifdef DBG
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->exec_arm_interrupt_pre_hook irq:%d pc:%x\n",run_index, irq,state.regs[15]);
+    #endif
+}
 void post_thread_exec(int exec_ret)
 {
 
@@ -647,6 +653,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
         register_post_thread_exec_hook(post_thread_exec);
         register_exec_bbl_hook(arm_exec_bbl);
+        register_arm_exec_interrupt_pre_hook(exec_arm_interrupt_pre_hook);
         for(i = 0; i < 255 ; i++)
         {
             if(global_config->mmios[i].size == 0)
@@ -655,7 +662,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         }
         new_snap = arm_take_snapshot();
         arm_restore_snapshot(new_snap);
-        bp = insert_nostop_watchpoint(0x20001168,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
+        bp = insert_nostop_watchpoint(0x2000116c,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
         bp = insert_nostop_watchpoint(0x20001180,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
         #ifdef AFL
         uint32_t tmp; 

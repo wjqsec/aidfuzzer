@@ -53,8 +53,11 @@ void xx_insert_nvic_intc(int irq, bool secure)
     if(armv7m_nvic_get_ready_status(nvic, irq, secure))
     {
         armv7m_nvic_set_pending(nvic, irq, secure);
-    }
-        
+    }   
+}
+bool xx_get_arm_v7m_is_handler_mode()
+{
+    return env->v7m.exception != 0;
 }
 uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs)
 {

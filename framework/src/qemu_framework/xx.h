@@ -91,6 +91,7 @@ struct ARM_CPU_STATE
 
 
 typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
+typedef void (*exec_arm_interrupt_pre_cb)(int irq);
 void get_arm_cpu_state(struct ARM_CPU_STATE *state);
 void set_arm_cpu_state(struct ARM_CPU_STATE *state);
 void *save_arm_ctx_state();
@@ -103,6 +104,8 @@ void reset_arm_reg();
 void register_arm_do_interrupt_hook(do_arm_interrupt_cb cb);
 void set_armv7_vecbase(hwaddr addr);
 hwaddr get_arm_precise_pc();
+void register_arm_exec_interrupt_pre_hook(exec_arm_interrupt_pre_cb cb);
+bool get_arm_v7m_is_handler_mode();
 //===================common
 
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
