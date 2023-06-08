@@ -60,7 +60,7 @@ xx_register_exec_ins_icmp_hook_ptr xx_register_exec_ins_icmp_hook;
 typedef void (*xx_add_rom_region_ptr)(char *name,hwaddr start, hwaddr size);
 xx_add_rom_region_ptr xx_add_rom_region;
 
-typedef void* (*xx_insert_nostop_watchpoint_ptr)(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb);
+typedef void* (*xx_insert_nostop_watchpoint_ptr)(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data);
 xx_insert_nostop_watchpoint_ptr xx_insert_nostop_watchpoint;
 
 typedef void (*xx_delete_nostop_watchpoint_ptr)(void *watchpoint);
@@ -364,9 +364,9 @@ void register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
     xx_register_exec_ins_icmp_hook(cb);
 }
 
-void* insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb)
+void* insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data)
 {
-    return xx_insert_nostop_watchpoint(addr, len, flag,cb);
+    return xx_insert_nostop_watchpoint(addr, len, flag,cb,data);
 }
 
 void delete_nostop_watchpoint(void *watchpoint)

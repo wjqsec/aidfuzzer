@@ -62,6 +62,7 @@ bool need_dump_state = false;
 char *state_dir;
 char *log_dir;
 
+bool dumped_irq[NVIC_MAX_VECTORS];
 struct SHARED_STREAMS
 {
     uint32_t stream_id;
@@ -73,6 +74,12 @@ struct SHARED_STREAMS
     uint8_t *data;
 };
 
+struct WATCHPOINT
+{
+    hwaddr addr;
+    hwaddr len;
+    int flag;
+};
 
 GArray* fuzz_streams;
 int32_t* num_new_streams;
@@ -556,18 +563,19 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
     
 }
-void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr)
+void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
     if(!get_arm_v7m_is_handler_mode())
     {
        
-        insert_nvic_intc(53,false);
-        insert_nvic_intc(54,false);
+        insert_nvic_intc((int)data,false);
+        #ifdef DBG
         fprintf(flog,"%d->nostop_watchpoint_exec %x\n",run_index,vaddr);
+        #endif
     }
         
 }
-void *bp = NULL;
+
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
     
@@ -600,13 +608,24 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     
     return true;
 }
+
+
 void exec_arm_interrupt_pre_hook(int irq)
 {
     struct ARM_CPU_STATE state;
-    #ifdef DBG
     get_arm_cpu_state(&state);
+    #ifdef DBG
+    
     fprintf(flog,"%d->exec_arm_interrupt_pre_hook irq:%d pc:%x\n",run_index, irq,state.regs[15]);
     #endif
+
+    if(!dumped_irq[irq])
+    {
+        dump_state(state.reg[15],false,"irq");
+        struct WATCHPOINT watchpoint;
+        // parse here to do
+        insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)irq);
+    }
 }
 void post_thread_exec(int exec_ret)
 {
@@ -662,8 +681,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         }
         new_snap = arm_take_snapshot();
         arm_restore_snapshot(new_snap);
-        bp = insert_nostop_watchpoint(0x2000116c,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
-        bp = insert_nostop_watchpoint(0x20001180,4,BP_MEM_ACCESS,nostop_watchpoint_exec);
+        
         #ifdef AFL
         uint32_t tmp; 
         write(FORKSRV_CTLFD+1 , &tmp,4);  //forkserver up
@@ -715,7 +733,7 @@ void init(int argc, char **argv)
     __afl_map_shm();
     dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
     #endif
-    
+    memset(dumped_irq, 0, NVIC_MAX_VECTORS);
     
     #ifdef TRACE_DBG
     bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));

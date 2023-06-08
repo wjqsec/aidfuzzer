@@ -945,7 +945,7 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
 
             if(wp->flags & BP_CALLBACK_ONLY_NO_STOP && wp->callback)
             {
-                wp->callback(wp->vaddr,wp->len,wp->hitaddr);
+                wp->callback(wp->vaddr,wp->len,wp->hitaddr,wp->data);
                 continue;
             }
             if (wp->flags & BP_CPU && cc->tcg_ops->debug_check_watchpoint &&

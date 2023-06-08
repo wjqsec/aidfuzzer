@@ -22,7 +22,7 @@
 #define MODEL_PASSTHROUGH 3
 #define MODEL_NONE 4
 
-
+#define NVIC_MAX_VECTORS 512
 //#define ENABLE_IRQ
 int run_config(struct SIMULATOR_CONFIG *config);
 void init(int argc, char **argv);

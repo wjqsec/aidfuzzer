@@ -311,13 +311,14 @@ void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
     CPUState *cpu = qemu_get_cpu(0);
     tlb_flush(cpu);
 }
-void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb)
+void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,void *data)
 {
     CPUWatchpoint *wp;
     CPUState *cpu = qemu_get_cpu(0);
     //cpu_watchpoint_insert(cpu,0x20001160,4, BP_MEM_ACCESS |BP_CALLBACK_ONLY_NO_STOP ,&wp);
     cpu_watchpoint_insert(cpu,addr,len, flag | BP_CALLBACK_ONLY_NO_STOP ,&wp);
     wp->callback = cb;
+    wp->data = data;
     return wp;
 }
 void xx_delete_nostop_watchpoint(void *watchpoint)

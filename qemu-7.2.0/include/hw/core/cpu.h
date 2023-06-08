@@ -219,7 +219,8 @@ struct CPUWatchpoint {
     vaddr hitaddr;
     MemTxAttrs hitattrs;
     int flags; /* BP_* */
-    void (*callback)(vaddr,vaddr,vaddr); 
+    void (*callback)(vaddr,vaddr,vaddr,void*);
+    void *data; 
     QTAILQ_ENTRY(CPUWatchpoint) entry;
 };
 

@@ -115,7 +115,7 @@ typedef void (*pre_thread_exec_cb)();
 typedef bool (*exec_bbl_cb)(regval pc,uint32_t id,int64_t bbl);
 typedef void (*exec_ins_icmp_cb)(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
-typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr);
+typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data);
 
 
 
@@ -142,7 +142,7 @@ int target_pagesize();
 void clear_dirty_mem(hwaddr start, hwaddr size);
 void get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
 
-void *insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb);
+void *insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb, void *data);
 void delete_nostop_watchpoint(void *watchpoint);
 
 
