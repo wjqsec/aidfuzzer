@@ -53,6 +53,7 @@ typedef int64_t  s64;
 #define MODEL_PASSTHROUGH 3
 #define MODEL_NONE 4
 
+//#define ENABLE_IRQ
 inline static u64 get_cur_time(void) {
 
   struct timeval tv;

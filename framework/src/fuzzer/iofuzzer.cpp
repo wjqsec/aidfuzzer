@@ -52,6 +52,7 @@ struct input_model
 };
 struct input_stream
 {
+    u32 priority;
     u32 offset_to_stream_area;
     u8 *ptr;
     u32 *stream_id;
@@ -59,6 +60,7 @@ struct input_stream
     u32 *mode;
     s32 *element_size;
     s32 *left_shift;
+    s32 *used_len;
     uint8_t *data;
     //input_model *model;
 };
@@ -179,7 +181,8 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
   stream->mode = (u32*)(stream->ptr + sizeof(*stream->stream_id) + sizeof(*stream->len));
   stream->element_size = (s32*)(stream->ptr + sizeof(*stream->stream_id) + sizeof(*stream->len) + sizeof(*stream->mode));
   stream->left_shift = (s32*)(stream->ptr + sizeof(*stream->stream_id) + sizeof(*stream->len) + sizeof(*stream->mode) + sizeof(*stream->element_size));
-  stream->data = (u8*)(stream->ptr + sizeof(*stream->stream_id) + sizeof(*stream->len) + sizeof(*stream->mode) + sizeof(*stream->element_size) + sizeof(*stream->left_shift));
+  stream->used_len = (s32*)(stream->ptr + sizeof(*stream->stream_id) + sizeof(*stream->len) + sizeof(*stream->mode) + sizeof(*stream->element_size) + sizeof(*stream->left_shift));
+  stream->data = (u8*)(stream->ptr + sizeof(*stream->stream_id) + sizeof(*stream->len) + sizeof(*stream->mode) + sizeof(*stream->element_size) + sizeof(*stream->left_shift) + sizeof(*stream->used_len));
   
   if(old)
   {
@@ -189,7 +192,8 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
     *stream->element_size = *old->element_size;
     *stream->len = *old->len;
     *stream->left_shift = *old->left_shift;
-    
+    *stream->used_len = *old->used_len;
+    stream->priority = old->priority;
     memcpy(stream->data,old->data,*stream->len);
   }
   else
@@ -199,6 +203,8 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
     *stream->stream_id = id;
     *stream->len = len;
     *stream->element_size = element_size;
+    *stream->used_len = 0;
+    stream->priority = 1;
     for(int i = 0 ; i < (*stream->len >> 2) ; i++)
       ((u32*)stream->data)[i] = UR(0XFFFFFFFF);
     {
@@ -259,7 +265,7 @@ inline input_stream *allocate_new_stream(FuzzState *state,u32 id, char *file,inp
     
   }
   state->all_streams->push_back(stream);
-  update_stream_ptr(state, sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->mode) + sizeof(stream->element_size) + sizeof(stream->left_shift) + *stream->len);
+  update_stream_ptr(state, sizeof(*stream->stream_id) + sizeof(*stream->len) + sizeof(*stream->mode) + sizeof(*stream->element_size) + sizeof(*stream->left_shift) + sizeof(*stream->used_len) + *stream->len);
   return stream;
 }
 input_stream *find_specific_stream(FuzzState *state,u32 id, s32 len)
@@ -722,8 +728,10 @@ void sync_entries(FuzzState *state)
   if(state->entries->size() == 0)
   {
     queue_entry *q = copy_queue(state,nullptr);
+    #ifdef ENABLE_IRQ
     input_stream *stream = allocate_new_stream(state,IRQ_STREAM_ID,nullptr,nullptr,DEFAULT_STREAM_LEN,DEFAULT_IRQ_ELEMENT_SIZE);  //irq always there
     (*q->streams)[IRQ_STREAM_ID] = stream;
+    #endif
     out.push_back(q);
   }
   for(queue_entry * q : out)
@@ -835,7 +843,6 @@ void sync_models(FuzzState *state)
   fclose(fp);
 }
 
-
 s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc)
 {
   s32 exit_code;
@@ -860,7 +867,9 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry)
     fuzz_one(state,entry,&exit_info,&exit_pc);
     run_modelling(state);
     sync_models(state);
+    #ifdef ENABLE_IRQ
     sync_irq_vals(state,entry);
+    #endif
     found_new_streams = sync_undiscovered_streams(state,entry);
     
   }while(found_new_streams);
@@ -917,6 +926,8 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, input_stream *fuzzed_str
   
   if(unlikely(r))
   {
+    if(r == 2)
+      fuzzed_stream->priority += 5;
     queue_entry* q = copy_queue(state,entry);
     q->depth++;
     find_all_streams_save_queue(state,q);
@@ -941,11 +952,15 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
   #define HAVOC_STACK 32
   #define HAVOC_TOKEN 20
   #define ARITH_MAX   35
-  u32 use_stacking = 1 + UR(*stream->len >> 2);
-  s32 len = *stream->len;
+  // u32 use_stacking = 1 + UR(*stream->len >> 2);
+  // u32 use_stacking = 1 + UR(8);
+  s32 len = *stream->used_len == 0 ? *stream->len : *stream->used_len;
+  u32 use_stacking = 1 + UR((len >> 2) + 1);
   u8 *data = stream->data;
   s32 i;
 
+  if(len < 1)
+    return;
   if(*stream->mode == MODEL_VALUE_SET)
   {
     u32 *value_set_len_ptr = (u32 *)stream->data;
@@ -955,18 +970,6 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
       data[UR(len)] = UR(*value_set_len_ptr);
     return;      
   }
-
-  // if(*stream->stream_id == IRQ_STREAM_ID)
-  // {
-  //   for (i = 0; i < use_stacking; i++) 
-  //   {
-  //     auto it = q->irq_vals->begin();
-  //     u16* tmp = (u16*)(data + (UR(len - 1) & 0xfffffffe));
-  //     advance(it,UR(q->irq_vals->size()));
-  //     *tmp = *it;
-  //   }
-  //   return;      
-  // }
 
   for (i = 0; i < use_stacking; i++) 
   {
@@ -985,12 +988,16 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
         }
         case 2:
         {
+          if(len < 2)
+            break;
           s16* tmp = (s16*)(data + UR(len - 1));
           *tmp = interesting_16[UR(sizeof(interesting_16) >> 1)];
           break;
         }
         case 3:
         {
+          if(len < 4)
+            break;
           s32* tmp = (s32*)(data + UR(len - 3));
           *tmp = interesting_32[UR(sizeof(interesting_32) >> 2)];
           break;
@@ -1012,24 +1019,32 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
         }
         case 7:
         {
+          if(len < 2)
+            break;
           s16* tmp = (s16*)(data + UR(len - 1));
           *tmp -= 1 + UR(ARITH_MAX);
           break;
         }
         case 8:
         {
+          if(len < 2)
+            break;
           s16* tmp = (s16*)(data + UR(len - 1));
           *tmp += 1 + UR(ARITH_MAX);
           break;
         }
         case 9:
         {
+          if(len < 4)
+            break;
           s32* tmp = (s32*)(data + UR(len - 3));
           *tmp -= 1 + UR(ARITH_MAX);
           break;
         }
         case 10:
         {
+          if(len < 4)
+            break;
           s32* tmp = (s32*)(data + UR(len - 3));
           *tmp += 1 + UR(ARITH_MAX);
           break;
@@ -1041,18 +1056,24 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
         }
         case 12:
         {
+          if(len < 2)
+            break;
           s16* tmp = (s16*)(data + UR(len - 1));
           *tmp = UR(0x10000);
           break;
         }
         case 13:
         {
+          if(len < 4)
+            break;
           s32* tmp = (s32*)(data + UR(len - 3));
           *tmp = UR(0xffffffff);
           break;
         }
         case 14:
         {
+          if(len < 8)
+            break;
           s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
           s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
           s32 val = UR(0xffffffff);
@@ -1063,6 +1084,8 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
           
         case 15:
         {
+          if(len < 8)
+            break;
           s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
           s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
           s32 val = 0;
@@ -1072,6 +1095,8 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
         }
         case 16:
         {
+          if(len < 8)
+            break;
           s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
           s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
           s32 val = 0xffffffff;
@@ -1137,6 +1162,7 @@ void fuzz_loop(FuzzState *state, int cpu)
     u32 exit_info,exit_pc;
     s32 exit_code;
     s32 len;
+    u32 i;
     cpu_set_t  mask;
     state->cpu = cpu;
     CPU_ZERO(&mask);
@@ -1159,44 +1185,26 @@ void fuzz_loop(FuzzState *state, int cpu)
         {
           if(*it->second->mode == MODEL_CONSTANT || *it->second->mode == MODEL_PASSTHROUGH)
             continue;
-          len = *it->second->len;  
-          memcpy(org_buf, it->second->data, len);
+          len = *it->second->len; 
+          for(i = 0 ; i < it->second->priority ; i++)
+          {
+            memcpy(org_buf, it->second->data, len);
 
-          havoc(state,entry, it->second);
+            havoc(state,entry, it->second);
 
-          exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
+            exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
 
-          fuzz_one_post(state,entry,it->second, exit_code,exit_info,exit_pc);
+            fuzz_one_post(state,entry,it->second, exit_code,exit_info,exit_pc);
 
-          memcpy(it->second->data, org_buf, len); 
+            memcpy(it->second->data, org_buf, len); 
+          } 
+          
         }  
 
       }
-      // if(entry->exit_outofseed >= 3 && !entry->increased)
-      // {
-      //   input_stream *favorate_stream = (*entry->streams)[entry->favorate_stream];
-      //   if(favorate_stream != nullptr && *favorate_stream->len < MAX_STREAM_LEN)
-      //   {
-      //     entry->increased = true;
-      //     queue_entry *q = copy_queue(state,entry);
-      //     input_stream *increased_stream = increase_stream(state,favorate_stream,MAX_STREAM_LEN);
-          
-      //     (*q->streams)[*favorate_stream->stream_id] = increased_stream;
-          
-      //     find_all_streams_save_queue(state,q);
-      //   }
-      // }
-      // {
-      //   queue_entry* tmp = copy_queue(entry);
-      //   havoc_entry(state,entry);
-      //   exit_code = fuzz_one(state,entry,&exit_info,&exit_pc);
-      //   fuzz_one_post(state,entry,exit_code,exit_info,exit_pc);
-      //   free_queue(tmp);
-      // }
-      
+
       rounds++;
-      if((rounds & 0xff) == 0)
-        show_stat(state);
+      show_stat(state);
       // if((rounds & 0xfff) == 0)
       //   sync_entries(state);
       

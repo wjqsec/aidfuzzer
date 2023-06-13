@@ -67,7 +67,7 @@ struct SHARED_STREAMS
 {
     uint32_t stream_id;
     int32_t len;
-    int32_t used;
+    int32_t *used;
     uint32_t type;
     int32_t element_size;
     int32_t left_shift;
@@ -111,11 +111,12 @@ void collect_streams()
         stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
         stream->stream_id = *(uint32_t*)ptr;
         stream->len = *(int32_t*)(ptr + sizeof(stream->stream_id));
-        stream->used = 0;
         stream->type = *(uint32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len));
         stream->element_size = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type));
         stream->left_shift = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size));
-        stream->data = (uint8_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift));
+        stream->used = (int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift));
+        stream->data = (uint8_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift) + sizeof(*stream->used));
+        *stream->used = 0;
         i++;
     }
 
@@ -223,7 +224,9 @@ void exit_with_code_start_new()
 
     //printf("exit_code = %x pc = %x\n", code,exit_pc);
     
+    #ifdef ENABLE_IRQ
     report_irqs();
+    #endif
     static uint32_t buf[128];
     buf[0] = exit_code;
     buf[1] = exit_info;
@@ -367,10 +370,10 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
 
             // uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
 
-            if(unlikely(stream->used == 0))
-                stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            if(unlikely(*stream->used == 0))
+                *stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
             
-            if(stream->len - stream->used < stream->element_size)
+            if(stream->len - *stream->used < stream->element_size)
             {
 
                 *out = value_set[0];  //give it a default one
@@ -381,9 +384,9 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
             else
             {
                 uint32_t tmp = 0;
-                memcpy(&tmp,stream->data + stream->used,stream->element_size);
+                memcpy(&tmp,stream->data + *stream->used,stream->element_size);
                 *out = value_set[tmp % num_values];
-                stream->used += stream->element_size;
+                *stream->used += stream->element_size;
 
             }    
         }
@@ -396,15 +399,15 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
         break;
         case MODEL_BIT_EXTRACT:
         {
-            if(stream->len - stream->used < stream->element_size)
+            if(stream->len - *stream->used < stream->element_size)
             {
                 prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
             }
             else
             {
-                memcpy(out,stream->data + stream->used,stream->element_size);
+                memcpy(out,stream->data + *stream->used,stream->element_size);
                 *out = *out << stream->left_shift;
-                stream->used += stream->element_size;
+                *stream->used += stream->element_size;
             }
         }
         break;
@@ -416,12 +419,12 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
 
         case MODEL_NONE:
         {
-            if(stream->len - stream->used < stream->element_size)
+            if(stream->len - *stream->used < stream->element_size)
                 prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
             else
             {
-                memcpy(out,stream->data + stream->used,stream->element_size);
-                stream->used += stream->element_size;
+                memcpy(out,stream->data + *stream->used,stream->element_size);
+                *stream->used += stream->element_size;
             }    
         }
         break;
@@ -483,8 +486,9 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
 void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 {
-    addr = (hwaddr)opaque + addr;
+    
     #ifdef DBG
+    addr = (hwaddr)opaque + addr;
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
     fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, get_arm_precise_pc(),addr,data);
@@ -496,12 +500,6 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
 
     #ifdef AFL
-    static bool dumped = false;
-    if(pc == 0x8001D04 && !dumped) 
-    {
-        dump_state(pc,false,"irq");
-        dumped = true;
-    }
 
     if(unlikely(bbl >= max_bbl_exec))
     {
@@ -567,8 +565,8 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
     if(!get_arm_v7m_is_handler_mode())
     {
-       
-        insert_nvic_intc((int)data,false);
+        int irq = (int)(uint64_t)data;
+        insert_nvic_intc(irq,false);
         #ifdef DBG
         fprintf(flog,"%d->nostop_watchpoint_exec %x\n",run_index,vaddr);
         #endif
@@ -612,20 +610,61 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 
 void exec_arm_interrupt_pre_hook(int irq)
 {
+    
+    char state_filename[PATH_MAX];
+    char cmd[PATH_MAX];
+    char line[PATH_MAX];
     struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
+    FILE *f;
+    
+    
     #ifdef DBG
     
     fprintf(flog,"%d->exec_arm_interrupt_pre_hook irq:%d pc:%x\n",run_index, irq,state.regs[15]);
     #endif
 
+    #ifndef ENABLE_IRQ
     if(!dumped_irq[irq])
     {
-        dump_state(state.reg[15],false,"irq");
+        get_arm_cpu_state(&state);
+        sprintf(state_filename,"%s/state_%s_%08x",state_dir,"irq",state.regs[15]);
+        dump_state(state.regs[15],false,"irq");
         struct WATCHPOINT watchpoint;
         // parse here to do
-        insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)irq);
+        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/main.py %s %s %d > /dev/null 2>&1",state_filename,"./irq_model",irq);
+        puts(cmd);
+        system(cmd);
+        f = fopen("./irq_model","r");
+        bool start = false;
+        while(fgets(line, PATH_MAX, f))
+        {
+            if(strstr(line,"-"))
+            {
+                int tmp_irq = strtol(strstr(line,"-") + 1,0,10);
+                if(tmp_irq == irq)
+                    start = true;
+                else
+                    start = false;
+                continue;
+            }
+            if(!start)
+                continue;
+            uint32_t addr = strtol(line, 0, 16);
+            uint32_t len = strtol(strstr(line," ") + 1, 0, 16);
+            if(!addr)
+                continue;
+            watchpoint.addr = addr;
+            watchpoint.len = 0x10;
+            watchpoint.flag = BP_MEM_ACCESS;
+            insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)(uint64_t)irq);
+            printf("insert_nostop_watchpoint %x %d\n",addr,len);
+        }
+        fclose(f);
+        puts("model done");
+        dumped_irq[irq] = true;
     }
+    #endif
+    
 }
 void post_thread_exec(int exec_ret)
 {

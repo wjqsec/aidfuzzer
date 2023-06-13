@@ -2,9 +2,66 @@ import angr, monkeyhex
 from setup_env import from_state_file
 import claripy
 import re
-
-
+import sys
+import time
+from pathlib import Path
 stack_size = 0x4000
+
+MAX_ACTIVE_STATES = 100
+
+MAX_DEAD_VARS = 3
+MAX_STATES = 20
+MAX_CALL_DEPTH = 2
+MAX_BB_VISITS = 5
+NON_FORKING_STATE_MAX_BB_VISITS = 50
+
+class ACCESS_INFO:
+    def __init__(self):
+        pass
+    def __eq__(self, other):
+        if self.addr == other.addr and self.size==other.size:
+            return True
+        else:
+            return False
+    def __hash__(self):
+        return hash(hex(self.addr) + hex(self.size))
+    
+class IRQ_MODEL:
+    def __init__(self):
+        self.irq = 0
+        self.accesses = []
+    def dump(self):
+        print("-{}".format(self.irq))
+        for access in self.accesses:
+            print("{} {}".format(hex(access.addr), hex(access.size)))
+
+def irq_model_from_file(modelfilename):
+    models = []
+    model = None
+    if not Path(modelfilename).exists():
+        return models
+    with open(modelfilename, "r") as f:
+        for line in f.readlines():
+            if "-" in line:
+                model = IRQ_MODEL()
+                models.append(model)
+                model.irq = int(line[1:])
+            else:
+                accessinfo = ACCESS_INFO()
+                accessinfo.addr = int(line.split(" ")[0],16)
+                accessinfo.size = int(line.split(" ")[1],16)
+                model.accesses.append(accessinfo)
+    return models
+                
+
+def write_model_to_file(models,modelfilename):
+    with open(modelfilename, "w") as f:
+        for model in models:
+            f.write("-{}\n".format(model.irq))
+            f.write("".join(["{} {}\n".format(hex(access.addr),hex(access.size)) for access in model.accesses]))
+            
+
+
 
 
 
@@ -44,7 +101,7 @@ def is_ast_value_pointer(state,value):
     return is_pointer(state,addr)
 
 def is_readonly_addr(state,addr):
-    return addr >= 0x8000000 and addr <= 0x8017000
+    return addr >= 0x8000000 and addr <= 0x8044000
 
 def is_ast_addr_readonly(state,addr):
     try:
@@ -97,34 +154,41 @@ def is_memory_write_action(action):
     return isinstance(action, angr.state_plugins.sim_action.SimActionData) and action.type == 'mem' and action.action == 'write'
 
 
-def contains_all_key(item_one, item_two):
-    for k,v in item_one.items():
-        if k not in item_two:
-            return False
-    return len(item_two) > len(item_one) 
+if(len(sys.argv) < 4):
+    print("args error")
+    exit(0)
+
+models = irq_model_from_file(sys.argv[2])
+
+project, initial_state, cfg = from_state_file(sys.argv[1],None)
 
 
-project, initial_state, cfg = from_state_file('/home/w/hd/iofuzzer/out/state/state_irq_08001d04',None)
-
-
-initial_state.inspect.b('mem_read',when=angr.BP_BEFORE,action=mem_read_before)
-initial_state.inspect.b('mem_read',when=angr.BP_AFTER,action=mem_read_after)
-initial_state.inspect.b('mem_write',when=angr.BP_BEFORE,action=mem_write_before)
-initial_state.inspect.b('mem_write',when=angr.BP_AFTER,action=mem_write_after)
+# initial_state.inspect.b('mem_read',when=angr.BP_BEFORE,action=mem_read_before)
+# initial_state.inspect.b('mem_read',when=angr.BP_AFTER,action=mem_read_after)
+# initial_state.inspect.b('mem_write',when=angr.BP_BEFORE,action=mem_write_before)
+# initial_state.inspect.b('mem_write',when=angr.BP_AFTER,action=mem_write_after)
 
 
 simgr = project.factory.simgr(initial_state)
 
 
-simgr.run(thumb=True)
+
+# simgr.use_technique(TimeoutDetector(1000))
+# simgr.use_technique(LoopEscaper())
+# simgr.use_technique(StateExplosionDetector())
+
+for i in range(10000):
+    if i == 100 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
+        break
+    simgr.step(thumb=True)
 
 states = simgr.active + simgr.deadended + simgr.unconstrained
 
-all_access = []
+model = IRQ_MODEL()
+model.irq = int(sys.argv[3])
+accessses = []
 for state in states:
-    access = dict()
-    # addrs = set()
-    print("**************")
+    access = []
     for action in state.history.actions:
         if not is_memory_action(action):
             continue
@@ -134,35 +198,30 @@ for state in states:
             continue
         if is_ast_addr_readonly(state,action.addr):
             continue
-    #     addrs.add(hex(state.solver.min(action.addr)))
-    # print(addrs)
-        # if hex(state.solver.min(action.addr)) in addrs:
-        #     continue
-        # addrs.add(hex(state.solver.min(action.addr)))
-        access[hex(state.solver.eval_one(action.ins_addr))] = hex(state.solver.min(action.addr))
-        # for guard in state.history.jump_guards:
-        #     print()
-    
-    if access == {}:   
-        continue 
-    # for k,v in access.items():
-    #     print(k,v)
-    all_access.append(access)
-    print("-------------")
 
-to_delete = []
-for ac1 in all_access:
-    for ac2 in all_access:
-        if ac1 != ac2 and contains_all_key(ac1, ac2):
-            to_delete.append(ac1)
-for delete in to_delete:
-    if delete in all_access:
-        all_access.remove(delete)
-for ac in all_access:
-    print("**************")
-    for k,v in ac.items():
-        print(k,v)
-    print("-------------")
+        if not action.addr.symbolic:
+            info = ACCESS_INFO()
+            info.ins_addr = state.solver.eval_one(action.ins_addr)
+            info.addr = state.solver.min(action.addr)
+            info.size = int((action.size + 0)/8)
+            access.append(info)
+            
+    if access == []:   
+        continue 
+    accessses.append(access)
+
+tmp = set()
+for ac in accessses:
+    for info in ac:
+        tmp.add(info)
+model.accesses = [x for x in tmp]
+models.append(model)
+write_model_to_file(models,sys.argv[2])
+
+
+
+        
+    
             
     
     
