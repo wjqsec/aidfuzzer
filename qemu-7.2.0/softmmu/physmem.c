@@ -889,11 +889,13 @@ int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len)
     }
     return ret;
 }
-
+extern bool enable_watchpoint;
 /* Generate a debug exception if a watchpoint has been hit.  */
 void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
                           MemTxAttrs attrs, int flags, uintptr_t ra)
 {
+    if(!enable_watchpoint)
+        return;
     CPUClass *cc = CPU_GET_CLASS(cpu);
     CPUWatchpoint *wp;
 

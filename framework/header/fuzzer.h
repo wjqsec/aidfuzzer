@@ -53,14 +53,8 @@ typedef int64_t  s64;
 #define MODEL_PASSTHROUGH 3
 #define MODEL_NONE 4
 
+#define NVIC_MAX_VECTORS 512
+
+
 //#define ENABLE_IRQ
-inline static u64 get_cur_time(void) {
 
-  struct timeval tv;
-  struct timezone tz;
-
-  gettimeofday(&tv, &tz);
-
-  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
-
-}

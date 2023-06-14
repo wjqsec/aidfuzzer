@@ -45,6 +45,9 @@ enum XX_CPU_TYPE xx_cpu_type;
 enum XX_CPU_TYPE get_xx_cpu_type(){ return xx_cpu_type; }
 void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
 
+bool enable_watchpoint;
+bool *bbl_enable_watchpoint;
+
 
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
 exec_bbl_cb exec_bbl_func;
@@ -319,6 +322,8 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,vo
     cpu_watchpoint_insert(cpu,addr,len, flag | BP_CALLBACK_ONLY_NO_STOP ,&wp);
     wp->callback = cb;
     wp->data = data;
+
+    memset(bbl_enable_watchpoint,1,1 << 16);
     return wp;
 }
 void xx_delete_nostop_watchpoint(void *watchpoint)
@@ -343,7 +348,7 @@ int xx_thread_loop(bool debug)
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
 		//CPUClass *cc = CPU_GET_CLASS(cpu);
-
+        bbl_enable_watchpoint = (bool *)malloc(1 << 16);
         init = true;
     }
 

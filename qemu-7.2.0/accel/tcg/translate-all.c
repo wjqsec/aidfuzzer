@@ -752,9 +752,10 @@ void page_collection_unlock(struct page_collection *set)
  * Isolate the portion of code gen which can setjmp/longjmp.
  * Return the size of the generated code, or negative on error.
  */
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl);
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
 extern exec_bbl_cb exec_bbl_func;
 extern TCGv_env cpu_env;
+
 static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
 {
 #define GOLDEN_RATIO_64 0x61C8864680B583EBull
@@ -764,6 +765,9 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
 {  
+    
+    uint64_t id = hash_64(pc,32) % (1 << 16);
+   
     int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(ret != 0)) {
         return ret;
@@ -774,17 +778,17 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_ctx->cpu = env_cpu(env);
     if (exec_bbl_func)
     {
-        TCGv_i64 arg0_pc = tcg_const_i64(pc);
-
-        TCGv_i32 arg1_id = tcg_const_i32(hash_64(pc,32) % (1 << 16));
-        //TCGv_i32 arg1_id = tcg_const_i32(pc % (1 << 16));
+        TCGv_i32 arg1_id = tcg_const_i32(id);
         TCGv_i64 ret_1 = tcg_const_i64(1);
+        TCGv_i64 arg0_pc = tcg_const_i64(pc);
         gen_helper_xx_bbl(ret_1,cpu_env,arg0_pc,arg1_id);
         tcg_temp_free_i64(arg0_pc);
         tcg_temp_free_i64(ret_1);
         tcg_temp_free_i32(arg1_id);
+        
     }
     gen_intermediate_code(env_cpu(env), tb, *max_insns, pc, host_pc);
+
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;
     *max_insns = tb->icount;
@@ -795,6 +799,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                 tcg_ctx->prof.interm_time + profile_getclock() - *ti);
     *ti = profile_getclock();
 #endif
+    
 
     return tcg_gen_code(tcg_ctx, tb, pc);
 }

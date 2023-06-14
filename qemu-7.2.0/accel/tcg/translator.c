@@ -77,6 +77,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
 
     plugin_enabled = plugin_gen_tb_start(cpu, db, cflags & CF_MEMI_ONLY);
 
+
+    
+
     while (true) {
         db->num_insns++;
         ops->insn_start(db, cpu);
@@ -120,6 +123,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
             break;
         }
     }
+    
 
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);

@@ -20,6 +20,7 @@
         "iosfwd": "cpp",
         "thread": "cpp",
         "errno.h": "c",
-        "xmemory": "cpp"
+        "xmemory": "cpp",
+        "stdio.h": "c"
     }
 }

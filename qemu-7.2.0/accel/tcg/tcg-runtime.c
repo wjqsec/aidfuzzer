@@ -32,25 +32,38 @@
 #include "tcg/tcg.h"
 #include "qemu/timer.h"
 /* 32-bit helpers */
-extern int64_t bbl_counts;
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
-extern exec_bbl_cb exec_bbl_func;
+
+
 typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
+extern bool *bbl_enable_watchpoint;
+extern bool enable_watchpoint;
+extern int64_t bbl_counts;
+
+extern exec_bbl_cb exec_bbl_func;
+
 extern exec_ins_icmp_cb exec_ins_icmp_func;
 uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
     static uint64_t e = 0;
+    static uint32_t last_id = 0;
     bool should_exit = exec_bbl_func(pc,id,bbl_counts);
     if(should_exit)
     {
 	    CPUState *cpu = env_cpu(env);
 	    cpu_loop_exit(cpu);
     }
+    
     bbl_counts++;
-    //if((e++ & 0xff) == 0)
+    bbl_enable_watchpoint[id] = false;
+    last_id = id;
+    enable_watchpoint = bbl_enable_watchpoint[id];
+    
+    
 	qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
     return 1;
 }
+
 uint64_t HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)
 {
     exec_ins_icmp_func(val1,val2,32);

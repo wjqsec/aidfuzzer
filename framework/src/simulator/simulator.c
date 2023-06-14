@@ -14,15 +14,19 @@
 #include <kk_ihex_write.h>
 #include "xx.h"
 #include "config.h"
-#include "simulator.h"
+#include "fuzzer.h"
+
+
+
+//#define DBG
+#define CRASH_DBG
+//#define TRACE_DBG
+#define AFL
 
 
 struct SIMULATOR_CONFIG* global_config;
 #include "snapshot.h"
-#define likely(_x)   __builtin_expect(!!(_x), 1)
-#define unlikely(_x)  __builtin_expect(!!(_x), 0)
 
-#define IRQ_STREAM_ID 0xffffffff
 
 struct ARMM_SNAPSHOT *org_snap, *new_snap;
 

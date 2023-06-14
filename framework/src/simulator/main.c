@@ -12,7 +12,6 @@
 #include <string.h>
 #include "xx.h"
 #include "config.h"
-#include "simulator.h"
 
 
 struct SIMULATOR_CONFIG _3dprinter_config = 

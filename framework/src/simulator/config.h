@@ -1,4 +1,3 @@
-
 #define MAX_NUM_MEM_REGION 255
 struct RAM
 {
@@ -32,3 +31,5 @@ struct SIMULATOR_CONFIG
     struct ROM roms[MAX_NUM_MEM_REGION];
     struct MMIO mmios[MAX_NUM_MEM_REGION];
 };
+int run_config(struct SIMULATOR_CONFIG *config);
+void init(int argc, char **argv);

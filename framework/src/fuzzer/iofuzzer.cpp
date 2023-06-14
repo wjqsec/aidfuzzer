@@ -23,11 +23,22 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/wait.h>
-#include "iofuzzer.h"
+#include "fuzzer.h"
 #include "afl_utl.h"
 
 using namespace std;
 
+
+inline static u64 get_cur_time(void) {
+
+  struct timeval tv;
+  struct timezone tz;
+
+  gettimeofday(&tv, &tz);
+
+  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
+
+}
 
 void fatal(const char *msg)
 {
