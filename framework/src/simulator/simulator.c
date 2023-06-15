@@ -31,7 +31,6 @@ struct SIMULATOR_CONFIG* global_config;
 struct ARMM_SNAPSHOT *org_snap, *new_snap;
 
 
-
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
 uint8_t *__afl_undiscover_stream_data;
@@ -95,11 +94,6 @@ uint16_t* irq_vals;
 uint16_t *irqs;
 uint32_t *num_irqs;
 
-static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
-{
-#define GOLDEN_RATIO_64 0x61C8864680B583EBull
-        return val * GOLDEN_RATIO_64 >> (64 - bits);
-}
 
 void collect_streams()
 {
@@ -505,6 +499,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
     #ifdef AFL
 
+    
     if(unlikely(bbl >= max_bbl_exec))
     {
         prepare_exit(EXIT_TIMEOUT,0,pc);
@@ -571,9 +566,6 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
     {
         int irq = (int)(uint64_t)data;
         insert_nvic_intc(irq,false);
-        #ifdef DBG
-        fprintf(flog,"%d->nostop_watchpoint_exec %x\n",run_index,vaddr);
-        #endif
     }
         
 }
@@ -628,7 +620,7 @@ void exec_arm_interrupt_pre_hook(int irq)
     #endif
 
     #ifndef ENABLE_IRQ
-    if(!dumped_irq[irq])
+    if(!dumped_irq[irq] && irq > 15)
     {
         get_arm_cpu_state(&state);
         sprintf(state_filename,"%s/state_%s_%08x",state_dir,"irq",state.regs[15]);
@@ -661,7 +653,6 @@ void exec_arm_interrupt_pre_hook(int irq)
             watchpoint.len = 0x10;
             watchpoint.flag = BP_MEM_ACCESS;
             insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)(uint64_t)irq);
-            printf("insert_nostop_watchpoint %x %d\n",addr,len);
         }
         fclose(f);
         puts("model done");

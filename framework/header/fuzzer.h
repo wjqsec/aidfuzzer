@@ -58,3 +58,9 @@ typedef int64_t  s64;
 
 //#define ENABLE_IRQ
 
+static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
+{
+#define GOLDEN_RATIO_64 0x61C8864680B583EBull
+        return val * GOLDEN_RATIO_64 >> (64 - bits);
+}
+

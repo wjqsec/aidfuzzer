@@ -39,23 +39,38 @@ struct ARM_NVIC_ALL_STATE
     struct NVICState *nvic;
 };
 
+void xx_set_armv7_vecbase(uint64_t addr);
+uint64_t xx_get_arm_precise_pc(void);
+void xx_insert_nvic_intc(int irq, bool secure);
+bool xx_get_arm_v7m_is_handler_mode(void);
+uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs);
+GArray* xx_get_enabled_nvic_irq(void);
+void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state);
+void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state);
+void xx_reset_arm_reg(void);
+void* xx_save_arm_ctx_state(void);
+void xx_restore_arm_ctx_state(void* state);
+void xx_delete_arm_ctx_state(void* state);
+
+
+
 void xx_set_armv7_vecbase(uint64_t addr)
 {
     vecbase = addr;
 }
-uint64_t xx_get_arm_precise_pc()
+uint64_t xx_get_arm_precise_pc(void)
 {
     return cs->precise_pc;
 }
 void xx_insert_nvic_intc(int irq, bool secure)
 {
-
-    if(armv7m_nvic_get_ready_status(nvic, irq, secure))
+    //if(armv7m_nvic_get_ready_status(nvic, irq, secure))
+    if(nvic->sec_vectors[irq].enabled)
     {
         armv7m_nvic_set_pending(nvic, irq, secure);
     }   
 }
-bool xx_get_arm_v7m_is_handler_mode()
+bool xx_get_arm_v7m_is_handler_mode(void)
 {
     return env->v7m.exception != 0;
 }
@@ -67,7 +82,7 @@ uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs)
 }
 
 
-GArray* xx_get_enabled_nvic_irq()
+GArray* xx_get_enabled_nvic_irq(void)
 {
     GArray* ret = g_array_new(FALSE, FALSE, sizeof(int));
 
@@ -105,11 +120,11 @@ void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
         env->xregs[i] = state->xregs[i];
     }
 }
-void xx_reset_arm_reg()
+void xx_reset_arm_reg(void)
 {
     cpu_reset(ARM_CPU(first_cpu));
 }
-void* xx_save_arm_ctx_state()
+void* xx_save_arm_ctx_state(void)
 {
     struct ARM_NVIC_ALL_STATE *ret = g_new0(struct ARM_NVIC_ALL_STATE,1);
     CPUARMState *env_ret = g_new0(CPUARMState,1);
@@ -152,7 +167,7 @@ OBJECT_DECLARE_TYPE(XXARMMachineState, XXARMMachineClass, XX_MACHINE)
 static void machine_xx_arm_init(MachineState *mch)
 {
     XXARMMachineState *mms = XX_MACHINE(mch);
-    XXARMMachineClass *mmc = XX_MACHINE_GET_CLASS(mch);
+    //XXARMMachineClass *mmc = XX_MACHINE_GET_CLASS(mch);
     MachineClass *mc = MACHINE_GET_CLASS(mch);
     DeviceState *armv7m;
     MemoryRegion *system_memory = get_system_memory();

@@ -41,12 +41,17 @@ enum XX_CPU_TYPE
     X86,
     ARM
 };
+
+void set_xx_cpu_type(enum XX_CPU_TYPE type);
+enum XX_CPU_TYPE get_xx_cpu_type(void);
 enum XX_CPU_TYPE xx_cpu_type;
-enum XX_CPU_TYPE get_xx_cpu_type(){ return xx_cpu_type; }
+enum XX_CPU_TYPE get_xx_cpu_type(void){ return xx_cpu_type; }
 void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
 
-bool enable_watchpoint;
-bool *bbl_enable_watchpoint;
+#define NUM_WATCHPOINT (1 << 20)
+#define NUM_IRQ_PER_WATCHPOINT 20
+// bool enable_watchpoint;
+void **bbl_enable_watchpoint;
 
 
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
@@ -63,6 +68,12 @@ struct DirtyBitmapSnapshot {
     ram_addr_t end;
     unsigned long dirty[];
 };
+
+static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
+{
+#define GOLDEN_RATIO_64 0x61C8864680B583EBull
+        return val * GOLDEN_RATIO_64 >> (64 - bits);
+}
 bool tcg_supports_guest_debug(void);
 void tcg_remove_all_breakpoints(CPUState *cpu);
 int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
@@ -81,7 +92,14 @@ void xx_register_exec_bbl_hook(exec_bbl_cb cb);
 void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb);
 int xx_thread_loop(bool debug);
 int xx_target_pagesize(void);
-
+void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,void *data);
+void check_nostop_watchpoint(vaddr addr);
+void xx_delete_nostop_watchpoint(void *watchpoint);
+void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+void page_init(void);
+void tb_htable_init(void);
+void vm_state_notify(bool running, RunState state);
+void runstate_set(RunState new_state);
 extern bool tcg_allowed;
 
 
@@ -138,6 +156,7 @@ MemTxResult xx_ram_rw(hwaddr addr,hwaddr len,void *buf, bool is_write)
 MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len)
 {
     address_space_write_rom(&address_space_memory,addr,MEMTXATTRS_UNSPECIFIED,buf,len);
+    return 0;
 }
 
 static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
@@ -199,7 +218,7 @@ void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
     xx_ram_regions[xx_num_ram_regions].readonly = readonly;
     xx_ram_regions[xx_num_ram_regions].mr = mr;
     xx_num_ram_regions++;
-    printf("add ram %lu-%lu %s readonly:%d\n",start, start+size,name,readonly);
+    printf("add ram %lx-%lx %s readonly:%d\n",start, start+size,name,readonly);
 }
 void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 {
@@ -226,7 +245,7 @@ void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
     xx_rom_regions[xx_num_rom_regions].size = size;
     xx_rom_regions[xx_num_rom_regions].mr = mr;
     xx_num_rom_regions++;
-    printf("add rom %lu-%lu %s\n",start, start+size,name);
+    printf("add rom %lx-%lx %s\n",start, start+size,name);
 }
 void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb,void *opaque)
 {
@@ -268,7 +287,7 @@ void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, v
     xx_mmio_regions[xx_num_mmio_regions].opaque = opaque;
     xx_mmio_regions[xx_num_mmio_regions].mr = mr;
     xx_num_mmio_regions++;
-    printf("add mmio %lu-%lu %s\n",start, start+size,name);
+    printf("add mmio %lx-%lx %s\n",start, start+size,name);
 }
 
 
@@ -316,6 +335,7 @@ void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 }
 void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,void *data)
 {
+    int i;
     CPUWatchpoint *wp;
     CPUState *cpu = qemu_get_cpu(0);
     //cpu_watchpoint_insert(cpu,0x20001160,4, BP_MEM_ACCESS |BP_CALLBACK_ONLY_NO_STOP ,&wp);
@@ -323,8 +343,31 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,vo
     wp->callback = cb;
     wp->data = data;
 
-    memset(bbl_enable_watchpoint,1,1 << 16);
+    uint32_t id = hash_64(addr,32) % NUM_WATCHPOINT;
+    void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
+    for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
+    {
+        if(ptr[i] == 0)
+        {
+            ptr[i] = wp;
+        }
+    }
     return wp;
+}
+void check_nostop_watchpoint(vaddr addr)
+{
+    CPUWatchpoint *wp;
+    int i;
+    uint32_t id = hash_64(addr,32) % NUM_WATCHPOINT;
+    void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
+    for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
+    {
+        if(unlikely(ptr[i]))
+        {
+            wp = (CPUWatchpoint *)(ptr[i]);
+            wp->callback(wp->vaddr,wp->len,wp->hitaddr,wp->data);
+        }
+    }
 }
 void xx_delete_nostop_watchpoint(void *watchpoint)
 {
@@ -335,7 +378,7 @@ void xx_delete_nostop_watchpoint(void *watchpoint)
 
 int xx_thread_loop(bool debug)
 {
-    int r;
+    int r = 0;
     CPUState *cpu = qemu_get_cpu(0);
     static bool init = false; 
     if(!init)
@@ -348,16 +391,23 @@ int xx_thread_loop(bool debug)
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
 		//CPUClass *cc = CPU_GET_CLASS(cpu);
-        bbl_enable_watchpoint = (bool *)malloc(1 << 16);
+        bbl_enable_watchpoint = (void **)malloc(NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
+        memset(bbl_enable_watchpoint,0,NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
         init = true;
     }
 
     if(!cpu->stop && !cpu->exit_request)
     {
         if(!cpu_work_list_empty(cpu))
-	        process_queued_cpu_work(cpu);
+        {
+            process_queued_cpu_work(cpu);
+        }
+	        
 		if(debug)
-			main_loop_wait(true);
+        {
+            main_loop_wait(true);
+        }
+			
 		if(cpu_can_run(cpu))
 		{
 			cpu_exec_start(cpu);
@@ -398,7 +448,7 @@ int xx_thread_loop(bool debug)
         {
             main_loop_wait(true);
         }
-   }
+    }
     cpu->exit_request = false;
     return r;
 }
@@ -471,7 +521,7 @@ static void xx_accel_class_init(ObjectClass *oc, void *data)
     ac->name = "xx";
     ac->init_machine = xx_init_machine;
     ac->allowed = &tcg_allowed;
-    ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
+    //ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
 }
 
 static void xx_accel_ops_init(AccelOpsClass *ops)

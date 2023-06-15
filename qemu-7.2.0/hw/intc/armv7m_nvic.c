@@ -919,7 +919,7 @@ int armv7m_nvic_complete_irq(void *opaque, int irq, bool secure)
 
 bool armv7m_nvic_get_ready_status(void *opaque, int irq, bool secure)
 {
-    /*
+     /*
      * Return whether an exception is "ready", i.e. it is enabled and is
      * configured at a priority which would allow it to interrupt the
      * current execution priority.
@@ -933,9 +933,7 @@ bool armv7m_nvic_get_ready_status(void *opaque, int irq, bool secure)
     VecInfo *vec;
     int running = nvic_exec_prio(s);
 
-    //assert(irq > ARMV7M_EXCP_RESET && irq < s->num_irq);
-    if (irq <= ARMV7M_EXCP_RESET || irq >= s->num_irq)
-    	    return false;
+    assert(irq > ARMV7M_EXCP_RESET && irq < s->num_irq);
     assert(!secure || banked);
 
     /*

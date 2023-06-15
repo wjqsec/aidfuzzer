@@ -889,13 +889,13 @@ int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len)
     }
     return ret;
 }
-extern bool enable_watchpoint;
+
 /* Generate a debug exception if a watchpoint has been hit.  */
+void check_nostop_watchpoint(vaddr addr);
 void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
                           MemTxAttrs attrs, int flags, uintptr_t ra)
 {
-    if(!enable_watchpoint)
-        return;
+    return check_nostop_watchpoint(addr);
     CPUClass *cc = CPU_GET_CLASS(cpu);
     CPUWatchpoint *wp;
 
@@ -945,11 +945,6 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
             wp->hitaddr = MAX(addr, wp->vaddr);
             wp->hitattrs = attrs;
 
-            if(wp->flags & BP_CALLBACK_ONLY_NO_STOP && wp->callback)
-            {
-                wp->callback(wp->vaddr,wp->len,wp->hitaddr,wp->data);
-                continue;
-            }
             if (wp->flags & BP_CPU && cc->tcg_ops->debug_check_watchpoint &&
                 !cc->tcg_ops->debug_check_watchpoint(cpu, wp)) {
                 wp->flags &= ~BP_WATCHPOINT_HIT;

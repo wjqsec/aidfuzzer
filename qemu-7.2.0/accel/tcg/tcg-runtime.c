@@ -36,8 +36,8 @@
 
 typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
-extern bool *bbl_enable_watchpoint;
-extern bool enable_watchpoint;
+// extern bool *bbl_enable_watchpoint;
+// extern bool enable_watchpoint;
 extern int64_t bbl_counts;
 
 extern exec_bbl_cb exec_bbl_func;
@@ -45,8 +45,8 @@ extern exec_bbl_cb exec_bbl_func;
 extern exec_ins_icmp_cb exec_ins_icmp_func;
 uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
-    static uint64_t e = 0;
-    static uint32_t last_id = 0;
+    //static uint64_t e = 0;
+    // static uint32_t last_id = 0;
     bool should_exit = exec_bbl_func(pc,id,bbl_counts);
     if(should_exit)
     {
@@ -55,9 +55,9 @@ uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
     }
     
     bbl_counts++;
-    bbl_enable_watchpoint[id] = false;
-    last_id = id;
-    enable_watchpoint = bbl_enable_watchpoint[id];
+    // bbl_enable_watchpoint[last_id] = false;
+    // last_id = id;
+    // enable_watchpoint = bbl_enable_watchpoint[id];
     
     
 	qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);

@@ -200,11 +200,7 @@ inline static u32 count_non_255_bytes(u8* mem, u32 size) {
   return ret;
 
 }
-static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
-{
-#define GOLDEN_RATIO_64 0x61C8864680B583EBull
-        return val * GOLDEN_RATIO_64 >> (64 - bits);
-}
+
 #define ROL64(_x, _r)  ((((u64)(_x)) << (_r)) | (((u64)(_x)) >> (64 - (_r))))
 inline static u32 hash32(const void* key, u32 len) 
 {
