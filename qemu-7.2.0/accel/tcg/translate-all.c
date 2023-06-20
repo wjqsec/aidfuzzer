@@ -756,17 +756,21 @@ typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl);
 extern exec_bbl_cb exec_bbl_func;
 extern TCGv_env cpu_env;
 
-static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
+static __always_inline uint32_t hash_32(uint32_t number)
 {
-#define GOLDEN_RATIO_64 0x61C8864680B583EBull
-	return val * GOLDEN_RATIO_64 >> (64 - bits);
+        uint32_t hash_value = number ^ (number >> 16);
+        hash_value = hash_value * 0x85ebca6b;
+        hash_value = hash_value ^ (hash_value >> 13);
+        hash_value = hash_value * 0xc2b2ae35;
+        hash_value = hash_value ^ (hash_value >> 16);
+        return hash_value;
 }
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
 {  
     
-    uint64_t id = hash_64(pc,32) % (1 << 16);
+    uint64_t id = hash_32(pc) % (1 << 20);
    
     int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(ret != 0)) {

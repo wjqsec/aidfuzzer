@@ -45,7 +45,7 @@ typedef int64_t  s64;
 #define ENTRY_MUTEX_KEY 1234
 
 #define SHARE_FUZZDATA_SIZE 500 << 20
-#define FUZZ_COVERAGE_SIZE 1 << 16
+#define FUZZ_COVERAGE_SIZE 1 << 20
 
 #define MODEL_VALUE_SET 0
 #define MODEL_BIT_EXTRACT 1
@@ -58,9 +58,13 @@ typedef int64_t  s64;
 
 //#define ENABLE_IRQ
 
-static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
+static __always_inline uint32_t hash_32(uint32_t number)
 {
-#define GOLDEN_RATIO_64 0x61C8864680B583EBull
-        return val * GOLDEN_RATIO_64 >> (64 - bits);
+        uint32_t hash_value = number ^ (number >> 16);
+        hash_value = hash_value * 0x85ebca6b;
+        hash_value = hash_value ^ (hash_value >> 13);
+        hash_value = hash_value * 0xc2b2ae35;
+        hash_value = hash_value ^ (hash_value >> 16);
+        return hash_value;
 }
 

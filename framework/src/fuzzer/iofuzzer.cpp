@@ -136,6 +136,8 @@ struct FuzzState
     map<u32,u32> *streamid_mmioaddr_mapping;
 
     FILE *flog;
+
+    s64 total_priority;
 };
 
 
@@ -154,7 +156,7 @@ char  state_dir[PATH_MAX];
 char  state_backup_dir[PATH_MAX];
 char  model_dir[PATH_MAX];
 char  model_file[PATH_MAX];
-
+char  coverage_file[PATH_MAX];
 
 
 s32 fuzz_one(FuzzState *state,queue_entry* entry,u32* exit_info, u32* exit_pc);
@@ -396,7 +398,7 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
 
     
     state->total_exec = 0;
-
+    state->total_priority = 0;
 
     state->entries = new vector<struct queue_entry*>();
     state->cksums_entries = new map<u32, struct queue_entry*>();
@@ -604,6 +606,12 @@ void load_stream_pool(FuzzState *state)
   fread(state->shared_stream_data + state->shared_stream_used, pool_file_size - state->shared_stream_used,1,f_stream);
   state->shared_stream_used = pool_file_size;
   fclose(f_stream);
+}
+void save_coverage(FuzzState *state)
+{
+  FILE *f_coverage = fopen(coverage_file,"wb");
+  fwrite(state->virgin_bits,state->map_size,1,f_coverage);
+  fclose(f_coverage);
 }
 void save_crash(queue_entry* entry)
 {
@@ -818,7 +826,7 @@ void sync_models(FuzzState *state)
     {
       u32 mmio_addr = strtol(mmio_str + strlen("_mmio_"), 0, 16);
       u32 mmio_pc = strtol(strstr(line,"pc_") + strlen("pc_"), 0, 16);
-      mmio_id = hash_64(mmio_addr,32) ^ hash_64(mmio_pc,32);
+      mmio_id = hash_32(mmio_addr) ^ hash_32(mmio_pc);
       
       if(mode == MODEL_VALUE_SET)
       {
@@ -893,6 +901,7 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry)
   entry->cksum = hash32(state->trace_bits,state->map_size);
   entry->exit_pc = exit_pc;
   entry->priority = entry->streams->size() + entry->edges * entry->depth;
+  state->total_priority += entry->priority;
   state->entries->push_back(entry);
   
   (*state->cksums_entries)[entry->cksum] = entry;
@@ -937,14 +946,17 @@ void fuzz_one_post(FuzzState *state,queue_entry* entry, input_stream *fuzzed_str
   
   if(unlikely(r))
   {
-    if(r == 2)
-      fuzzed_stream->priority += 5;
+    fuzzed_stream->priority += 1;
     queue_entry* q = copy_queue(state,entry);
     q->depth++;
     find_all_streams_save_queue(state,q);
     (*q->streams)[*fuzzed_stream->stream_id] = allocate_new_stream(state,*fuzzed_stream->stream_id,nullptr,fuzzed_stream,0,0);
     show_stat(state);
-
+    if(unlikely(r == 2))
+    {
+      save_coverage(state);
+      fuzzed_stream->priority += 4;
+    }
   
   }
 
@@ -1139,19 +1151,8 @@ void havoc_entry(FuzzState *state,queue_entry* q)
 }
 queue_entry* select_entry(FuzzState *state)
 {
-  assert(state->entries->size() != 0);
-  s32 total_priority = 0;
-  for(int i = 0; i < state->entries->size(); i++)
-  {
-    // (*state->entries)[i]->priority = ((*state->entries)[i]->streams->size() + (*state->entries)[i]->edges) *  (*state->entries)[i]->depth;
-    // (*state->entries)[i]->priority += (*state->entries)[i]->edges / 10;
-    // if((*state->entries)[i]->exit_outofseed > (*state->entries)[i]->exit_timeout)
-    //   (*state->entries)[i]->priority *= 1.2;
-    total_priority += (*state->entries)[i]->priority;
-  }
-  if(total_priority == 0)
-    return (*state->entries)[0];
-  s32 random_number =  UR(total_priority);
+
+  s32 random_number =  UR(state->total_priority);
   s32 weight_sum = 0;
   
   for(int i = 0; i < state->entries->size(); i++)
@@ -1257,6 +1258,7 @@ void init_dir(int argc, char **argv)
   sprintf(state_backup_dir,"%s/state_backup/",out_dir);
   sprintf(model_dir,"%s/model/",out_dir);
   sprintf(model_file,"%s/model.yml",model_dir);
+  sprintf(coverage_file,"%s/coverage.bin",out_dir);
 
   mkdir(in_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(out_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);

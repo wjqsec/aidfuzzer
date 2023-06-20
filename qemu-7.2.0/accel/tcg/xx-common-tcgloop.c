@@ -69,10 +69,14 @@ struct DirtyBitmapSnapshot {
     unsigned long dirty[];
 };
 
-static __always_inline uint64_t hash_64(uint64_t val, unsigned int bits)
+static __always_inline uint32_t hash_32(uint32_t number)
 {
-#define GOLDEN_RATIO_64 0x61C8864680B583EBull
-        return val * GOLDEN_RATIO_64 >> (64 - bits);
+        uint32_t hash_value = number ^ (number >> 16);
+        hash_value = hash_value * 0x85ebca6b;
+        hash_value = hash_value ^ (hash_value >> 13);
+        hash_value = hash_value * 0xc2b2ae35;
+        hash_value = hash_value ^ (hash_value >> 16);
+        return hash_value;
 }
 bool tcg_supports_guest_debug(void);
 void tcg_remove_all_breakpoints(CPUState *cpu);
@@ -343,7 +347,7 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,vo
     wp->callback = cb;
     wp->data = data;
 
-    uint32_t id = hash_64(addr,32) % NUM_WATCHPOINT;
+    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
     {
@@ -358,7 +362,7 @@ void check_nostop_watchpoint(vaddr addr)
 {
     CPUWatchpoint *wp;
     int i;
-    uint32_t id = hash_64(addr,32) % NUM_WATCHPOINT;
+    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
     {

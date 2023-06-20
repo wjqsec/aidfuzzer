@@ -448,7 +448,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    uint32_t stream_id = hash_64(addr,32) ^ hash_64(precise_pc,32) ;//& 0xfffffff0;
+    uint32_t stream_id = hash_32(addr) ^ hash_32(precise_pc) ;//& 0xfffffff0;
     
 
     struct SHARED_STREAMS * stream =  find_stream(stream_id);
