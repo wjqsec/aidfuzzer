@@ -762,7 +762,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            int *max_insns, int64_t *ti)
 {  
     
-    uint64_t id = hash_32(pc) & 0xfffff;
+    uint64_t id = hash_32(pc) % FUZZ_COVERAGE_SIZE;
    
     int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(ret != 0)) {

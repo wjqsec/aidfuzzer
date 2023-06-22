@@ -50,7 +50,7 @@ typedef int64_t  s64;
 #define ENTRY_MUTEX_KEY 1234
 
 #define SHARE_FUZZDATA_SIZE 500 << 20
-#define FUZZ_COVERAGE_SIZE 1 << 20
+#define FUZZ_COVERAGE_SIZE (1 << 18)
 
 #define MODEL_VALUE_SET 0
 #define MODEL_BIT_EXTRACT 1
@@ -60,7 +60,6 @@ typedef int64_t  s64;
 
 #define NVIC_MAX_VECTORS 512
 
-#define NUM_BBL_CHECK_INTERRUPT 0x3f
 
 //#define ENABLE_IRQ
 

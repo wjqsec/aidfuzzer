@@ -290,19 +290,6 @@ input_stream *find_specific_stream(FuzzState *state,u32 id, s32 len)
   }
   return nullptr;
 }
-inline input_stream *increase_stream(FuzzState *state,input_stream *old , s32 new_len)
-{
-  input_stream *stream = find_specific_stream(state,*old->stream_id, new_len);
-  if(!stream)
-  {
-    u32 old_len = *old->len;
-    *old->len = new_len;
-    stream = allocate_new_stream(state,*old->stream_id, nullptr, old , 0, 0);  //will copy some dirty data from shared stream, doesn't matter as long as it doesn't crash, won't
-    *old->len = old_len;
-  }
- 
-  return stream;
-}
 
 inline queue_entry* copy_queue(FuzzState *state,queue_entry* q)
 {
@@ -993,7 +980,58 @@ void havoc(FuzzState *state,queue_entry* q, input_stream* stream)
       data[UR(len)] = UR(*value_set_len_ptr);
     return;      
   }
-
+  if(*stream->mode == MODEL_BIT_EXTRACT && *stream->element_size == 1 && UR(5))
+  {
+    for (i = 0; i < use_stacking; i++) 
+    {
+      switch (UR(HAVOC_TOKEN-10))
+      {
+        case 0:
+        {
+          FLIP_BIT(data,UR(len << 3));
+          break;
+        }
+        case 1:
+        {
+          ((s8*)data)[UR(len)] = interesting_8[UR(sizeof(interesting_8))];
+          break;
+        }
+        case 2:
+        {
+          data[UR(len)] ^= 0xff;
+          break;
+        }
+        case 3:
+        {
+          data[UR(len)] -= 1 + UR(ARITH_MAX);
+          break;
+        }
+        case 4:
+        {
+          data[UR(len)] += 1 + UR(ARITH_MAX);
+          break;
+        }
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+        case 16:
+        case 18:
+        case 19:
+        {
+          data[UR(len)] = 0x21 + UR(0x7e - 0x20);  // ascii printable 
+        }
+      }
+    }
+    return;
+  }
   for (i = 0; i < use_stacking; i++) 
   {
     {
@@ -1200,7 +1238,7 @@ void fuzz_loop(FuzzState *state, int cpu)
           len = *it->second->len; 
           for(i = 0 ; i < it->second->priority ; i++)
           {
-            memcpy(org_buf, it->second->data, len);
+            memcpy(org_buf, it->second->data, *it->second->used_len);
 
             havoc(state,entry, it->second);
 
@@ -1208,7 +1246,7 @@ void fuzz_loop(FuzzState *state, int cpu)
 
             fuzz_one_post(state,entry,it->second, exit_code,exit_info,exit_pc);
 
-            memcpy(it->second->data, org_buf, len); 
+            memcpy(it->second->data, org_buf, *it->second->used_len); 
           } 
           
         }  

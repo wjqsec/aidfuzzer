@@ -497,7 +497,6 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
 
     #ifdef AFL
-
     if(unlikely(bbl >= max_bbl_exec))
     {
         prepare_exit(EXIT_TIMEOUT,0,pc);
