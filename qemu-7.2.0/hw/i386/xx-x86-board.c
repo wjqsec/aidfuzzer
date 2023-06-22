@@ -18,15 +18,13 @@
 #include "target/i386/cpu.h"
 #include <sys/resource.h>
 #include <sys/shm.h>
+#include "xx.h"
+
 typedef uint64_t regval;
 
 void xx_init_mem(MachineState *machine);
 
-struct X86_CPU_STATE
-{
-    regval regs[8];
-    regval eip;
-};
+
 void xx_get_x86_cpu_state(struct X86_CPU_STATE *state)
 {
     CPUState *cs = qemu_get_cpu(0);

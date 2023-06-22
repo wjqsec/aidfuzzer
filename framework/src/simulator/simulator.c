@@ -231,9 +231,8 @@ void exit_with_code_start_new()
     buf[2] = exit_pc;
     buf[3] = num_mmio;
 
-    write(FORKSRV_CTLFD+1 , buf,16);        
+    write(FORKSRV_CTLFD+1 , buf,16);   
     arm_restore_snapshot(new_snap);
-
     exit_info = 0;
     num_mmio = 0;
     // __afl_prev_loc = 0;
@@ -499,7 +498,6 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
     #ifdef AFL
 
-    
     if(unlikely(bbl >= max_bbl_exec))
     {
         prepare_exit(EXIT_TIMEOUT,0,pc);
@@ -604,7 +602,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 }
 
 
-void exec_arm_interrupt_pre_hook(int irq)
+void enable_nvic_hook(int irq)
 {
     
     char state_filename[PATH_MAX];
@@ -622,12 +620,11 @@ void exec_arm_interrupt_pre_hook(int irq)
     #ifndef ENABLE_IRQ
     if(!dumped_irq[irq] && irq > 15)
     {
-        get_arm_cpu_state(&state);
-        sprintf(state_filename,"%s/state_%s_%08x",state_dir,"irq",state.regs[15]);
-        dump_state(state.regs[15],false,"irq");
+        sprintf(state_filename,"%s/state_%s_%08x",state_dir,"irq",irq);
+        dump_state(irq,false,"irq");
         struct WATCHPOINT watchpoint;
         // parse here to do
-        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/main.py %s %s %d > /dev/null 2>&1",state_filename,"./irq_model",irq);
+        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/main.py %s %s %x > /dev/null 2>&1",state_filename,"./irq_model",irq);
         puts(cmd);
         system(cmd);
         f = fopen("./irq_model","r");
@@ -650,7 +647,7 @@ void exec_arm_interrupt_pre_hook(int irq)
             if(!addr)
                 continue;
             watchpoint.addr = addr;
-            watchpoint.len = 0x10;
+            watchpoint.len = len;
             watchpoint.flag = BP_MEM_ACCESS;
             insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)(uint64_t)irq);
         }
@@ -706,7 +703,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
         register_post_thread_exec_hook(post_thread_exec);
         register_exec_bbl_hook(arm_exec_bbl);
-        register_arm_exec_interrupt_pre_hook(exec_arm_interrupt_pre_hook);
+        register_enable_nvic_hook(enable_nvic_hook);
         for(i = 0; i < 255 ; i++)
         {
             if(global_config->mmios[i].size == 0)

@@ -38,8 +38,13 @@ typedef int64_t  s64;
 
 #define MAIN_CPU 0
 
+#ifndef likely
 #define likely(_x)   __builtin_expect(!!(_x), 1)
+#endif
+
+#ifndef unlikely
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
+#endif
 
 #define ENTRY_MUTEX_MEM_SIZE 1024
 #define ENTRY_MUTEX_KEY 1234
@@ -55,16 +60,18 @@ typedef int64_t  s64;
 
 #define NVIC_MAX_VECTORS 512
 
+#define NUM_BBL_CHECK_INTERRUPT 0x3f
 
 //#define ENABLE_IRQ
 
 static __always_inline uint32_t hash_32(uint32_t number)
 {
-        uint32_t hash_value = number ^ (number >> 16);
-        hash_value = hash_value * 0x85ebca6b;
-        hash_value = hash_value ^ (hash_value >> 13);
-        hash_value = hash_value * 0xc2b2ae35;
-        hash_value = hash_value ^ (hash_value >> 16);
-        return hash_value;
+        return number;
+        // uint32_t hash_value = number ^ (number >> 16);
+        // hash_value = hash_value * 0x85ebca6b;
+        // hash_value = hash_value ^ (hash_value >> 13);
+        // hash_value = hash_value * 0xc2b2ae35;
+        // hash_value = hash_value ^ (hash_value >> 16);
+        // return hash_value;
 }
 

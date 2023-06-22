@@ -25,7 +25,14 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "trace.h"
+#include "fuzzer.h"
+#include "xx.h"
+enable_nvic_cb enable_nvic_func;
 
+void xx_register_enable_nvic_hook(enable_nvic_cb cb)
+{
+    enable_nvic_func = cb;
+}
 /* IRQ number counting:
  *
  * the num-irq property counts the number of external IRQ lines
@@ -303,10 +310,8 @@ static void nvic_recompute_state(NVICState *s)
         nvic_recompute_state_secure(s);
         return;
     }
-
     for (i = 1; i < s->num_irq; i++) {
-        VecInfo *vec = &s->vectors[i];
-
+        VecInfo *vec = &s->vectors[i];  
         if (vec->enabled && vec->pending && vec->prio < pend_prio) {
             pend_prio = vec->prio;
             pend_irq = i;
@@ -323,11 +328,10 @@ static void nvic_recompute_state(NVICState *s)
     if (pend_prio > 0) {
         pend_prio &= nvic_gprio_mask(s, false);
     }
-
     s->vectpending = pend_irq;
     s->vectpending_prio = pend_prio;
     s->exception_prio = active_prio;
-
+    
     trace_nvic_recompute_state(s->vectpending,
                                s->vectpending_prio,
                                s->exception_prio);
@@ -484,6 +488,7 @@ static void nvic_irq_update(NVICState *s)
     int lvl;
     int pend_prio;
 
+
     nvic_recompute_state(s);
     pend_prio = nvic_pending_prio(s);
 
@@ -496,6 +501,7 @@ static void nvic_irq_update(NVICState *s)
     lvl = (pend_prio < s->exception_prio);
     trace_nvic_irq_update(s->vectpending, pend_prio, s->exception_prio, lvl);
     qemu_set_irq(s->excpout, lvl);
+
 }
 
 /**
@@ -548,7 +554,6 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
      * Here we handle the prioritization logic which the pseudocode puts
      * in the DerivedLateArrival() function.
      */
-
     NVICState *s = (NVICState *)opaque;
     bool banked = exc_is_banked(irq);
     VecInfo *vec;
@@ -782,7 +787,7 @@ void armv7m_nvic_acknowledge_irq(void *opaque)
     const int pending = s->vectpending;
     const int running = nvic_exec_prio(s);
     VecInfo *vec;
-
+    
     assert(pending > ARMV7M_EXCP_RESET && pending < s->num_irq);
 
     if (s->vectpending_is_s_banked) {
@@ -797,7 +802,6 @@ void armv7m_nvic_acknowledge_irq(void *opaque)
     assert(s->vectpending_prio < running);
 
     trace_nvic_acknowledge_irq(pending, s->vectpending_prio);
-
     vec->active = 1;
     vec->pending = 0;
 
@@ -911,7 +915,6 @@ int armv7m_nvic_complete_irq(void *opaque, int irq, bool secure)
         assert(irq >= NVIC_FIRST_IRQ);
         vec->pending = 1;
     }
-
     nvic_irq_update(s);
 
     return ret;
@@ -2363,7 +2366,6 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
         /* Generate BusFault for unprivileged accesses */
         return MEMTX_ERROR;
     }
-
     switch (offset) {
     case 0x100 ... 0x13f: /* NVIC Set enable */
         offset += 0x80;
@@ -2376,15 +2378,11 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
             if (value & (1 << i) &&
                 (attrs.secure || s->itns[startvec + i])) {
                 s->vectors[startvec + i].enabled = setval;
-                nvic_irq_update(s);
-                if(setval == 1)
-                {
-                    s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
-                    armv7m_nvic_set_pending(s, startvec + i, 0);  // dry run the newly enabled irq
-                }
+                if(setval == 1 && enable_nvic_func)
+                    enable_nvic_func(startvec + i);
             }
         }
-        
+        nvic_irq_update(s);
 		    
         goto exit_ok;
     case 0x200 ... 0x23f: /* NVIC Set pend */

@@ -36,28 +36,29 @@ class IRQ_MODEL:
             print("{} {}".format(hex(access.addr), hex(access.size)))
 
 def irq_model_from_file(modelfilename):
-    models = []
+    models = {}
     model = None
+    current_irq = 0
     if not Path(modelfilename).exists():
         return models
     with open(modelfilename, "r") as f:
         for line in f.readlines():
             if "-" in line:
                 model = IRQ_MODEL()
-                models.append(model)
-                model.irq = int(line[1:])
+                current_irq = int(line[1:])
+                models[current_irq] = model
             else:
                 accessinfo = ACCESS_INFO()
                 accessinfo.addr = int(line.split(" ")[0],16)
                 accessinfo.size = int(line.split(" ")[1],16)
-                model.accesses.append(accessinfo)
+                models[current_irq].accesses.append(accessinfo)
     return models
                 
 
 def write_model_to_file(models,modelfilename):
     with open(modelfilename, "w") as f:
-        for model in models:
-            f.write("-{}\n".format(model.irq))
+        for irq,model in models.items():
+            f.write("-{}\n".format(irq))
             f.write("".join(["{} {}\n".format(hex(access.addr),hex(access.size)) for access in model.accesses]))
             
 
@@ -154,13 +155,14 @@ def is_memory_write_action(action):
     return isinstance(action, angr.state_plugins.sim_action.SimActionData) and action.type == 'mem' and action.action == 'write'
 
 
+
 if(len(sys.argv) < 4):
     print("args error")
     exit(0)
 
 models = irq_model_from_file(sys.argv[2])
 
-project, initial_state, cfg = from_state_file(sys.argv[1],None)
+project, initial_state, cfg = from_state_file(sys.argv[1],None,sys.argv[3])
 
 
 # initial_state.inspect.b('mem_read',when=angr.BP_BEFORE,action=mem_read_before)
@@ -177,15 +179,14 @@ simgr = project.factory.simgr(initial_state)
 # simgr.use_technique(LoopEscaper())
 # simgr.use_technique(StateExplosionDetector())
 
-for i in range(10000):
-    if i == 100 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
+for i in range(300):
+    if i == 30 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
         break
     simgr.step(thumb=True)
 
 states = simgr.active + simgr.deadended + simgr.unconstrained
 
 model = IRQ_MODEL()
-model.irq = int(sys.argv[3])
 accessses = []
 for state in states:
     access = []
@@ -215,7 +216,7 @@ for ac in accessses:
     for info in ac:
         tmp.add(info)
 model.accesses = [x for x in tmp]
-models.append(model)
+models[int(sys.argv[3],16)] = model
 write_model_to_file(models,sys.argv[2])
 
 

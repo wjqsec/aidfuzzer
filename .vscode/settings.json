@@ -21,6 +21,7 @@
         "thread": "cpp",
         "errno.h": "c",
         "xmemory": "cpp",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "stdbool.h": "c"
     }
 }

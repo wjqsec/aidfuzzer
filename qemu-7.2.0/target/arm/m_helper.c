@@ -35,12 +35,9 @@
 #include "semihosting/common-semi.h"
 #endif
 
-typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
+#include "xx.h"
 do_arm_interrupt_cb do_arm_interrupt_func;
-
-typedef void (*exec_arm_interrupt_pre_cb)(int irq);
 exec_arm_interrupt_pre_cb exec_arm_interrupt_pre_func;
-
 
 void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
 {

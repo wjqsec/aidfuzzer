@@ -36,28 +36,23 @@
 #include <sys/shm.h>
 #include <stdio.h>
 #include <unistd.h>
-enum XX_CPU_TYPE 
-{
-    X86,
-    ARM
-};
+#include "fuzzer.h"
+#include "xx.h"
 
-void set_xx_cpu_type(enum XX_CPU_TYPE type);
-enum XX_CPU_TYPE get_xx_cpu_type(void);
-enum XX_CPU_TYPE xx_cpu_type;
-enum XX_CPU_TYPE get_xx_cpu_type(void){ return xx_cpu_type; }
-void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
+
+
+
+
 
 #define NUM_WATCHPOINT (1 << 20)
 #define NUM_IRQ_PER_WATCHPOINT 20
-// bool enable_watchpoint;
 void **bbl_enable_watchpoint;
 
+enum XX_CPU_TYPE xx_cpu_type;
 
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
+
 exec_bbl_cb exec_bbl_func;
 
-typedef void (*exec_ins_icmp_cb)(uint64_t val1,uint64_t val2, int used_bits);
 exec_ins_icmp_cb exec_ins_icmp_func;
 
 int64_t bbl_counts;
@@ -69,45 +64,20 @@ struct DirtyBitmapSnapshot {
     unsigned long dirty[];
 };
 
-static __always_inline uint32_t hash_32(uint32_t number)
-{
-        uint32_t hash_value = number ^ (number >> 16);
-        hash_value = hash_value * 0x85ebca6b;
-        hash_value = hash_value ^ (hash_value >> 13);
-        hash_value = hash_value * 0xc2b2ae35;
-        hash_value = hash_value ^ (hash_value >> 16);
-        return hash_value;
-}
+
+void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+void page_init(void);
+void tb_htable_init(void);
+void vm_state_notify(bool running, RunState state);
+void runstate_set(RunState new_state);
+void check_nostop_watchpoint(vaddr addr);
 bool tcg_supports_guest_debug(void);
 void tcg_remove_all_breakpoints(CPUState *cpu);
 int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
 int tcg_insert_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
 int tcg_gdbstub_supported_sstep_flags(void);
 
-
-MemTxResult xx_ram_rw(hwaddr addr,hwaddr len,void *buf, bool is_write);
-MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len);
-void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly);
-void xx_add_rom_region(char *name,hwaddr start, hwaddr size);
-void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb,void *opaque);
-void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size);
-void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
-void xx_register_exec_bbl_hook(exec_bbl_cb cb);
-void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb);
-int xx_thread_loop(bool debug);
-int xx_target_pagesize(void);
-void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,void *data);
-void check_nostop_watchpoint(vaddr addr);
-void xx_delete_nostop_watchpoint(void *watchpoint);
-void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
-void page_init(void);
-void tb_htable_init(void);
-void vm_state_notify(bool running, RunState state);
-void runstate_set(RunState new_state);
 extern bool tcg_allowed;
-
-
-
 
 
 struct XX_RAMRegion
@@ -148,15 +118,19 @@ struct XX_ROMRegion xx_rom_regions[XX_MEM_REGIONS_MAX];
 int xx_num_rom_regions;
 
 
+enum XX_CPU_TYPE get_xx_cpu_type(void){ return xx_cpu_type; }
+void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
 
-MemTxResult xx_ram_rw(hwaddr addr,hwaddr len,void *buf, bool is_write)
+
+MemTxResult xx_write_ram(hwaddr addr, hwaddr size, void *buf)
 {
-    if (is_write) {
-        return address_space_write(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, len);
-    } else {
-        return address_space_read_full(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, len);
-    }
+    return address_space_write(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, size);
 }
+MemTxResult xx_read_ram(hwaddr addr, hwaddr size, void *buf)
+{
+    return address_space_read_full(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, size);
+}
+
 MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len)
 {
     address_space_write_rom(&address_space_memory,addr,MEMTXATTRS_UNSPECIFIED,buf,len);
@@ -191,7 +165,7 @@ static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
     return mr;
 }
 
-void xx_add_ram_regions(char *name,hwaddr start, hwaddr size, bool readonly)
+void xx_add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly)
 {
     if(xx_num_ram_regions >= XX_MEM_REGIONS_MAX)
         return;
@@ -251,7 +225,7 @@ void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
     xx_num_rom_regions++;
     printf("add rom %lx-%lx %s\n",start, start+size,name);
 }
-void xx_add_mmio_regions(char *name, hwaddr start, hwaddr size, void *read_cb, void *write_cb,void *opaque)
+void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read_cb, mmio_write_cb write_cb,void *opaque)
 {
     if(xx_num_mmio_regions >= XX_MEM_REGIONS_MAX)
         return;
@@ -337,7 +311,7 @@ void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
     CPUState *cpu = qemu_get_cpu(0);
     tlb_flush(cpu);
 }
-void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,void *data)
+void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data)
 {
     int i;
     CPUWatchpoint *wp;
@@ -347,7 +321,7 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, void *cb,vo
     wp->callback = cb;
     wp->data = data;
 
-    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
+    uint32_t id = hash_32(addr) & 0xfffff;
     void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
     {

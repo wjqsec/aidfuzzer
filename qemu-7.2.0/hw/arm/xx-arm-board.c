@@ -13,45 +13,26 @@
 #include "hw/arm/stm32f205_soc.h"
 #include "hw/arm/boot.h"
 #include "sysemu/reset.h"
-
+#include "xx.h"
 extern int64_t bbl_counts;
 #define SYSCLK_FRQ 25000000
 #define REFCLK_FRQ (1 * 1000 * 1000)
 
 MemoryRegion *get_system_memory(void);
 #define TYPE_XX_MACHINE "xx"
-static uint64_t vecbase = 0;
 
+static uint64_t vecbase = 0;
 static CPUARMState *env;
 static struct NVICState *nvic;
 static CPUState *cs;
 static ARMCPU *cpu;
 
-struct ARM_CPU_STATE
-{
-    uint32_t regs[16];
-    uint64_t xregs[32];
-    uint32_t xpsr;
-};
+
 struct ARM_NVIC_ALL_STATE
 {
     CPUARMState *env;
     struct NVICState *nvic;
 };
-
-void xx_set_armv7_vecbase(uint64_t addr);
-uint64_t xx_get_arm_precise_pc(void);
-void xx_insert_nvic_intc(int irq, bool secure);
-bool xx_get_arm_v7m_is_handler_mode(void);
-uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs);
-GArray* xx_get_enabled_nvic_irq(void);
-void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state);
-void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state);
-void xx_reset_arm_reg(void);
-void* xx_save_arm_ctx_state(void);
-void xx_restore_arm_ctx_state(void* state);
-void xx_delete_arm_ctx_state(void* state);
-
 
 
 void xx_set_armv7_vecbase(uint64_t addr)
@@ -122,7 +103,7 @@ void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
 }
 void xx_reset_arm_reg(void)
 {
-    cpu_reset(ARM_CPU(first_cpu));
+    cpu_reset(CPU(ARM_CPU(first_cpu)));
 }
 void* xx_save_arm_ctx_state(void)
 {

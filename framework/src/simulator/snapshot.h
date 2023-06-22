@@ -34,6 +34,7 @@ static struct ARMM_SNAPSHOT* arm_take_snapshot()
 
 static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
 {
+    
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
     int page_size = target_pagesize();
@@ -63,4 +64,5 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
             break;
         clear_dirty_mem(snap->mems[num_mem].start, snap->mems[num_mem].len);
     }
+
 }

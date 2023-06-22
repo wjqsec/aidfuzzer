@@ -69,6 +69,7 @@
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-mo.h"
 #include "exec/plugin-gen.h"
+#include "fuzzer.h"
 /* make various TB consistency checks */
 
 /**
@@ -752,25 +753,16 @@ void page_collection_unlock(struct page_collection *set)
  * Isolate the portion of code gen which can setjmp/longjmp.
  * Return the size of the generated code, or negative on error.
  */
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl); 
+#include "xx.h"
 extern exec_bbl_cb exec_bbl_func;
-extern TCGv_env cpu_env;
+//extern TCGv_env cpu_env;
 
-static __always_inline uint32_t hash_32(uint32_t number)
-{
-        uint32_t hash_value = number ^ (number >> 16);
-        hash_value = hash_value * 0x85ebca6b;
-        hash_value = hash_value ^ (hash_value >> 13);
-        hash_value = hash_value * 0xc2b2ae35;
-        hash_value = hash_value ^ (hash_value >> 16);
-        return hash_value;
-}
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
 {  
     
-    uint64_t id = hash_32(pc) % (1 << 20);
+    uint64_t id = hash_32(pc) & 0xfffff;
    
     int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(ret != 0)) {

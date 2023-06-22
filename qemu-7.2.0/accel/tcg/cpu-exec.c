@@ -750,14 +750,13 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
     if (cpu->cflags_next_tb != -1 && cpu->cflags_next_tb & CF_NOIRQ) {
         return false;
     }
-
+    
     /* Clear the interrupt flag now since we're processing
      * cpu->interrupt_request and cpu->exit_request.
      * Ensure zeroing happens before reading cpu->exit_request or
      * cpu->interrupt_request (see also smp_wmb in cpu_exit())
      */
     qatomic_mb_set(&cpu_neg(cpu)->icount_decr.u16.high, 0);
-
     if (unlikely(qatomic_read(&cpu->interrupt_request))) {
         int interrupt_request;
         qemu_mutex_lock_iothread();
