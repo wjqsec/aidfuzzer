@@ -445,8 +445,6 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     if(should_exit)
         return ret;
 
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
     uint32_t stream_id = hash_32(addr) ^ hash_32(precise_pc) ;//& 0xfffffff0;
     
 
@@ -676,6 +674,7 @@ void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int imm
     #endif
 }
 
+//////////////////////////////////////////////////snapshot below
 
 hwaddr snapshot_point = 0;
 uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
