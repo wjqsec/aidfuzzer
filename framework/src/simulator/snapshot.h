@@ -66,3 +66,5 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
     }
 
 }
+
+static struct ARMM_SNAPSHOT *org_snap,*new_snap;

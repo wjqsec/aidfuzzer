@@ -58,9 +58,19 @@ typedef int64_t  s64;
 #define MODEL_PASSTHROUGH 3
 #define MODEL_NONE 4
 
+#define MODE_FUZZ 1
+#define MODE_DEBUG 2
+
+#define EXIT_INFORMATION_SIZE 16
 #define NVIC_MAX_VECTORS 512
 
+#define MMIO_STATE_PREFIX "state_mmio_"
+#define IRQ_STATE_PREFIX "state_irq_"
 
+
+#define FUZZWARE_PATH "/home/w/hd/iofuzzer/fuzzware"
+#define MMIO_MODEL_FILENAME "mmio_model.yml"
+#define IRQ_MODEL_FILENAME "irq_model.yml"
 //#define ENABLE_IRQ
 
 static __always_inline uint32_t hash_32(uint32_t number)

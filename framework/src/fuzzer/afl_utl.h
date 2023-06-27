@@ -284,5 +284,38 @@ inline static bool cover_all_bits(u8* d1, u8* d2, u32 size)
   }
   return true;
 }
+inline static void fatal(const char *msg)
+{
+    printf("%s",msg);
+    fflush(stdout);
+    system("reset");
+    exit(0);
+}
+inline static u64 get_cur_time(void) {
+
+  struct timeval tv;
+  struct timezone tz;
+
+  gettimeofday(&tv, &tz);
+
+  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
+
+}
+
+#define FLIP_BIT(_ar, _b) do { \
+    u8* _arf = (u8*)(_ar); \
+    u32 _bf = (_b); \
+    _arf[(_bf) >> 3] ^= (128 >> ((_bf) & 7)); \
+  } while (0)
+
+
+#define alloc_printf(_str...) ({ \
+    char* _tmp; \
+    s32 _len = snprintf(NULL, 0, _str); \
+    if (_len < 0) fatal("Whoa, snprintf() fails?!"); \
+    _tmp = (char*)calloc(1,_len + 1); \
+    snprintf((char*)_tmp, _len + 1, _str); \
+    _tmp; \
+  })
 
 

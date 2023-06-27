@@ -28,19 +28,16 @@ struct SIMULATOR_CONFIG* global_config;
 #include "snapshot.h"
 
 
-struct ARMM_SNAPSHOT *org_snap, *new_snap;
-
-
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
 uint8_t *__afl_undiscover_stream_data;
-uint8_t *__afl_irq_data;
+uint8_t *__afl_discovered_irq_data;
 
 
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
-
+int fd_to_fuzzer, fd_from_fuzzer;
 
 FILE *flog;
 FILE *f_crash_log;
@@ -56,21 +53,22 @@ uint64_t exit_pc;
 uint32_t num_mmio;
 
 
-GArray* bbl_records;
+
 GArray* dumped_state_ids;
 
 uint32_t run_index;
 
-bool need_dump_state = false;
-char *state_dir;
+char *dump_dir;
+char *model_dir;
 char *log_dir;
 
 bool dumped_irq[NVIC_MAX_VECTORS];
+
 struct SHARED_STREAMS
 {
     uint32_t stream_id;
     int32_t len;
-    int32_t *used;
+    int32_t used;
     uint32_t type;
     int32_t element_size;
     int32_t left_shift;
@@ -88,11 +86,11 @@ GArray* fuzz_streams;
 int32_t* num_new_streams;
 uint32_t* new_streams;
 
-int32_t* num_irq_vals;
-uint16_t* irq_vals;
+// int32_t* num_irq_vals;
+// uint16_t* irq_vals;
 
-uint16_t *irqs;
-uint32_t *num_irqs;
+// uint16_t *irqs;
+// uint32_t *num_irqs;
 
 
 void collect_streams()
@@ -112,9 +110,9 @@ void collect_streams()
         stream->type = *(uint32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len));
         stream->element_size = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type));
         stream->left_shift = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size));
-        stream->used = (int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift));
-        stream->data = (uint8_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift) + sizeof(*stream->used));
-        *stream->used = 0;
+        //stream->used = (int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift));
+        stream->data = (uint8_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift) + sizeof(stream->used));
+        stream->used = 0;
         i++;
     }
 
@@ -173,13 +171,6 @@ void __afl_map_shm(void) {
     if (__afl_undiscover_stream_data == (void *)-1) _exit(1);
     }
 
-    id_str = getenv(SHM_SHARE_IRQ_VAR);
-    if (id_str) {
-    uint32_t shm_id = atoi(id_str);
-    __afl_irq_data = shmat(shm_id, NULL, 0);
-    if (__afl_irq_data == (void *)-1) _exit(1);
-    }
-
     id_str = getenv(SHM_SHARE_FUZZ_QUEUE_VAR);
     if (id_str) {
     uint32_t shm_id = atoi(id_str);
@@ -190,9 +181,6 @@ void __afl_map_shm(void) {
     num_new_streams = (uint32_t*)__afl_undiscover_stream_data;
     new_streams = num_new_streams + 1;
 
-    num_irq_vals = (uint32_t*)__afl_irq_data;
-    irq_vals = (uint16_t*)(num_irq_vals + 1);
-
 }
 
 
@@ -201,17 +189,9 @@ void __afl_map_shm(void) {
 void start_new()
 {
     uint32_t tmp;
-    read(FORKSRV_CTLFD,&tmp,4);  // start new run
+    read(fd_from_fuzzer,&tmp,4);  // start new run
 }
-void report_irqs()
-{
-    int i = 0;
-    for(; i < *num_irqs; i++)
-    {
-        irq_vals[i] = irqs[i];
-    }
-    *num_irq_vals = i;
-}
+
 void exit_with_code_start_new()
 {
     
@@ -220,7 +200,7 @@ void exit_with_code_start_new()
     run_index++;
     #endif
 
-    //printf("exit_code = %x pc = %x\n", code,exit_pc);
+
     
     #ifdef ENABLE_IRQ
     report_irqs();
@@ -231,28 +211,13 @@ void exit_with_code_start_new()
     buf[2] = exit_pc;
     buf[3] = num_mmio;
 
-    write(FORKSRV_CTLFD+1 , buf,16);   
+    write(fd_to_fuzzer , buf,EXIT_INFORMATION_SIZE);   
     arm_restore_snapshot(new_snap);
-    exit_info = 0;
     num_mmio = 0;
     // __afl_prev_loc = 0;
 
-    //read(FORKSRV_CTLFD,&record,4);
     should_exit = false;
     
-    #ifdef TRACE_DBG
-    uint32_t record;
-    if(record)
-    {
-        fprintf(flog,"trace:\n");
-        for (int i = 0; i < bbl_records->len; i++) 
-        {
-           fprintf(flog,"%-8x\n",g_array_index(bbl_records, hwaddr, i));
-        }
-        fprintf(flog,"end\n");
-        g_array_set_size(bbl_records, 0);
-    }
-    #endif
 
     start_new();
     *num_new_streams = 0;
@@ -266,7 +231,7 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
     *eptr = '\0';
     fputs(buffer,state_file);
 }
-void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix)
+void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char *dir)
 {
     int i;
     uint8_t *buf;
@@ -274,15 +239,10 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix)
     struct ARM_CPU_STATE state;
     struct ihex_state ihex;
 
-    for(i = 0 ;i < dumped_state_ids->len ; i++)
-    {
-        if(g_array_index(dumped_state_ids, uint32_t, i) == mmio_id)
-            return;
-    }
-    g_array_append_val(dumped_state_ids, mmio_id); 
+    
 
     get_arm_cpu_state(&state);
-    sprintf(state_filename,"%s/state_%s_%08x",state_dir,prefix,mmio_id);
+    sprintf(state_filename,"%s/%s%08x",dir,prefix,mmio_id);
     state_file = fopen(state_filename,"w");
     fprintf(state_file, "r0=0x%08x\n"
                         "r1=0x%08x\n"
@@ -367,10 +327,10 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
 
             // uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
 
-            if(unlikely(*stream->used == 0))
-                *stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            if(unlikely(stream->used == 0))
+                stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
             
-            if(stream->len - *stream->used < stream->element_size)
+            if(stream->len - stream->used < stream->element_size)
             {
 
                 *out = value_set[0];  //give it a default one
@@ -381,9 +341,9 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
             else
             {
                 uint32_t tmp = 0;
-                memcpy(&tmp,stream->data + *stream->used,stream->element_size);
+                memcpy(&tmp,stream->data + stream->used,stream->element_size);
                 *out = value_set[tmp % num_values];
-                *stream->used += stream->element_size;
+                stream->used += stream->element_size;
 
             }    
         }
@@ -396,15 +356,15 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
         break;
         case MODEL_BIT_EXTRACT:
         {
-            if(stream->len - *stream->used < stream->element_size)
+            if(stream->len - stream->used < stream->element_size)
             {
                 prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
             }
             else
             {
-                memcpy(out,stream->data + *stream->used,stream->element_size);
+                memcpy(out,stream->data + stream->used,stream->element_size);
                 *out = *out << stream->left_shift;
-                *stream->used += stream->element_size;
+                stream->used += stream->element_size;
             }
         }
         break;
@@ -416,12 +376,12 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
 
         case MODEL_NONE:
         {
-            if(stream->len - *stream->used < stream->element_size)
+            if(stream->len - stream->used < stream->element_size)
                 prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
             else
             {
-                memcpy(out,stream->data + *stream->used,stream->element_size);
-                *stream->used += stream->element_size;
+                memcpy(out,stream->data + stream->used,stream->element_size);
+                stream->used += stream->element_size;
             }    
         }
         break;
@@ -436,10 +396,11 @@ void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precis
 
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
-
+    int i;
     addr = (hwaddr)opaque + addr;
     uint64_t precise_pc = get_arm_precise_pc();
     uint64_t ret = 0;
+    bool already_dumped_mmio_state = false;
     #ifdef AFL
 
     if(should_exit)
@@ -452,12 +413,24 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     if(!stream)
     {
-        if(!discovered_stream(stream_id))
+        //if(!discovered_stream(stream_id))
         {
             new_streams[*num_new_streams] = stream_id;
             (*num_new_streams)++;
-            if(need_dump_state)
-                dump_state(stream_id,true,"model");
+
+            
+            for(i = 0 ;i < dumped_state_ids->len ; i++)
+            {
+                if(g_array_index(dumped_state_ids, uint32_t, i) == stream_id)
+                    already_dumped_mmio_state = true;
+            }
+            
+            if(!already_dumped_mmio_state)
+            {
+                g_array_append_val(dumped_state_ids, stream_id);
+                dump_state(stream_id,true,MMIO_STATE_PREFIX,dump_dir);
+            }
+                
             prepare_exit(EXIT_NONE,stream_id,precise_pc);
         }
 
@@ -547,9 +520,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
     #endif
 
-    #ifdef TRACE_DBG
-    g_array_append_val(bbl_records, pc);
-    #endif 
+
     return false;
     
 
@@ -591,7 +562,8 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
     #endif
     #ifdef AFL
-    exit_with_code_start_new(EXIT_CRASH);
+    prepare_exit(EXIT_CRASH,0,state.regs[15]);
+    exit_with_code_start_new();
     return false;
     #endif
     
@@ -603,6 +575,7 @@ void enable_nvic_hook(int irq)
 {
     
     char state_filename[PATH_MAX];
+    char model_filename[PATH_MAX];
     char cmd[PATH_MAX];
     char line[PATH_MAX];
     struct ARM_CPU_STATE state;
@@ -617,14 +590,15 @@ void enable_nvic_hook(int irq)
     #ifndef ENABLE_IRQ
     if(!dumped_irq[irq] && irq > 15)
     {
-        sprintf(state_filename,"%s/state_%s_%08x",state_dir,"irq",irq);
-        dump_state(irq,false,"irq");
+        sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
+        sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
+        dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
         struct WATCHPOINT watchpoint;
-        // parse here to do
-        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/main.py %s %s %x > /dev/null 2>&1",state_filename,"./irq_model",irq);
+        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/main.py %s %s %x > /dev/null 2>&1",state_filename,model_filename,irq);
         puts(cmd);
         system(cmd);
-        f = fopen("./irq_model","r");
+        
+        f = fopen(state_filename,"r");
         bool start = false;
         while(fgets(line, PATH_MAX, f))
         {
@@ -647,6 +621,7 @@ void enable_nvic_hook(int irq)
             watchpoint.len = len;
             watchpoint.flag = BP_MEM_ACCESS;
             insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)(uint64_t)irq);
+            printf("insert_nostop_watchpoint irq:%d addr:%x\n",irq,addr);
         }
         fclose(f);
         puts("model done");
@@ -657,8 +632,6 @@ void enable_nvic_hook(int irq)
 }
 void post_thread_exec(int exec_ret)
 {
-
-    //insert_nvic_intc(ARMV7M_EXCP_SYSTICK, false);
 
     #ifdef DBG
     struct ARM_CPU_STATE state;
@@ -713,12 +686,11 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         
         #ifdef AFL
         uint32_t tmp; 
-        write(FORKSRV_CTLFD+1 , &tmp,4);  //forkserver up
-        num_irqs = get_enabled_nvic_irq2(&irqs);
+        write(fd_to_fuzzer , &tmp,4);  //forkserver up
+        //num_irqs = get_enabled_nvic_irq2(&irqs);
         start_new();
         collect_streams();
         #endif
-        printf("finish snapshot, start fuzzing execution\n");
         return true;
     }
     else if(snapshot_point && !returned)
@@ -733,15 +705,31 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
 
 void init(int argc, char **argv)
 {
-    if(argc < 4)
+    int opt;
+    while ((opt = getopt(argc, argv, "d:m:l:f:t:")) != -1) 
     {
-        printf("Usage: %s %s %s %s\n", argv[0], "dump_state(y/n)", "dump_dir","log_dir");
-        exit(0);
+        switch (opt) {
+        case 'd':
+            dump_dir = optarg;
+            break;
+        case 'm':
+            model_dir = optarg;
+            break;
+        case 'l':
+            log_dir = optarg;
+            break;
+        case 'f':
+            fd_from_fuzzer = atoi(optarg);
+            break;
+        case 't':
+            fd_to_fuzzer = atoi(optarg);
+            break;
+        default: /* '?' */
+            printf("Usage error\n");
+            exit(0);
+        }
     }
-    log_dir = argv[3];
-    state_dir = argv[2];
-    if(argv[1][0] == 'y')
-        need_dump_state = true;
+
     char path_buffer[PATH_MAX];
     sprintf(path_buffer,"%s/simulator_log.txt",log_dir);
     flog = fopen(path_buffer,"w");
@@ -750,7 +738,7 @@ void init(int argc, char **argv)
 
     setbuf(flog,0);
     setbuf(f_crash_log,0);
-    srand(time(NULL));
+
     #ifdef AFL
     struct SHARED_STREAMS* stream;
     fuzz_streams = g_array_new(FALSE, FALSE, sizeof(struct SHARED_STREAMS*));
@@ -764,9 +752,7 @@ void init(int argc, char **argv)
     #endif
     memset(dumped_irq, 0, NVIC_MAX_VECTORS);
     
-    #ifdef TRACE_DBG
-    bbl_records = g_array_new(FALSE, FALSE, sizeof(hwaddr));
-    #endif
+
 }
 
 int run_config(struct SIMULATOR_CONFIG *config)
