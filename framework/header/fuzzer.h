@@ -49,7 +49,7 @@ typedef int64_t  s64;
 #define ENTRY_MUTEX_MEM_SIZE 1024
 #define ENTRY_MUTEX_KEY 1234
 
-#define SHARE_FUZZDATA_SIZE 500 << 20
+#define SHARE_FUZZDATA_SIZE 1 << 30
 #define FUZZ_COVERAGE_SIZE (1 << 18)
 
 #define MODEL_VALUE_SET 0
@@ -82,5 +82,15 @@ static __always_inline uint32_t hash_32(uint32_t number)
         // hash_value = hash_value * 0xc2b2ae35;
         // hash_value = hash_value ^ (hash_value >> 16);
         // return hash_value;
+}
+
+static __always_inline uint32_t hash_32_ext (uint32_t number)
+{
+        uint32_t hash_value = number ^ (number >> 16);
+        hash_value = hash_value * 0x85ebca6b;
+        hash_value = hash_value ^ (hash_value >> 13);
+        hash_value = hash_value * 0xc2b2ae35;
+        hash_value = hash_value ^ (hash_value >> 16);
+        return hash_value;
 }
 

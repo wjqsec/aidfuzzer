@@ -328,6 +328,7 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watc
         if(ptr[i] == 0)
         {
             ptr[i] = wp;
+            break;
         }
     }
     return wp;
@@ -345,6 +346,8 @@ void check_nostop_watchpoint(vaddr addr)
             wp = (CPUWatchpoint *)(ptr[i]);
             wp->callback(wp->vaddr,wp->len,wp->hitaddr,wp->data);
         }
+        else
+            break;
     }
 }
 void xx_delete_nostop_watchpoint(void *watchpoint)
