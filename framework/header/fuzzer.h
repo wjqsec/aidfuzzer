@@ -73,6 +73,7 @@ typedef int64_t  s64;
 #define IRQ_MODEL_FILENAME "irq_model.yml"
 //#define ENABLE_IRQ
 
+#define ENABLE_gDB
 static __always_inline uint32_t hash_32(uint32_t number)
 {
         return number;

@@ -502,7 +502,7 @@ static void xx_accel_class_init(ObjectClass *oc, void *data)
     ac->name = "xx";
     ac->init_machine = xx_init_machine;
     ac->allowed = &tcg_allowed;
-    //ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
+    ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
 }
 
 static void xx_accel_ops_init(AccelOpsClass *ops)

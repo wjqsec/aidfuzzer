@@ -820,6 +820,8 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *
     #endif
     found_new_streams = sync_undiscovered_streams(state,entry,simulator);
   }while(found_new_streams);
+  fuzz_entry(simulator);
+  fuzz_exit(simulator,0,0,0,0);
   classify_counts((u64*)simulator->trace_bits,simulator->map_size);
   has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   entry->edges = count_bytes(simulator->trace_bits, simulator->map_size);
@@ -849,14 +851,11 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   fuzz_stream = simulator->fuzz_stream;
 
   
-
-  
   classify_counts((u64*)simulator->trace_bits,simulator->map_size);
   int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
 
   state->total_exec++;
 
-  
   
   if(exit_code == EXIT_CRASH)
   {
@@ -879,17 +878,17 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
     state->exit_outofseed++; 
     
   }
-  
+
   if(unlikely(r))
   {
     if(unlikely(r == 2))
     {
       save_coverage(state);
-      if(*fuzz_stream->mode == MODEL_BIT_EXTRACT || *fuzz_stream->mode == MODEL_NONE)
-        fuzz_stream->priority += 5;
+      fuzz_stream->priority += 5;
     }
+    fuzz_stream->priority += 1;
     queue_entry* q = copy_queue(state,fuzz_entry);
-    (*fuzz_entry->streams)[*fuzz_stream->stream_id] = fuzz_stream;
+    (*q->streams)[*fuzz_stream->stream_id] = fuzz_stream;
     q->depth++;
     find_all_streams_save_queue(state,q,simulator);
     insert_queue(state,q);
@@ -1162,7 +1161,6 @@ void havoc(FuzzState *state,input_stream* stream)
     
   }
   
-  
 }
 u8 tmp_buf[MAX_STREAM_LEN];
 inline void fuzz_queue(FuzzState *state,queue_entry* entry)
@@ -1244,7 +1242,6 @@ void fuzz(int cores)
     simulator = allocate_new_simulator(&state);
     state.simulators->push_back(simulator);
   }
-  exit(0);
   fuzz_loop(&state);
 
 }

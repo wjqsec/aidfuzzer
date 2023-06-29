@@ -452,7 +452,9 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #endif
 
     #ifdef DBG
-    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id);
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x r0:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id,state.regs[0]);
     #endif
     return ret;
 }
@@ -601,7 +603,7 @@ void enable_nvic_hook(int irq)
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
         dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
         struct WATCHPOINT watchpoint;
-        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/main.py %s %s %x > /dev/null 2>&1",state_filename,model_filename,irq);
+        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/irq_model.py %s %s %x > /dev/null 2>&1",state_filename,model_filename,irq);
         puts(cmd);
         system(cmd);
         

@@ -179,8 +179,8 @@ simgr = project.factory.simgr(initial_state)
 # simgr.use_technique(LoopEscaper())
 # simgr.use_technique(StateExplosionDetector())
 
-for i in range(300):
-    if i == 30 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
+for i in range(200):
+    if i == 20 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
         break
     simgr.step(thumb=True)
 
