@@ -130,7 +130,7 @@ struct FuzzState
     u64 exit_crash;
 
     vector<Simulator *> *simulators;
-#define MAX_NUM_PIPES 20
+#define MAX_NUM_PIPES 100
     int num_fds;
     struct pollfd fds[MAX_NUM_PIPES];
 };
@@ -412,6 +412,7 @@ Simulator *allocate_new_simulator(FuzzState *state)
   simulator->trace_bits = (u8*)shmat(shm_id, NULL, 0);
   if (simulator->trace_bits == (void *)-1) 
       fatal("shmat() failed");
+  memset(simulator->trace_bits,0,simulator->map_size);
 
   shm_id = shmget(IPC_PRIVATE, 0x1000, IPC_CREAT | IPC_EXCL | 0600);
   if (shm_id < 0) 
@@ -476,6 +477,9 @@ Simulator *allocate_new_simulator(FuzzState *state)
   printf("pid:%d wait for fork server\n",pid);
   read(simulator->fd_ctl_from_simulator, &tmp,4);
   printf("pid:%d fork server is up\n",pid);
+
+  classify_counts((u64*)simulator->trace_bits,simulator->map_size);
+  has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
 
   sync_models(state,simulator);
   simulator->pid = pid;
@@ -820,8 +824,8 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *
     #endif
     found_new_streams = sync_undiscovered_streams(state,entry,simulator);
   }while(found_new_streams);
-  fuzz_entry(simulator);
-  fuzz_exit(simulator,0,0,0,0);
+  // fuzz_entry(simulator);
+  // fuzz_exit(simulator,0,0,0,0);
   classify_counts((u64*)simulator->trace_bits,simulator->map_size);
   has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   entry->edges = count_bytes(simulator->trace_bits, simulator->map_size);
@@ -908,26 +912,21 @@ Simulator* get_avaliable_simulator(FuzzState *state)
   {
     if((*state->simulators)[i]->status == STATUS_FREE)
     {
-      simulator = (*state->simulators)[i];
-      break;
+      return (*state->simulators)[i];
     }
       
   }
-  if(simulator)
-    return simulator;
   ret = poll(state->fds, state->num_fds, -1);
   if (ret == -1) fatal("poll error");
   for (i = 0; i < state->num_fds; i++) 
   {
     if (state->fds[i].revents & POLLIN) 
     {
-      simulator = (*state->simulators)[i];
-      break;
+      return (*state->simulators)[i];
     }
   }
-  if(!simulator)
-    fatal("no avaliable simulator\n");
-  return simulator;
+  fatal("no avaliable simulator\n");
+  return nullptr;
 }
 
 void havoc(FuzzState *state,input_stream* stream)

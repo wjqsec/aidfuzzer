@@ -538,10 +538,20 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 }
 void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
+    int irq = (int)(uint64_t)data;
+    #ifdef DBG
+    fprintf(flog,"nostop_watchpoint_exec pc:%x irq:%d\n",get_arm_precise_pc(),irq);
+    #endif
     if(!get_arm_v7m_is_handler_mode())
     {
-        int irq = (int)(uint64_t)data;
+        #ifdef DBG
+        fprintf(flog,"insert_nvic_intc pc:%x irq:%d\n",get_arm_precise_pc(),irq);
+        #endif
         insert_nvic_intc(irq,false);
+        #ifdef DBG
+        fprintf(flog,"vectpending pending irq:%d enabled?:%d\n",aaa(),bbb(irq));
+        #endif
+       
     }
 }
 
@@ -592,8 +602,8 @@ void enable_nvic_hook(int irq)
     
     
     #ifdef DBG
-    
-    fprintf(flog,"%d->exec_arm_interrupt_pre_hook irq:%d pc:%x\n",run_index, irq,state.regs[15]);
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->enable_nvic_hook irq:%d pc:%x\n",run_index, irq,state.regs[15]);
     #endif
 
     #ifndef ENABLE_IRQ
@@ -711,6 +721,7 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         returned = true;
         return true;
     }
+    __afl_area_ptr[id] ++;
     return false;
 }
 

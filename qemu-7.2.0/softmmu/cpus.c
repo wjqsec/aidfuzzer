@@ -502,13 +502,13 @@ void qemu_mutex_lock_iothread_impl(const char *file, int line)
 
     bql_lock(&qemu_global_mutex, file, line);
     */
-    g_assert(!qemu_mutex_iothread_locked());
+    //g_assert(!qemu_mutex_iothread_locked());
     set_iothread_locked(true);
 }
 
 void qemu_mutex_unlock_iothread(void)
 {
-    g_assert(qemu_mutex_iothread_locked());
+    //g_assert(qemu_mutex_iothread_locked());
     /*
     qemu_mutex_unlock(&qemu_global_mutex);
     */

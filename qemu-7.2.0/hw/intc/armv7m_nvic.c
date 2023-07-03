@@ -292,6 +292,7 @@ static void nvic_recompute_state_secure(NVICState *s)
 }
 
 /* Recompute vectpending and exception_prio */
+
 static void nvic_recompute_state(NVICState *s)
 {
     int i;
@@ -331,7 +332,7 @@ static void nvic_recompute_state(NVICState *s)
     s->vectpending = pend_irq;
     s->vectpending_prio = pend_prio;
     s->exception_prio = active_prio;
-    
+
     trace_nvic_recompute_state(s->vectpending,
                                s->vectpending_prio,
                                s->exception_prio);
