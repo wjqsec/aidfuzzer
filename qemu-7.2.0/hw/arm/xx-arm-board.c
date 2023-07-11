@@ -43,13 +43,15 @@ uint64_t xx_get_arm_precise_pc(void)
 {
     return cs->precise_pc;
 }
-void xx_insert_nvic_intc(int irq, bool secure)
+bool xx_insert_nvic_intc(int irq)
 {
     //if(armv7m_nvic_get_ready_status(nvic, irq, secure))
-    if(nvic->sec_vectors[irq].enabled)
+    if(nvic->vectors[irq].enabled && !nvic->vectors[irq].pending)
     {
-        armv7m_nvic_set_pending(nvic, irq, secure);
+        armv7m_nvic_set_pending(nvic, irq, false);
+        return true;
     }   
+    return false;
 }
 bool xx_get_arm_v7m_is_handler_mode(void)
 {

@@ -73,7 +73,15 @@ typedef int64_t  s64;
 #define IRQ_MODEL_FILENAME "irq_model.yml"
 //#define ENABLE_IRQ
 
-#define ENABLE_gDB
+#define ENABLE_GDB
+
+#define STOPWATCH_TYPE_MMIO 0
+#define STOPWATCH_TYPE_MEM 1
+
+#define NUM_WATCHPOINT (1 << 20)
+#define NUM_IRQ_PER_WATCHPOINT 20
+
+
 static __always_inline uint32_t hash_32(uint32_t number)
 {
         return number;

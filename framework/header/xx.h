@@ -106,7 +106,7 @@ void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state);
 void *xx_save_arm_ctx_state(void);
 void xx_restore_arm_ctx_state(void* state);
 void xx_delete_arm_ctx_state(void* state);
-void xx_insert_nvic_intc(int irq, bool secure);
+bool xx_insert_nvic_intc(int irq);
 GArray* xx_get_enabled_nvic_irq(void);
 uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs);
 void xx_reset_arm_reg(void);
@@ -150,7 +150,7 @@ typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg); 
 void init_simulator(struct Simulator * s);
 void exec_simulator(struct Simulator *s);
-
+void check_nostop_watchpoint(hwaddr addr);
 
 enum XX_CPU_TYPE get_xx_cpu_type(void);
 void set_xx_cpu_type(enum XX_CPU_TYPE type);

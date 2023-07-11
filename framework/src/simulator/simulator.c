@@ -37,6 +37,7 @@ uint8_t *__afl_discovered_irq_data;
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
+
 int fd_to_fuzzer, fd_from_fuzzer;
 
 FILE *flog;
@@ -47,7 +48,7 @@ uint32_t max_bbl_exec = 1000000;
 
 
 bool should_exit = false;
-uint32_t exit_code = 0;
+uint32_t exit_code;
 uint32_t exit_info;
 uint64_t exit_pc;
 uint32_t num_mmio;
@@ -75,22 +76,10 @@ struct SHARED_STREAMS
     uint8_t *data;
 };
 
-struct WATCHPOINT
-{
-    hwaddr addr;
-    hwaddr len;
-    int flag;
-};
-
 GArray* fuzz_streams;
 int32_t* num_new_streams;
 uint32_t* new_streams;
 
-// int32_t* num_irq_vals;
-// uint16_t* irq_vals;
-
-// uint16_t *irqs;
-// uint32_t *num_irqs;
 
 
 void collect_streams()
@@ -203,9 +192,7 @@ void exit_with_code_start_new()
 
 
     
-    #ifdef ENABLE_IRQ
-    report_irqs();
-    #endif
+
     static uint32_t buf[128];
     buf[0] = exit_code;
     buf[1] = exit_info;
@@ -454,7 +441,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x r0:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id,state.regs[0]);
+    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id);
     #endif
     return ret;
 }
@@ -463,10 +450,13 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 {
     
     #ifdef DBG
+    
     addr = (hwaddr)opaque + addr;
+    uint64_t precise_pc = get_arm_precise_pc();
+    uint32_t stream_id = hash_32_ext(addr) ^ hash_32_ext(precise_pc) ;
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->mmio write pc:%p offset:%x val:%x\n",run_index, get_arm_precise_pc(),addr,data);
+    fprintf(flog,"%d->mmio write pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, get_arm_precise_pc(),addr,data,stream_id);
     #endif
 }
 
@@ -538,18 +528,14 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 }
 void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
+    bool insert_irq;
     int irq = (int)(uint64_t)data;
-    #ifdef DBG
-    fprintf(flog,"nostop_watchpoint_exec pc:%x irq:%d\n",get_arm_precise_pc(),irq);
-    #endif
     if(!get_arm_v7m_is_handler_mode())
     {
+        insert_irq = insert_nvic_intc(irq);
         #ifdef DBG
-        fprintf(flog,"insert_nvic_intc pc:%x irq:%d\n",get_arm_precise_pc(),irq);
-        #endif
-        insert_nvic_intc(irq,false);
-        #ifdef DBG
-        fprintf(flog,"vectpending pending irq:%d enabled?:%d\n",aaa(),bbb(irq));
+        if(insert_irq)
+            fprintf(flog,"%d->insert irq:%d pc:%x\n",run_index,irq,get_arm_precise_pc());
         #endif
        
     }
@@ -561,7 +547,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     struct ARM_CPU_STATE state;
     #ifdef DBG
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->arm_cpu_do_interrupt exeception:%d pc:%x\n",run_index, exec_index,state.regs[15]);
+    fprintf(flog,"%d->arm_cpu_do_interrupt index:%d pc:%x\n",run_index, exec_index,state.regs[15]);
     #endif
 
     
@@ -597,13 +583,13 @@ void enable_nvic_hook(int irq)
     char model_filename[PATH_MAX];
     char cmd[PATH_MAX];
     char line[PATH_MAX];
+    char *addr_size_ptr;
     struct ARM_CPU_STATE state;
     FILE *f;
     
     
     #ifdef DBG
-    get_arm_cpu_state(&state);
-    fprintf(flog,"%d->enable_nvic_hook irq:%d pc:%x\n",run_index, irq,state.regs[15]);
+    fprintf(flog,"%d->enable irq:%d pc:%x\n",run_index, irq,get_arm_precise_pc());
     #endif
 
     #ifndef ENABLE_IRQ
@@ -612,7 +598,7 @@ void enable_nvic_hook(int irq)
         sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
         dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
-        struct WATCHPOINT watchpoint;
+        printf("pc:%x  ",get_arm_precise_pc());
         sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/irq_model.py %s %s %x > /dev/null 2>&1",state_filename,model_filename,irq);
         puts(cmd);
         system(cmd);
@@ -620,6 +606,7 @@ void enable_nvic_hook(int irq)
         f = fopen(model_filename,"r");
         
         bool start = false;
+        int type;
         while(fgets(line, PATH_MAX, f))
         {
 
@@ -634,14 +621,23 @@ void enable_nvic_hook(int irq)
             }
             if(!start)
                 continue;
-            uint32_t addr = strtol(line, 0, 16);
-            uint32_t len = strtol(strstr(line," ") + 1, 0, 16);
+            if(strstr(line,"mem:"))
+            {
+                type = STOPWATCH_TYPE_MEM;
+                addr_size_ptr = line + strlen("mem:");
+            }
+            if(strstr(line,"mmio:"))
+            {
+                type = STOPWATCH_TYPE_MMIO;
+                addr_size_ptr = line + strlen("mmio:");
+                continue;
+            }
+                
+            uint32_t addr = strtol(addr_size_ptr, 0, 16);
+            uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
             if(!addr)
                 continue;
-            watchpoint.addr = addr;
-            watchpoint.len = len;
-            watchpoint.flag = BP_MEM_ACCESS;
-            insert_nostop_watchpoint(watchpoint.addr,watchpoint.len,watchpoint.flag,nostop_watchpoint_exec,(void*)(uint64_t)irq);
+            insert_nostop_watchpoint(addr,len,BP_MEM_ACCESS,nostop_watchpoint_exec,(void*)(uint64_t)irq);
             printf("insert_nostop_watchpoint irq:%d addr:%x\n",irq,addr);
         }
         fclose(f);
@@ -668,7 +664,6 @@ void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int imm
     fprintf(flog,"%d->ins icmp pc:%p\n",run_index, pc);
     #endif
 }
-
 //////////////////////////////////////////////////snapshot below
 
 hwaddr snapshot_point = 0;

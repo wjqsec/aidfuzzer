@@ -49,8 +49,9 @@ def irq_model_from_file(modelfilename):
                 models[current_irq] = model
             else:
                 accessinfo = ACCESS_INFO()
-                accessinfo.addr = int(line.split(" ")[0],16)
-                accessinfo.size = int(line.split(" ")[1],16)
+                accessinfo.type = line.split(":")[0]
+                accessinfo.addr = int(line.split(":")[1].split(" ")[0],16)
+                accessinfo.size = int(line.split(":")[1].split(" ")[1],16)
                 models[current_irq].accesses.append(accessinfo)
     return models
                 
@@ -59,7 +60,7 @@ def write_model_to_file(models,modelfilename):
     with open(modelfilename, "w") as f:
         for irq,model in models.items():
             f.write("-{}\n".format(irq))
-            f.write("".join(["{} {}\n".format(hex(access.addr),hex(access.size)) for access in model.accesses]))
+            f.write("".join(["{}:{} {}\n".format(access.type,hex(access.addr),hex(access.size)) for access in model.accesses]))
             
 
 
@@ -195,16 +196,23 @@ for state in states:
             continue
         if is_ast_stack_address(initial_state,action.addr):
             continue
-        if is_ast_mmio_address(state,action.addr):
-            continue
+        
         if is_ast_addr_readonly(state,action.addr):
             continue
-
+        
+        if is_ast_mmio_address(state,action.addr):
+            info = ACCESS_INFO()
+            info.ins_addr = state.solver.eval_one(action.ins_addr)
+            info.addr = state.solver.min(action.addr)
+            info.size = int((action.size + 0)/8)
+            info.type = "mmio"
+            access.append(info)
         if not action.addr.symbolic:
             info = ACCESS_INFO()
             info.ins_addr = state.solver.eval_one(action.ins_addr)
             info.addr = state.solver.min(action.addr)
             info.size = int((action.size + 0)/8)
+            info.type = "mem"
             access.append(info)
             
     if access == []:   

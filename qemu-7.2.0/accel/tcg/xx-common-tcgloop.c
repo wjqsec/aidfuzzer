@@ -42,10 +42,6 @@
 
 
 
-
-
-#define NUM_WATCHPOINT (1 << 20)
-#define NUM_IRQ_PER_WATCHPOINT 20
 void **bbl_enable_watchpoint;
 
 enum XX_CPU_TYPE xx_cpu_type;
@@ -70,7 +66,6 @@ void page_init(void);
 void tb_htable_init(void);
 void vm_state_notify(bool running, RunState state);
 void runstate_set(RunState new_state);
-void check_nostop_watchpoint(vaddr addr);
 bool tcg_supports_guest_debug(void);
 void tcg_remove_all_breakpoints(CPUState *cpu);
 int tcg_remove_breakpoint(CPUState *cs, int type, hwaddr addr, hwaddr len);
@@ -316,12 +311,11 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watc
     int i;
     CPUWatchpoint *wp;
     CPUState *cpu = qemu_get_cpu(0);
-    //cpu_watchpoint_insert(cpu,0x20001160,4, BP_MEM_ACCESS |BP_CALLBACK_ONLY_NO_STOP ,&wp);
     cpu_watchpoint_insert(cpu,addr,len, flag | BP_CALLBACK_ONLY_NO_STOP ,&wp);
     wp->callback = cb;
     wp->data = data;
 
-    uint32_t id = hash_32(addr) & 0xfffff;
+    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
     {
@@ -333,7 +327,7 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watc
     }
     return wp;
 }
-void check_nostop_watchpoint(vaddr addr)
+void check_nostop_watchpoint(hwaddr addr)
 {
     CPUWatchpoint *wp;
     int i;
