@@ -3462,11 +3462,12 @@ foreach target : target_dirs
   arch_srcs += target_specific.sources()
   arch_deps += target_specific.dependencies()
 
+  xxfuzzer_inc = include_directories('../framework/header')
   lib = static_library('qemu-' + target,
                  sources: arch_srcs + genh,
                  dependencies: arch_deps,
                  objects: objects,
-                 include_directories: target_inc,
+                 include_directories: target_inc + xxfuzzer_inc,
                  c_args: c_args,
                  build_by_default: false,
                  name_suffix: 'fa')
