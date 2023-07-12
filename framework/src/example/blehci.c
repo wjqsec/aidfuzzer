@@ -17,8 +17,12 @@
 FILE *f_log;
 uint64_t mmio_read(void *opaque,hwaddr addr,unsigned size)
 {
-    printf("mmio\n");
-    return 0;
+    uint64_t val = 1;
+    addr += (hwaddr)opaque;
+    if(addr == 0x40000418)
+        val = 0x10001;
+    fprintf(f_log,"pc:%x mmio:%x value:%x\n",get_arm_precise_pc(),addr,val);
+    return val;
     
 }
 void mmio_write(void *opaque,hwaddr addr,uint64_t data,unsigned size)
@@ -26,7 +30,7 @@ void mmio_write(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 
 }
 
-bool exec_bbl(regval pc,uint32_t id,int64_t bbl)
+bool exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
     fprintf(f_log,"pc %x bbl:%d\n",pc,bbl);
     return false;
@@ -57,7 +61,7 @@ int main()
     FILE *f_binary;
     struct ARM_CPU_STATE state;
     struct Simulator *simulator;
-    simulator = create_simulator(ARM,false);
+    simulator = create_simulator(ARM_CORTEX_M,false);
     set_armv7_vecbase(0xc020);
     init_simulator(simulator);
     stat("./blehci.bin",&f_stat);
@@ -77,5 +81,5 @@ int main()
     reset_arm_reg();
     get_arm_cpu_state(&state);
     printf("pc :%x\n",state.regs[15]);
-    exit(0);
+    exec_simulator(simulator);
 }

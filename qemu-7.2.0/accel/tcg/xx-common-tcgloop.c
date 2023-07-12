@@ -346,8 +346,8 @@ void check_nostop_watchpoint(hwaddr addr)
 }
 void xx_delete_nostop_watchpoint(void *watchpoint)
 {
-    CPUState *cpu = qemu_get_cpu(0);
-    cpu_watchpoint_remove_by_ref(cpu, (CPUWatchpoint *)watchpoint);
+    // CPUState *cpu = qemu_get_cpu(0);
+    // cpu_watchpoint_remove_by_ref(cpu, (CPUWatchpoint *)watchpoint);
 }
 
 

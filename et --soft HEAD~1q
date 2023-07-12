@@ -1,0 +1,437 @@
+[33mcommit 7fd77401d5feccb852a0ce83a014f2243a61d11c[m[33m ([m[1;36mHEAD -> [m[1;32mframework[m[33m)[m
+Author: wjq <w@w>
+Date:   Wed Jul 12 15:00:37 2023 +0200
+
+    test ble
+
+[33mcommit 89e0c1878e7372df9fa00bf4b7d01b43e4f5b906[m
+Author: wjq <w@w>
+Date:   Tue Jul 11 17:13:34 2023 +0200
+
+    no change
+
+[33mcommit 245cde37784bf2941b21faa49d96390a5ffff204[m
+Author: wjq <w@w>
+Date:   Tue Jul 11 16:53:47 2023 +0200
+
+    remove cpu->init_svtor & 0xffffff80
+
+[33mcommit e8af48a9ec293401fca5c2c12fdab1593efe7d6c[m[33m ([m[1;31morigin/framework[m[33m)[m
+Author: wjq <w@w>
+Date:   Tue Jul 11 16:01:47 2023 +0200
+
+    remove unnecessary files
+
+[33mcommit cfedbace80eefb939a0415dc2edb53f631a44367[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m
+Author: wjq <w@w>
+Date:   Tue Jul 11 13:57:44 2023 +0200
+
+    fix stopwatch breakpoints bug
+
+[33mcommit 9f635774a58eba8a4de832a23e9e6abaf953b5cb[m
+Author: wjq <w@w>
+Date:   Mon Jul 3 19:40:53 2023 +0200
+
+    remove extra fuzzer run after discover all streams and return avaliable simulator immediately
+
+[33mcommit 35914b5c08aa16e92723a425806cc004876e650e[m
+Author: wjq <w@w>
+Date:   Thu Jun 29 18:35:15 2023 +0200
+
+    multi-process bug fixed: add new stream to new queue not old queue
+
+[33mcommit ba2e13e685b0e532e3c2704d170525b1ff108452[m
+Author: wjq <w@w>
+Date:   Wed Jun 28 20:09:01 2023 +0200
+
+    add multi-simulator done
+
+[33mcommit 46917cf0b85523f9bebdd92a714a8f86eeb289f2[m
+Author: wjq <w@w>
+Date:   Tue Jun 27 21:00:42 2023 +0200
+
+    add multi-simulator
+
+[33mcommit 70384603ee34bb688733432392fd6919652d9a5a[m
+Author: wjq <w@w>
+Date:   Fri Jun 23 18:08:04 2023 +0200
+
+    remove qemu_set_event
+
+[33mcommit 81e2d0edbdaefb532b23a4b1e244965989f7bed6[m
+Author: wjq <w@w>
+Date:   Thu Jun 22 20:16:52 2023 +0200
+
+    modify char mutation
+
+[33mcommit bdb865e9c037bbb31b6ce99e3498682c95d3b6f0[m
+Author: wjq <w@w>
+Date:   Thu Jun 22 19:04:28 2023 +0200
+
+    fix irq bug & remove useless dlsym code
+
+[33mcommit 4de8b34459a738db2bda098a2851c4169b19ddbf[m
+Author: wjq <w@w>
+Date:   Tue Jun 20 19:24:51 2023 +0200
+
+    solve basic block hash collision
+
+[33mcommit 24d1fae0bce897eb95c66fa7b890b0fcfca7ac74[m
+Author: wjq <w@w>
+Date:   Thu Jun 15 17:22:16 2023 +0200
+
+    add fast watchpoint
+
+[33mcommit 9048ebfd473dce5c4369a2d4c3371527447eeb2e[m
+Author: wjq <w@w>
+Date:   Wed Jun 14 18:17:36 2023 +0200
+
+    add basic block watchpoint not finish
+
+[33mcommit b1930b400fb0586ee70bc120a4a1fffd54e0966f[m
+Author: wjq <w@w>
+Date:   Tue Jun 13 19:13:21 2023 +0200
+
+    fix irq handler bug
+
+[33mcommit 018292c62d3e1656dd3530b8c51760a8c19caabc[m
+Author: wjq <w@w>
+Date:   Thu Jun 8 14:28:33 2023 +0200
+
+    add watchpoint callback arguments and dumped irq status
+
+[33mcommit 353b9872373e7413fde0029676c080dbd7eb57d9[m
+Author: wjq <w@w>
+Date:   Wed Jun 7 20:07:26 2023 +0200
+
+    add irq dry run and exec irq callback
+
+[33mcommit 047ef29a8bfd361be8070523e6cb050d20e5283a[m
+Author: wjq <w@w>
+Date:   Tue Jun 6 19:51:45 2023 +0200
+
+    add no stop watchpoint
+
+[33mcommit f47088bb9e5e8790c997fa48c4c74906272fff68[m
+Author: wjq <w@w>
+Date:   Wed May 24 18:42:01 2023 +0200
+
+    adjust queue size
+
+[33mcommit 474a289000b353159815cb780ac03e24187c3a1f[m
+Author: wjq <w@w>
+Date:   Mon May 22 17:38:20 2023 +0200
+
+    add increase stream
+
+[33mcommit dc4236a10d6b935f93ce3b1b606fd8ebdead27e3[m
+Author: wjq <w@w>
+Date:   Fri May 19 18:59:16 2023 +0200
+
+    add modelling support
+
+[33mcommit 3ffce14cbe0b078be707779b12e86fa87d38db20[m
+Author: wjq <w@w>
+Date:   Thu May 18 17:30:19 2023 +0200
+
+    fix shared memory bug, still comsume too much memory
+
+[33mcommit 63864fae188b4ba219cedb58530caa651b0870ba[m
+Author: wjq <w@w>
+Date:   Wed May 17 18:32:22 2023 +0200
+
+    reimplement shared memory
+
+[33mcommit 135d72f14c8c0234ace85955fff850fcee61300a[m
+Author: wjq <w@w>
+Date:   Thu May 11 18:56:32 2023 +0200
+
+    find all streams before add queue & uart irq need to be handled
+
+[33mcommit b5610e06320bac8dfc53c1b93ecd50c1205b3eab[m
+Author: wjq <w@w>
+Date:   Fri May 5 20:58:10 2023 +0200
+
+    fix model bug
+
+[33mcommit 800c57af0bdf499261611e83e47bf07c5dc954ab[m
+Author: wjq <w@w>
+Date:   Fri May 5 19:23:48 2023 +0200
+
+    add fuzzware model to fuzzer
+
+[33mcommit 12b4e4b56617b99913f752215c92d4e84510f08b[m
+Author: wjq <w@w>
+Date:   Thu May 4 18:22:13 2023 +0200
+
+    add precise pc & fuzzware modeling dump
+
+[33mcommit 6194125683ae73acba1f327aa821bd0e2741096c[m
+Author: wjq <w@w>
+Date:   Thu Apr 27 19:18:15 2023 +0200
+
+    add configs
+
+[33mcommit cb814176e8b30eca1349d722287fd2b942e69288[m
+Author: wjq <w@w>
+Date:   Tue Apr 25 19:41:35 2023 +0200
+
+    add config file supoort
+
+[33mcommit be8e648723dd835f06110661e3115f55b8a5aea9[m
+Author: wjq <w@w>
+Date:   Mon Apr 24 18:44:34 2023 +0200
+
+    add get enabled irqs support
+
+[33mcommit 243ac34054d89a3d85a826106be325de1b8164d9[m
+Author: wjq <w@w>
+Date:   Fri Apr 21 18:07:10 2023 +0200
+
+    fix interrupt fuzz bug
+
+[33mcommit 9cc360552233e634241d5830fc531983b6acd34b[m
+Author: wjq <w@w>
+Date:   Thu Apr 20 18:53:38 2023 +0200
+
+    add irq fuzz support
+
+[33mcommit 397b498087c1b35f491b60be3e11f733017de475[m
+Author: wjq <w@w>
+Date:   Wed Apr 19 19:42:50 2023 +0200
+
+    add muilt-core support & memory share fuzz data
+
+[33mcommit 2cffcc1bf6583296a632c7a601c4799a70cb4aae[m
+Author: wjq <w@w>
+Date:   Tue Apr 18 18:31:04 2023 +0200
+
+    switch from read write to shared memory
+
+[33mcommit 4c0eb89987f992a7628140a5e28dc19de69c15f4[m
+Author: wjq <w@w>
+Date:   Mon Apr 17 19:22:35 2023 +0200
+
+    try to add multi core support not finished yet
+
+[33mcommit b6bcfcedc801653cf3edd4b451d8ab7eb4aee7b7[m
+Author: wjq <w@w>
+Date:   Fri Apr 14 19:07:48 2023 +0200
+
+    add seperate snapshot support
+
+[33mcommit 21546ddf36df6cc307c1486002fbfa26bec9895e[m
+Author: wjq <w@w>
+Date:   Thu Apr 13 21:27:47 2023 +0200
+
+    try to seperate snapshot, not finished yet, try tomorrow
+
+[33mcommit 360cf8622c1539ee05cc0dfe2952c4a318033095[m
+Author: wjq <w@w>
+Date:   Tue Apr 11 19:49:16 2023 +0200
+
+    switch to block coverage
+
+[33mcommit 811a8947105362b3bf609eddef73774cf1e8ec8f[m
+Author: wjq <w@w>
+Date:   Fri Apr 7 17:05:24 2023 +0200
+
+    found timer interrupt problem & caused by dummy icount
+
+[33mcommit d8f1d1eeb9d7416af35fd754d8cd6faba0193773[m
+Author: wjq <w@w>
+Date:   Thu Apr 6 18:28:35 2023 +0200
+
+    try to fix timer problem
+
+[33mcommit 4b47eda14bee21d849231e77a64c98e8e6792b60[m
+Author: x <x>
+Date:   Mon Apr 3 19:56:37 2023 +0200
+
+    add queue priority & queue id needs to be modified
+
+[33mcommit 3d1aa373899e489d8ea8cd019e79e30702464a17[m
+Author: x <x>
+Date:   Mon Apr 3 19:19:14 2023 +0200
+
+    fix load_ram_file bug
+
+[33mcommit a72c31a73f9f166ab44d2d5a6b5a801690305455[m
+Author: x <x>
+Date:   Fri Mar 31 18:01:14 2023 +0200
+
+    fix snapshot bug
+
+[33mcommit 7fa817e4d27cf85341ece0b85ee4b1b8d9658e4f[m
+Author: x <x>
+Date:   Thu Mar 30 18:48:13 2023 +0200
+
+    fix snapshot bug
+
+[33mcommit c0f69575152f656529e026e80bdbb7b7baaf7c22[m
+Author: x <x>
+Date:   Wed Mar 29 19:08:25 2023 +0200
+
+    fix rom memory region bug
+
+[33mcommit 1efc4368b1401a23977b95eba903089dbd7a65f7[m
+Author: x <x>
+Date:   Fri Mar 24 21:45:52 2023 +0100
+
+    add rom and vecbase support
+
+[33mcommit c761ef8a3f8d7d547405565da4c68d5434ece293[m
+Author: x <x>
+Date:   Thu Mar 23 21:05:42 2023 +0100
+
+    add queue priority and nvic interrupt
+
+[33mcommit 276a0be4abeb5138ab491079b946cbbb0e3e8fc4[m
+Author: x <x>
+Date:   Wed Mar 22 19:57:02 2023 +0100
+
+    stable run but slower
+
+[33mcommit 456eb6c646149b076813039bb388d739334c61e9[m
+Author: x <x>
+Date:   Mon Mar 20 21:51:17 2023 +0100
+
+    fork server fuzzer sync not finished
+
+[33mcommit 038d6dded52661e47503c04d772fbce977f7e77f[m
+Author: x <x>
+Date:   Fri Mar 17 19:47:10 2023 +0100
+
+    add havoc
+
+[33mcommit af19df07f6e6598943ce2be9e6ef84faae17bbab[m
+Author: x <x>
+Date:   Fri Mar 17 17:46:17 2023 +0100
+
+    add crash handling
+
+[33mcommit 90e3808ee370278c568c645ba6e3cf0f1d490541[m
+Author: x <x>
+Date:   Thu Mar 16 19:37:11 2023 +0100
+
+    add fuzzer fuzz loop
+
+[33mcommit 63799f122827f2141a91f9b4a99fed2a652acf2e[m
+Author: x <x>
+Date:   Wed Mar 15 19:09:33 2023 +0100
+
+    add iofuzzer
+
+[33mcommit 47c5f4022e6638bc4fc5484b1767f18dd0f26693[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Mon Mar 13 02:33:42 2023 -0700
+
+    fix not compile
+
+[33mcommit 80e69466d49bb0ed91ee4e383e0533002d19556f[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Tue Mar 7 11:40:05 2023 -0800
+
+    add cmplog support
+
+[33mcommit 8f60c8b127609a0094a16387ee7b49c7fae1419f[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Fri Mar 3 10:29:36 2023 -0800
+
+    test it with simple afl % firmware
+
+[33mcommit 4d38e1022989acfa7e6864faa713ae2f2c0e12b0[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Thu Mar 2 08:01:17 2023 -0800
+
+    nop spinlock mutexlock rculock log & x86 board support
+
+[33mcommit 7f47cb789ef3408c38cdc87c308ffbf009f8e720[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Wed Mar 1 10:18:12 2023 -0800
+
+    add nvic support
+
+[33mcommit c109c7ec5525396347e9a0ee6147eb6fac195d29[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Tue Feb 28 10:33:28 2023 -0800
+
+    fix mmio & do_interrupt bug
+
+[33mcommit 6b25ed50af930084818c042ba0f50e95714391e4[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Mon Feb 27 11:05:53 2023 -0800
+
+    arm no cpu bug fixed
+
+[33mcommit 8fbbcc85894d7540cb984973ca046ef6660ffe37[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Thu Feb 23 08:59:27 2023 -0800
+
+    add arm support
+
+[33mcommit cc3126b86823dad63b5eef36ff92bb688fbbe2cd[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Wed Feb 22 10:25:47 2023 -0800
+
+    remove debug code
+
+[33mcommit a4144788d827c3dbb43b68f03fe7ec48d6d0d120[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Wed Feb 22 10:17:22 2023 -0800
+
+    snapshot & bbl instrument & framework
+
+[33mcommit a4bb1afdba4832799d4a0d99fdf1ecb0062f0414[m
+Author: XinDistance <767563655@qq.com>
+Date:   Fri Feb 17 18:31:24 2023 +0100
+
+    Add files via upload
+
+[33mcommit a288adfc1a83a006f7eaae177cad50cd40bb30bb[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Mon Feb 13 09:55:43 2023 -0800
+
+    add customized board & bug fix
+
+[33mcommit 59ed673a860519a7682bd64afb0d9f2a38b19245[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Fri Feb 10 09:25:34 2023 -0800
+
+    add memory region and framework
+
+[33mcommit e17609fdaace877e7470ff4102fac40d9b1d375b[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Tue Feb 7 09:36:46 2023 -0800
+
+    add xxfuzzer board
+
+[33mcommit 878839a1524e69bdce6090bdbfe33056c2fdc378[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Tue Feb 7 01:08:59 2023 -0800
+
+    missing i386 tcg file
+
+[33mcommit c39bb8ef6c6184bca6bf50f7ba8446ece876e349[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Mon Feb 6 10:25:27 2023 -0800
+
+    tcg loop and io_thread_lock bug fixed
+
+[33mcommit 32046d1cd0416011d55d8336950b0532d656e3d0[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Fri Feb 3 10:59:30 2023 -0800
+
+    add xxfuzzer accel
+
+[33mcommit 00f62dcc39765f2bdc2fa86ee337618e2e532d66[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Fri Feb 3 06:32:02 2023 -0800
+
+    first commit
+
+[33mcommit 6ef844f81d3e7b0e5a54be4696248d22d4a8d92d[m
+Author: wjq <jiwa00004@stud.uni-saarland.de>
+Date:   Thu Feb 2 06:23:08 2023 -0800
+
+    init

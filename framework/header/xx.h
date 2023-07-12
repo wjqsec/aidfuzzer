@@ -1,11 +1,10 @@
 typedef uint64_t hwaddr;
-typedef uint64_t regval;
 typedef uint32_t MemTxResult;
 
 enum XX_CPU_TYPE 
 {
     X86,
-    ARM
+    ARM_CORTEX_M
 };
 
 
@@ -29,8 +28,8 @@ struct Simulator
 //----------------x86
 struct X86_CPU_STATE
 {
-    regval regs[8];  //EAX EBX ECX EDX ESI EDI EBP ESP
-    regval eip;                 //EIP
+    uint64_t regs[8];  //EAX EBX ECX EDX ESI EDI EBP ESP
+    uint64_t eip;                 //EIP
 };
 
 typedef void (*x86_cpu_do_interrupt_cb)(void); 
@@ -140,8 +139,8 @@ typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
 typedef void (*pre_thread_exec_cb)(void); 
-typedef bool (*exec_bbl_cb)(regval pc,uint32_t id,int64_t bbl);
-typedef void (*exec_ins_icmp_cb)(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
+typedef bool (*exec_bbl_cb)(hwaddr pc,uint32_t id,int64_t bbl);
+typedef void (*exec_ins_icmp_cb)(hwaddr pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
 typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data);
  
@@ -165,7 +164,6 @@ MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len);
 void xx_add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly);
 void xx_add_rom_region(char *name,hwaddr start, hwaddr size);
 void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
-//void modify_mmio_cb(hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
 void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int size);
 void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size);
 int xx_target_pagesize(void);
