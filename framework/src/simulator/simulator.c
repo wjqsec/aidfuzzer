@@ -20,8 +20,6 @@
 
 //#define DBG
 #define CRASH_DBG
-//#define TRACE_DBG
-#define AFL
 
 
 struct SIMULATOR_CONFIG* global_config;
@@ -393,7 +391,6 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint64_t precise_pc = get_arm_precise_pc();
     uint64_t ret = 0;
     bool already_dumped_mmio_state = false;
-    #ifdef AFL
 
 
     if(should_exit)
@@ -435,9 +432,6 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     }
 
 
-    
-    #endif
-
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
@@ -464,7 +458,6 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
 
-    #ifdef AFL
     if(unlikely(bbl >= max_bbl_exec))
     {
 
@@ -502,7 +495,6 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     }
     #endif
 
-    #endif
 
 
 
@@ -510,7 +502,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     fprintf(flog,"%d->bbl pc:%p\n",run_index, pc);
     #endif
     
-    #ifdef AFL
+
 
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
@@ -519,7 +511,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
 
 
-    #endif
+
 
     return false;
     
@@ -566,13 +558,10 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
     state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
     #endif
-    #ifdef AFL
+
     prepare_exit(EXIT_CRASH,0,state.regs[15]);
     exit_with_code_start_new();
     return false;
-    #endif
-    
-    return true;
 }
 
 
@@ -658,7 +647,7 @@ void post_thread_exec(int exec_ret)
     fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
     #endif
 }
-void exec_ins_icmp(regval pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
+void exec_ins_icmp(hwaddr pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
 {
     #ifdef DBG
     fprintf(flog,"%d->ins icmp pc:%p\n",run_index, pc);
@@ -682,7 +671,7 @@ uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
 }
 void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
 
-bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
+bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
 {
     int i;
     static bool returned = false;
@@ -701,13 +690,13 @@ bool exec_bbl_snapshot(regval pc,uint32_t id,int64_t bbl)
         new_snap = arm_take_snapshot();
         arm_restore_snapshot(new_snap);
         
-        #ifdef AFL
+
         uint32_t tmp; 
         write(fd_to_fuzzer , &tmp,4);  //forkserver up
         //num_irqs = get_enabled_nvic_irq2(&irqs);
         start_new();
         collect_streams();
-        #endif
+
         return true;
     }
     else if(snapshot_point && !returned)
@@ -757,7 +746,7 @@ void init(int argc, char **argv)
     setbuf(flog,0);
     setbuf(f_crash_log,0);
 
-    #ifdef AFL
+
     struct SHARED_STREAMS* stream;
     fuzz_streams = g_array_new(FALSE, FALSE, sizeof(struct SHARED_STREAMS*));
     for(int i = 0; i < 200 ;i ++)
@@ -767,7 +756,7 @@ void init(int argc, char **argv)
     }
     __afl_map_shm();
     dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
-    #endif
+
     memset(dumped_irq, 0, NVIC_MAX_VECTORS);
     
 
@@ -779,7 +768,7 @@ int run_config(struct SIMULATOR_CONFIG *config)
     global_config = config;
 
     struct Simulator *simulator;
-    simulator = create_simulator(ARM,false);
+    simulator = create_simulator(ARM_CORTEX_M,false);
     if(config->vecbase)
         set_armv7_vecbase(config->vecbase);
     init_simulator(simulator);
