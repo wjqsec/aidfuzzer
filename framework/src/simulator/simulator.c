@@ -626,7 +626,7 @@ void enable_nvic_hook(int irq)
             uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
             if(!addr)
                 continue;
-            insert_nostop_watchpoint(addr,len,BP_MEM_ACCESS,nostop_watchpoint_exec,(void*)(uint64_t)irq);
+            insert_nostop_watchpoint(addr,len,BP_MEM_ACCESS | BP_CALLBACK_ONLY_NO_STOP,nostop_watchpoint_exec,(void*)(uint64_t)irq);
             printf("insert_nostop_watchpoint irq:%d addr:%x\n",irq,addr);
         }
         fclose(f);

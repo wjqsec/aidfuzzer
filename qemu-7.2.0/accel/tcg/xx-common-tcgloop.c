@@ -40,7 +40,7 @@
 #include "xx.h"
 
 
-
+bool enabled_gdb_debug;
 
 void **bbl_enable_watchpoint;
 
@@ -48,7 +48,6 @@ enum XX_CPU_TYPE xx_cpu_type;
 
 
 exec_bbl_cb exec_bbl_func;
-
 exec_ins_icmp_cb exec_ins_icmp_func;
 
 int64_t bbl_counts;
@@ -311,14 +310,11 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watc
     int i;
     CPUWatchpoint *wp;
     CPUState *cpu = qemu_get_cpu(0);
-    cpu_watchpoint_insert(cpu,addr,len, flag | BP_CALLBACK_ONLY_NO_STOP ,&wp);
-    // wp = (CPUWatchpoint *)g_malloc0(sizeof(CPUWatchpoint));
+    cpu_watchpoint_insert(cpu,addr,len, flag ,&wp);
 
     wp->callback = cb;
-    wp->len = len;
-    wp->flags = flag;
     wp->data = data;
-    wp->vaddr = addr;
+
     uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
@@ -361,6 +357,7 @@ int xx_thread_loop(bool debug)
     static bool init = false; 
     if(!init)
     {
+        
 		cpu->thread_id = qemu_get_thread_id();
         cpu->can_do_io = 1;
         cpu->created = true;
@@ -368,9 +365,10 @@ int xx_thread_loop(bool debug)
         
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
-		//CPUClass *cc = CPU_GET_CLASS(cpu);
+
         bbl_enable_watchpoint = (void **)malloc(NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
         memset(bbl_enable_watchpoint,0,NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
+        enabled_gdb_debug = debug;
         init = true;
     }
 
@@ -455,7 +453,6 @@ static void xx_start_vcpu_thread(CPUState *cpu)
     qemu_cond_init(single_tcg_halt_cond);
     cpu->thread = thread_self;
     cpu->halt_cond = single_tcg_halt_cond;
-    //cpu->thread_id = first_cpu->thread_id;
     cpu->can_do_io = 1;
     cpu->created = true;
 

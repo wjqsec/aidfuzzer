@@ -14,18 +14,22 @@ post_thread_exec_cb post_thread_exec_func;
 
 struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
 {
-    struct Simulator *ret = malloc(sizeof(struct Simulator));
+    struct Simulator *ret = (struct Simulator *)malloc(sizeof(struct Simulator));
     set_xx_cpu_type(cpu_type);
     ret->cpu_type = cpu_type;
     ret->enable_gdb_dbg = dbg;
     return ret;
 }
 
-
+void xx_register_pre_thread_exec_hook(pre_thread_exec_cb cb)
+{
+    pre_thread_exec_func = cb;
+}
 void xx_register_post_thread_exec_hook(post_thread_exec_cb cb)
 {
     post_thread_exec_func = cb;
 }
+
 void load_file_ram(char *filename,hwaddr addr, int file_offset, int size)
 {
     FILE *fptr = fopen(filename,"rb");

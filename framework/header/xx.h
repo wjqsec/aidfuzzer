@@ -24,7 +24,7 @@ struct Simulator
 #define BP_MEM_READ           0x01
 #define BP_MEM_WRITE          0x02
 #define BP_MEM_ACCESS         (BP_MEM_READ | BP_MEM_WRITE)
-
+#define BP_CALLBACK_ONLY_NO_STOP 0X100
 //----------------x86
 struct X86_CPU_STATE
 {
@@ -146,7 +146,7 @@ typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void
  
 
   
-struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg); 
+struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     
 void init_simulator(struct Simulator * s);
 void exec_simulator(struct Simulator *s);
 void check_nostop_watchpoint(hwaddr addr);
