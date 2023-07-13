@@ -37,15 +37,15 @@
 
 #include "xx.h"
 do_arm_interrupt_cb do_arm_interrupt_func;
-exec_arm_interrupt_pre_cb exec_arm_interrupt_pre_func;
+exec_nvic_cb exec_nvic_func;
 
 void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
 {
     do_arm_interrupt_func = cb;
 }
-void xx_register_arm_exec_interrupt_pre_hook(exec_arm_interrupt_pre_cb cb)
+void xx_register_exec_nvic_hook(exec_nvic_cb cb)
 {
-    exec_arm_interrupt_pre_func = cb;
+    exec_nvic_func = cb;
 }
 
 static void v7m_msr_xpsr(CPUARMState *env, uint32_t mask,
@@ -993,8 +993,8 @@ static void v7m_exception_taken(ARMCPU *cpu, uint32_t lr, bool dotailchain,
     env->thumb = addr & 1;
     arm_rebuild_hflags(env);
 
-    if(exec_arm_interrupt_pre_func)
-        exec_arm_interrupt_pre_func(exc);
+    if(exec_nvic_func)
+        exec_nvic_func(exc);
 }
 
 static void v7m_update_fpccr(CPUARMState *env, uint32_t frameptr,

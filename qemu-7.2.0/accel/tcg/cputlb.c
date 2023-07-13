@@ -40,6 +40,7 @@
 #include "qemu/plugin-memory.h"
 #endif
 #include "tcg/tcg-ldst.h"
+#include "xx.h"
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
 /* #define DEBUG_TLB */
 /* #define DEBUG_TLB_LOG */
@@ -1533,6 +1534,7 @@ static int probe_access_internal(CPUArchState *env, target_ulong addr,
                                  void **phost, CPUTLBEntryFull **pfull,
                                  uintptr_t retaddr)
 {
+
     uintptr_t index = tlb_index(env, mmu_idx, addr);
     CPUTLBEntry *entry = tlb_entry(env, mmu_idx, addr);
     target_ulong tlb_addr, page_addr;
@@ -1881,6 +1883,7 @@ typedef uint64_t FullLoadHelper(CPUArchState *env, target_ulong addr,
 static inline uint64_t QEMU_ALWAYS_INLINE
 load_memop(const void *haddr, MemOp op)
 {
+    check_nostop_watchpoint((hwaddr)haddr);
     switch (op) {
     case MO_UB:
         return ldub_p(haddr);
@@ -2206,6 +2209,7 @@ uint64_t cpu_ldq_le_mmu(CPUArchState *env, abi_ptr addr,
 static inline void QEMU_ALWAYS_INLINE
 store_memop(void *haddr, uint64_t val, MemOp op)
 {
+    check_nostop_watchpoint((hwaddr)haddr);
     switch (op) {
     case MO_UB:
         stb_p(haddr, val);

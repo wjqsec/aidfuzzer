@@ -527,7 +527,7 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
         insert_irq = insert_nvic_intc(irq);
         #ifdef DBG
         if(insert_irq)
-            fprintf(flog,"%d->insert irq:%d pc:%x\n",run_index,irq,get_arm_precise_pc());
+            fprintf(flog,"%d->insert irq:%d pc:%x stopwatch hit addr:%x\n",run_index,irq,get_arm_precise_pc(),hitaddr);
         #endif
        
     }

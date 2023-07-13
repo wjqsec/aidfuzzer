@@ -312,9 +312,13 @@ void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watc
     CPUWatchpoint *wp;
     CPUState *cpu = qemu_get_cpu(0);
     cpu_watchpoint_insert(cpu,addr,len, flag | BP_CALLBACK_ONLY_NO_STOP ,&wp);
-    wp->callback = cb;
-    wp->data = data;
+    // wp = (CPUWatchpoint *)g_malloc0(sizeof(CPUWatchpoint));
 
+    wp->callback = cb;
+    wp->len = len;
+    wp->flags = flag;
+    wp->data = data;
+    wp->vaddr = addr;
     uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
@@ -338,7 +342,7 @@ void check_nostop_watchpoint(hwaddr addr)
         if(unlikely(ptr[i]))
         {
             wp = (CPUWatchpoint *)(ptr[i]);
-            wp->callback(wp->vaddr,wp->len,wp->hitaddr,wp->data);
+            wp->callback(wp->vaddr,wp->len,wp->vaddr,wp->data);
         }
         else
             break;
@@ -346,8 +350,7 @@ void check_nostop_watchpoint(hwaddr addr)
 }
 void xx_delete_nostop_watchpoint(void *watchpoint)
 {
-    CPUState *cpu = qemu_get_cpu(0);
-    cpu_watchpoint_remove_by_ref(cpu, (CPUWatchpoint *)watchpoint);
+    // not implement yet
 }
 
 
