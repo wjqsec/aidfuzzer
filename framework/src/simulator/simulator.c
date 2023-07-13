@@ -55,13 +55,17 @@ uint32_t num_mmio;
 
 GArray* dumped_state_ids;
 
+bool dumped_irq[NVIC_MAX_VECTORS];
+
+int mem_trigger_irq_times[NVIC_MAX_VECTORS];  // insert an irq when the corresponding memory is accessed for n times.
+
 uint32_t run_index;
 
 char *dump_dir;
 char *model_dir;
 char *log_dir;
 
-bool dumped_irq[NVIC_MAX_VECTORS];
+
 
 struct SHARED_STREAMS
 {
@@ -203,7 +207,7 @@ void exit_with_code_start_new()
     // __afl_prev_loc = 0;
 
     should_exit = false;
-    
+    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(int));
 
     start_new();
     *num_new_streams = 0;
@@ -522,15 +526,18 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
     bool insert_irq;
     int irq = (int)(uint64_t)data;
-    if(!get_arm_v7m_is_handler_mode())
+    if(!get_arm_v7m_is_handler_mode() && mem_trigger_irq_times[irq] > 10)
     {
+
         insert_irq = insert_nvic_intc(irq);
+        mem_trigger_irq_times[irq] = 0;
         #ifdef DBG
         if(insert_irq)
             fprintf(flog,"%d->insert irq:%d pc:%x stopwatch hit addr:%x\n",run_index,irq,get_arm_precise_pc(),hitaddr);
         #endif
        
     }
+    mem_trigger_irq_times[irq] ++;
 }
 
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
@@ -582,7 +589,7 @@ void enable_nvic_hook(int irq)
     #endif
 
     #ifndef ENABLE_IRQ
-    if(!dumped_irq[irq] && irq > 15)
+    if(!dumped_irq[irq] && irq >= 15)
     {
         sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
@@ -758,6 +765,7 @@ void init(int argc, char **argv)
     dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
 
     memset(dumped_irq, 0, NVIC_MAX_VECTORS);
+    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(int));
     
 
 }
