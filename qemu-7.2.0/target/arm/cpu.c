@@ -405,8 +405,11 @@ static void arm_cpu_reset(DeviceState *dev)
 #ifndef CONFIG_USER_ONLY
         /* Unlike A/R profile, M profile defines the reset LR value */
         env->regs[14] = 0xffffffff;
-        env->v7m.vecbase[M_REG_S] = cpu->init_svtor & 0xffffff80;
-        env->v7m.vecbase[M_REG_NS] = cpu->init_nsvtor & 0xffffff80;
+        // env->v7m.vecbase[M_REG_S] = cpu->init_svtor & 0xffffff80;
+        // env->v7m.vecbase[M_REG_NS] = cpu->init_nsvtor & 0xffffff80;
+
+        env->v7m.vecbase[M_REG_S] = cpu->init_svtor & 0xffffffff;
+        env->v7m.vecbase[M_REG_NS] = cpu->init_nsvtor & 0xffffffff;
         /* Load the initial SP and PC from offset 0 and 4 in the vector table */
         vecbase = env->v7m.vecbase[env->v7m.secure];
         rom = rom_ptr_for_as(s->as, vecbase, 8);

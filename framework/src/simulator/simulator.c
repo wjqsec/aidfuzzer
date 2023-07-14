@@ -526,7 +526,7 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
     bool insert_irq;
     int irq = (int)(uint64_t)data;
-    if(!get_arm_v7m_is_handler_mode() && mem_trigger_irq_times[irq] > 10)
+    if(!get_arm_v7m_is_handler_mode())
     {
 
         insert_irq = insert_nvic_intc(irq);
@@ -537,7 +537,7 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
         #endif
        
     }
-    mem_trigger_irq_times[irq] ++;
+   
 }
 
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
