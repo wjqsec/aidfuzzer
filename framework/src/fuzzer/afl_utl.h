@@ -291,16 +291,7 @@ inline static void fatal(const char *msg)
     system("reset");
     exit(0);
 }
-inline static u64 get_cur_time(void) {
 
-  struct timeval tv;
-  struct timezone tz;
-
-  gettimeofday(&tv, &tz);
-
-  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
-
-}
 
 #define FLIP_BIT(_ar, _b) do { \
     u8* _arf = (u8*)(_ar); \
@@ -317,5 +308,14 @@ inline static u64 get_cur_time(void) {
     snprintf((char*)_tmp, _len + 1, _str); \
     _tmp; \
   })
+inline static u64 get_cur_time(void) {
 
+  struct timeval tv;
+  struct timezone tz;
+
+  gettimeofday(&tv, &tz);
+
+  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
+
+}
 

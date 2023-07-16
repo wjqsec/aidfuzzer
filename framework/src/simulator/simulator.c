@@ -12,6 +12,7 @@
 #include <glib.h>
 #include <string.h>
 #include <kk_ihex_write.h>
+#include <sys/time.h>
 #include "xx.h"
 #include "config.h"
 #include "fuzzer.h"
@@ -708,11 +709,14 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
     }
     else if(snapshot_point && !returned)
     {
+       
         arm_restore_snapshot(org_snap);
         returned = true;
         return true;
     }
     __afl_area_ptr[id] ++;
+    return false;
+
     return false;
 }
 
@@ -820,5 +824,6 @@ int run_config(struct SIMULATOR_CONFIG *config)
     
     register_exec_bbl_hook(exec_bbl_snapshot);
     org_snap = arm_take_snapshot();
+
     exec_simulator(simulator);
 }

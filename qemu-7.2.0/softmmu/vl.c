@@ -3493,7 +3493,7 @@ void qemu_init(int argc, char **argv)
      * Best done right after the loop.  Do not insert code here!
      */
     loc_set_none();
-
+    
     qemu_validate_options(machine_opts_dict);
     qemu_process_sugar_options();
 
@@ -3505,7 +3505,8 @@ void qemu_init(int argc, char **argv)
 
     qemu_process_help_options();
     qemu_maybe_daemonize(pid_file);
-
+    
+    
     /*
      * The trace backend must be initialized after daemonizing.
      * trace_init_backends() will call st_init(), which will create the
@@ -3531,7 +3532,8 @@ void qemu_init(int argc, char **argv)
     parse_memory_options();
 
     qemu_create_machine(machine_opts_dict);
-
+    
+    
     suspend_mux_open();
 
     qemu_disable_default_devices();
@@ -3570,6 +3572,7 @@ void qemu_init(int argc, char **argv)
         warn_report("Machine type '%s' is deprecated: %s",
                      machine_class->name, machine_class->deprecation_reason);
     }
+    
 
     /*
      * Note: creates a QOM object, must run only after global and
@@ -3577,7 +3580,7 @@ void qemu_init(int argc, char **argv)
      */
     migration_object_init();
 
-    qemu_create_late_backends();
+    //qemu_create_late_backends();
 
     /* parse features once if machine provides default cpu_type */
     current_machine->cpu_type = machine_class->default_cpu_type;
@@ -3585,10 +3588,10 @@ void qemu_init(int argc, char **argv)
         current_machine->cpu_type = parse_cpu_option(cpu_option);
     }
     /* NB: for machine none cpu_type could STILL be NULL here! */
-
+    
     qemu_resolve_machine_memdev();
     parse_numa_opts(current_machine);
-
+    
     if (vmstate_dump_file) {
         /* dump and exit */
         module_load_qom_all();
@@ -3599,6 +3602,7 @@ void qemu_init(int argc, char **argv)
     if (!preconfig_requested) {
         qmp_x_exit_preconfig(&error_fatal);
     }
+    
     qemu_init_displays();
     accel_setup_post(current_machine);
     os_setup_post();

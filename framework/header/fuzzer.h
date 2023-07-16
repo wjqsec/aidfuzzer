@@ -29,7 +29,7 @@ typedef int64_t  s64;
 
 
 #define MAX_STREAM_LEN 0x500000
-#define DEFAULT_STREAM_LEN 0x5000
+#define DEFAULT_STREAM_LEN 0x3000
 
 #define DEFAULT_ELEMENT_SIZE 4
 #define DEFAULT_IRQ_ELEMENT_SIZE 1
@@ -102,6 +102,7 @@ static __always_inline uint32_t hash_32_ext (uint32_t number)
         hash_value = hash_value ^ (hash_value >> 16);
         return hash_value;
 }
+
 
 
 

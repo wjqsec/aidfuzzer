@@ -18,8 +18,8 @@
 #include "compiler.h"
 
 /* Compiler barrier */
-#define barrier()   ({ asm volatile("" ::: "memory"); (void)0; })
-
+// #define barrier()   ({ asm volatile("" ::: "memory"); (void)0; })
+#define barrier()   ({ (void)0; })
 /* The variable that receives the old value of an atomically-accessed
  * variable must be non-qualified, because atomic builtins return values
  * through a pointer-type argument as in __atomic_load(&var, &old, MODEL).
@@ -75,18 +75,23 @@
  * Add one here, and similarly in smp_rmb() and smp_read_barrier_depends().
  */
 
-#define smp_mb()                     ({ barrier(); __atomic_thread_fence(__ATOMIC_SEQ_CST); })
-#define smp_mb_release()             ({ barrier(); __atomic_thread_fence(__ATOMIC_RELEASE); })
-#define smp_mb_acquire()             ({ barrier(); __atomic_thread_fence(__ATOMIC_ACQUIRE); })
+// #define smp_mb()                     ({ barrier(); __atomic_thread_fence(__ATOMIC_SEQ_CST); })
+// #define smp_mb_release()             ({ barrier(); __atomic_thread_fence(__ATOMIC_RELEASE); })
+// #define smp_mb_acquire()             ({ barrier(); __atomic_thread_fence(__ATOMIC_ACQUIRE); })
+#define smp_mb()                     ({  })
+#define smp_mb_release()             ({  })
+#define smp_mb_acquire()             ({  })
 
 /* Most compilers currently treat consume and acquire the same, but really
  * no processors except Alpha need a barrier here.  Leave it in if
  * using Thread Sanitizer to avoid warnings, otherwise optimize it away.
  */
 #ifdef QEMU_SANITIZE_THREAD
-#define smp_read_barrier_depends()   ({ barrier(); __atomic_thread_fence(__ATOMIC_CONSUME); })
+// #define smp_read_barrier_depends()   ({ barrier(); __atomic_thread_fence(__ATOMIC_CONSUME); })
+#define smp_read_barrier_depends()   ({ })
 #elif defined(__alpha__)
-#define smp_read_barrier_depends()   asm volatile("mb":::"memory")
+// #define smp_read_barrier_depends()   asm volatile("mb":::"memory")
+#define smp_read_barrier_depends()   ({ })
 #else
 #define smp_read_barrier_depends()   barrier()
 #endif
@@ -96,7 +101,8 @@
  * a SIGSEGV is delivered to the *same* thread.  In practice this is exactly
  * the same as barrier(), but since we have the correct builtin, use it.
  */
-#define signal_barrier()    __atomic_signal_fence(__ATOMIC_SEQ_CST)
+// #define signal_barrier()    __atomic_signal_fence(__ATOMIC_SEQ_CST)
+#define signal_barrier()    
 
 /* Sanity check that the size of an atomic operation isn't "overly large".
  * Despite the fact that e.g. i686 has 64-bit atomic operations, we do not
@@ -128,8 +134,10 @@
  * no effect on the generated code but not using the atomic primitives
  * will get flagged by sanitizers as a violation.
  */
+// #define qatomic_read__nocheck(ptr) 
+//     __atomic_load_n(ptr, __ATOMIC_RELAXED)
 #define qatomic_read__nocheck(ptr) \
-    __atomic_load_n(ptr, __ATOMIC_RELAXED)
+    (*ptr)
 
 #define qatomic_read(ptr)                              \
     ({                                                 \
@@ -137,8 +145,10 @@
     qatomic_read__nocheck(ptr);                        \
     })
 
+// #define qatomic_set__nocheck(ptr, i) 
+//     __atomic_store_n(ptr, i, __ATOMIC_RELAXED)
 #define qatomic_set__nocheck(ptr, i) \
-    __atomic_store_n(ptr, i, __ATOMIC_RELAXED)
+    (*ptr = i)
 
 #define qatomic_set(ptr, i)  do {                      \
     qemu_build_assert(sizeof(*ptr) <= ATOMIC_REG_SIZE); \
