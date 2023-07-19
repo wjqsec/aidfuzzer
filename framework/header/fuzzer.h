@@ -29,14 +29,13 @@ typedef int64_t  s64;
 
 
 #define MAX_STREAM_LEN 0x500000
-#define DEFAULT_STREAM_LEN 0x3000
+#define DEFAULT_STREAM_LEN 0x1000
 
 #define DEFAULT_ELEMENT_SIZE 4
 #define DEFAULT_IRQ_ELEMENT_SIZE 1
 
 #define IRQ_STREAM_ID 0xffffffff
 
-#define MAIN_CPU 0
 
 #ifndef likely
 #define likely(_x)   __builtin_expect(!!(_x), 1)
@@ -46,8 +45,6 @@ typedef int64_t  s64;
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 #endif
 
-#define ENTRY_MUTEX_MEM_SIZE 1024
-#define ENTRY_MUTEX_KEY 1234
 
 #define SHARE_FUZZDATA_SIZE 1 << 30
 #define FUZZ_COVERAGE_SIZE (1 << 18)
@@ -73,7 +70,7 @@ typedef int64_t  s64;
 #define IRQ_MODEL_FILENAME "irq_model.yml"
 //#define ENABLE_IRQ
 
-#define ENABLE_GDB
+
 
 #define STOPWATCH_TYPE_MMIO 0
 #define STOPWATCH_TYPE_MEM 1

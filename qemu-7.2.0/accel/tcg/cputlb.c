@@ -1883,7 +1883,6 @@ typedef uint64_t FullLoadHelper(CPUArchState *env, target_ulong addr,
 static inline uint64_t QEMU_ALWAYS_INLINE
 load_memop(const void *haddr, MemOp op)
 {
-    check_nostop_watchpoint((hwaddr)haddr);
     switch (op) {
     case MO_UB:
         return ldub_p(haddr);
@@ -2209,7 +2208,6 @@ uint64_t cpu_ldq_le_mmu(CPUArchState *env, abi_ptr addr,
 static inline void QEMU_ALWAYS_INLINE
 store_memop(void *haddr, uint64_t val, MemOp op)
 {
-    check_nostop_watchpoint((hwaddr)haddr);
     switch (op) {
     case MO_UB:
         stb_p(haddr, val);

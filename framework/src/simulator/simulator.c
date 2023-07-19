@@ -43,7 +43,7 @@ FILE *flog;
 FILE *f_crash_log;
 
 
-uint32_t max_bbl_exec = 1000000;
+uint32_t max_bbl_exec = 300000;
 
 
 bool should_exit = false;
@@ -58,7 +58,7 @@ GArray* dumped_state_ids;
 
 bool dumped_irq[NVIC_MAX_VECTORS];
 
-int mem_trigger_irq_times[NVIC_MAX_VECTORS];  // insert an irq when the corresponding memory is accessed for n times.
+uint8_t mem_trigger_irq_times[NVIC_MAX_VECTORS];  // insert an irq when the corresponding memory is accessed for n times.
 
 uint32_t run_index;
 
@@ -208,7 +208,7 @@ void exit_with_code_start_new()
     // __afl_prev_loc = 0;
 
     should_exit = false;
-    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(int));
+    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
 
     start_new();
     *num_new_streams = 0;
@@ -529,9 +529,16 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
     int irq = (int)(uint64_t)data;
     if(!get_arm_v7m_is_handler_mode())
     {
-
-        insert_irq = insert_nvic_intc(irq);
-        mem_trigger_irq_times[irq] = 0;
+        if(mem_trigger_irq_times[irq] > 10)
+        {
+            insert_irq = insert_nvic_intc(irq);
+            mem_trigger_irq_times[irq] = 0;
+        }
+        else
+        {
+             mem_trigger_irq_times[irq] ++;
+        }
+        
         #ifdef DBG
         if(insert_irq)
             fprintf(flog,"%d->insert irq:%d pc:%x stopwatch hit addr:%x\n",run_index,irq,get_arm_precise_pc(),hitaddr);
@@ -664,6 +671,7 @@ void exec_ins_icmp(hwaddr pc,uint64_t val1,uint64_t val2, int used_bits, int imm
 //////////////////////////////////////////////////snapshot below
 
 hwaddr snapshot_point = 0;
+struct ARM_CPU_STATE state111;
 uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
 {
     static bool found = false;
@@ -769,7 +777,7 @@ void init(int argc, char **argv)
     dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
 
     memset(dumped_irq, 0, NVIC_MAX_VECTORS);
-    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(int));
+    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
     
 
 }
@@ -821,6 +829,7 @@ int run_config(struct SIMULATOR_CONFIG *config)
         add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->mmios[i].start);
     }
     reset_arm_reg();
+    
     
     register_exec_bbl_hook(exec_bbl_snapshot);
     org_snap = arm_take_snapshot();

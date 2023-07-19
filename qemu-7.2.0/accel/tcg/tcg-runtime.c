@@ -40,7 +40,7 @@ extern int64_t bbl_counts;
 extern exec_bbl_cb exec_bbl_func;
 
 extern exec_ins_icmp_cb exec_ins_icmp_func;
-uint64_t HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
+uint64_t  HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
     
     bool should_exit = exec_bbl_func(pc,id,bbl_counts);

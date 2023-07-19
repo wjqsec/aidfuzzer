@@ -78,7 +78,7 @@
 #ifdef CONFIG_LIBDAXCTL
 #include <daxctl/libdaxctl.h>
 #endif
-
+#include "xx.h"
 //#define DEBUG_SUBPAGE
 
 /* ram_list is read under rcu_read_lock()/rcu_read_unlock().  Writes
@@ -895,6 +895,7 @@ extern bool enabled_gdb_debug;
 void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
                           MemTxAttrs attrs, int flags, uintptr_t ra)
 {
+    check_nostop_watchpoint(addr);
     if(!enabled_gdb_debug)
         return;
     CPUClass *cc = CPU_GET_CLASS(cpu);
