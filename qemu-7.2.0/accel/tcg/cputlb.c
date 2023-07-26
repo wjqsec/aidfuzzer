@@ -1337,8 +1337,8 @@ static inline void cpu_transaction_failed(CPUState *cpu, hwaddr physaddr,
                                           MemTxResult response,
                                           uintptr_t retaddr)
 {
-    CPUClass *cc = CPU_GET_CLASS(cpu);
-
+    //CPUClass *cc = CPU_GET_CLASS(cpu);
+    CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
     if (!cpu->ignore_memory_transaction_failures &&
         cc->tcg_ops->do_transaction_failed) {
         cc->tcg_ops->do_transaction_failed(cpu, physaddr, addr, size,

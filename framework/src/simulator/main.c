@@ -86,5 +86,5 @@ struct SIMULATOR_CONFIG _arduino_f103_gpio_config =
 int main(int argc, char **argv)
 {
     init(argc,argv);
-    run_config(&_3dprinter_config);
+    run_config();
 }

@@ -21,16 +21,17 @@
 
 //#define DBG
 #define CRASH_DBG
+//#define MMIO_READ_DBG
 
 
-struct SIMULATOR_CONFIG* global_config;
+char *fuzzware_config_filename;
+struct SIMULATOR_CONFIG* config;
 #include "snapshot.h"
 
 
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
 uint8_t *__afl_undiscover_stream_data;
-uint8_t *__afl_discovered_irq_data;
 
 
 uint8_t *__afl_area_ptr;
@@ -43,15 +44,12 @@ FILE *flog;
 FILE *f_crash_log;
 
 
-uint32_t max_bbl_exec = 300000;
+uint32_t max_bbl_exec = MAX_BBL_EXEC;
 
 
 bool should_exit = false;
-uint32_t exit_code;
-uint32_t exit_info;
-uint64_t exit_pc;
+struct EXIT_INFO exit_info;
 uint32_t num_mmio;
-
 
 
 GArray* dumped_state_ids;
@@ -70,69 +68,45 @@ char *log_dir;
 
 struct SHARED_STREAMS
 {
-    uint32_t stream_id;
-    int32_t len;
-    int32_t *used;
-    uint32_t type;
-    int32_t element_size;
-    int32_t left_shift;
-    uint8_t *data;
+    bool avaliable;
+    struct stream_metadata *metadata;
+    struct fuzz_queue_stream *queue_streams;
 };
 
 GArray* fuzz_streams;
-int32_t* num_new_streams;
-uint32_t* new_streams;
+struct undiscovered_streams *undiscover_streams;
 
 
 
 void collect_streams()
 {
-
+    u32 i;
+    struct fuzz_queue *queue = (struct fuzz_queue *)__afl_share_fuzz_queue_data;
     struct SHARED_STREAMS *stream;
-    int i = 0;
-    uint32_t *current_queue_offset = (uint32_t *)__afl_share_fuzz_queue_data;
-    uint32_t offset;
-    uint8_t *ptr;
-    while((offset = current_queue_offset[i]) != 0xffffffff)
+    for(i = 0; i < queue->num_streams ; i++)
     {
-        ptr = __afl_share_stream_data + offset;
-        stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i / 2);
-        stream->stream_id = *(uint32_t*)ptr;
-        stream->len = *(int32_t*)(ptr + sizeof(stream->stream_id));
-        stream->type = *(uint32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len));
-        stream->element_size = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type));
-        stream->left_shift = *(int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size));
-        //stream->used = (int32_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift));
-        stream->used = &current_queue_offset[i+1];
-        stream->data = (uint8_t*)(ptr + sizeof(stream->stream_id) + sizeof(stream->len) + sizeof(stream->type) + sizeof(stream->element_size) + sizeof(stream->left_shift) + sizeof(*stream->used));
-        *stream->used = 0;
-        i += 2;
+        stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
+        stream->avaliable = true;
+        stream->metadata = (struct stream_metadata *)(__afl_share_stream_data + queue->streams[i].offset_to_stream_area);
+        stream->queue_streams = &queue->streams[i];
+        stream->queue_streams->used = 0;
     }
-
-    stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i / 2);
-
-    stream->stream_id = 0;
+    stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
+    stream->avaliable = false;
+    
 }
-inline bool discovered_stream(uint32_t stream_id)
-{
-    for(int i = 0; i < *num_new_streams; i++)
-    {
-        if(new_streams[i] == stream_id)
-            return true;
-    }
-    return false;
-}
+
 inline struct SHARED_STREAMS* find_stream(uint32_t stream_id)
 {
     struct SHARED_STREAMS *ret = NULL, *tmp;
-    for (int i = 0; ; i++) 
+    for (u32 i = 0; ; i++) 
     {
         
         tmp = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
-        if(tmp->stream_id == 0)
+        if(!tmp->avaliable)
             break;
         
-        if(tmp->stream_id == stream_id)
+        if(tmp->metadata->stream_id == stream_id)
         {
             ret = tmp;
             break;
@@ -171,8 +145,7 @@ void __afl_map_shm(void) {
     if (__afl_share_fuzz_queue_data == (void *)-1) _exit(1);
     }
 
-    num_new_streams = (uint32_t*)__afl_undiscover_stream_data;
-    new_streams = num_new_streams + 1;
+    undiscover_streams = (struct undiscovered_streams *)__afl_undiscover_stream_data;
 
 }
 
@@ -187,32 +160,24 @@ void start_new()
 
 void exit_with_code_start_new()
 {
-    
-    #ifdef DBG
-    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_code,exit_pc);
     run_index++;
+    #ifdef DBG
+    fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,exit_info.exit_pc);
+    
     #endif
 
 
-    
+    write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
+    start_new();
 
-    static uint32_t buf[128];
-    buf[0] = exit_code;
-    buf[1] = exit_info;
-    buf[2] = exit_pc;
-    buf[3] = num_mmio;
-
-    write(fd_to_fuzzer , buf,EXIT_INFORMATION_SIZE);   
-    arm_restore_snapshot(new_snap);
+    undiscover_streams->num_streams = 0;
+    collect_streams();
     num_mmio = 0;
-    // __afl_prev_loc = 0;
+    arm_restore_snapshot(new_snap);
+    
 
     should_exit = false;
     memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
-
-    start_new();
-    *num_new_streams = 0;
-    collect_streams();
     
     
 }
@@ -273,23 +238,23 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
     ihex_init(&ihex);
     for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
     {
-        if(global_config->rams[i].size == 0)
+        if(config->rams[i].size == 0)
             break;
-        buf = (uint8_t *)malloc(global_config->rams[i].size);
-        read_ram(global_config->rams[i].start,global_config->rams[i].size,buf);
-        ihex_write_at_address(&ihex, global_config->rams[i].start);
-        ihex_write_bytes(&ihex, buf, global_config->rams[i].size);
+        buf = (uint8_t *)malloc(config->rams[i].size);
+        read_ram(config->rams[i].start,config->rams[i].size,buf);
+        ihex_write_at_address(&ihex, config->rams[i].start);
+        ihex_write_bytes(&ihex, buf, config->rams[i].size);
 
         free(buf);
     }
     for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
     {
-        if(global_config->roms[i].size == 0)
+        if(config->roms[i].size == 0)
             break;
-        buf = (uint8_t *)malloc(global_config->roms[i].size);
-        read_ram(global_config->roms[i].start,global_config->roms[i].size,buf);
-        ihex_write_at_address(&ihex, global_config->roms[i].start);
-        ihex_write_bytes(&ihex, buf, global_config->roms[i].size);
+        buf = (uint8_t *)malloc(config->roms[i].size);
+        read_ram(config->roms[i].start,config->roms[i].size,buf);
+        ihex_write_at_address(&ihex, config->roms[i].start);
+        ihex_write_bytes(&ihex, buf, config->roms[i].size);
 
         free(buf);
     }
@@ -298,92 +263,93 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
     fclose(state_file);
 
 }
-void prepare_exit(uint32_t code,uint32_t info,uint64_t pc)
+void prepare_exit(uint32_t code,uint32_t oufofseed_mmio_id,uint64_t pc,uint32_t num_mmio)
 {
     should_exit = true;
-    exit_code = code;
-    exit_info = info;
-    exit_pc = pc;
+    exit_info.exit_code = code;
+    exit_info.exit_oufofseed_mmio_id = oufofseed_mmio_id;
+    exit_info.exit_pc = pc;
+    exit_info.num_mmio = num_mmio;
 }
-void get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out,uint64_t precise_pc)
+bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
 {
-    switch(stream->type)
+    switch(stream->metadata->mode)
     {
         case MODEL_VALUE_SET:
         {
 
-            uint32_t num_values = *(uint32_t *)(stream->data);
+            uint32_t num_values = *(uint32_t *)(stream->metadata->data);
 
-            uint32_t *value_set = (uint32_t *)(stream->data + sizeof(uint32_t));
+            uint32_t *value_set = (uint32_t *)(stream->metadata->data + sizeof(num_values));
 
-            // uint8_t *fuzz_data = stream->data  + sizeof(uint32_t) + num_values * sizeof(uint32_t);
-
-            if(unlikely(*stream->used == 0))
-                *stream->used = sizeof(uint32_t) + num_values * sizeof(uint32_t);
+            if(unlikely(stream->queue_streams->used == 0))
+                stream->queue_streams->used = sizeof(num_values) + num_values * sizeof(uint32_t);
             
-            if(stream->len - *stream->used < stream->element_size)
+            if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
             {
 
                 *out = value_set[0];  //give it a default one
-                prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+                return false;
 
             }
-                
             else
             {
                 uint32_t tmp = 0;
-                memcpy(&tmp,stream->data + *stream->used,stream->element_size);
+                memcpy(&tmp,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
                 *out = value_set[tmp % num_values];
-                *stream->used += stream->element_size;
-
+                stream->queue_streams->used += stream->metadata->element_size;
+                return true;
             }    
         }
         break;
         
         case MODEL_CONSTANT:
         {
-            *out = *(uint32_t*)(stream->data);
+            *out = *(uint32_t*)(stream->metadata->data);
         }
         break;
         case MODEL_BIT_EXTRACT:
         {
-            if(stream->len - *stream->used < stream->element_size)
+            if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
             {
-                prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+                return false;
             }
             else
             {
-                memcpy(out,stream->data + *stream->used,stream->element_size);
-                *out = *out << stream->left_shift;
-                *stream->used += stream->element_size;
+                memcpy(out,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
+                *out = *out << stream->metadata->left_shift;
+                stream->queue_streams->used += stream->metadata->element_size;
+                return true;
             }
         }
         break;
         case MODEL_PASSTHROUGH:
         {
-            
+            return true;
         }
         break;
 
         case MODEL_NONE:
         {
-            if(stream->len - *stream->used < stream->element_size)
+            if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
             {
-                prepare_exit(EXIT_OUTOFSEED,stream->stream_id,precise_pc);
+                return false;
             }
                 
             else
             {
                 
-                memcpy(out,stream->data + *stream->used,stream->element_size);
-                *stream->used += stream->element_size;
+                memcpy(out,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
+                stream->queue_streams->used += stream->metadata->element_size;
+                return true;
             }    
         }
         break;
         default:
         {
-            printf("wrong stream type:%d\n",stream->type);
+            printf("wrong stream type:%d\n",stream->metadata->mode);
             exit(0);
+            return false;
         }
         break;
     } 
@@ -395,6 +361,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     addr = (hwaddr)opaque + addr;
     uint64_t precise_pc = get_arm_precise_pc();
     uint64_t ret = 0;
+    bool outofseed;
     bool already_dumped_mmio_state = false;
 
 
@@ -408,38 +375,43 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     if(!stream)
     {
-        //if(!discovered_stream(stream_id))
-        {
-            new_streams[*num_new_streams] = stream_id;
-            (*num_new_streams)++;
 
-            
-            for(i = 0 ;i < dumped_state_ids->len ; i++)
-            {
-                if(g_array_index(dumped_state_ids, uint32_t, i) == stream_id)
-                    already_dumped_mmio_state = true;
-            }
-            
-            if(!already_dumped_mmio_state)
-            {
-                g_array_append_val(dumped_state_ids, stream_id);
-                dump_state(stream_id,true,MMIO_STATE_PREFIX,dump_dir);
-            }
-                
-            prepare_exit(EXIT_NONE,stream_id,precise_pc);
+        undiscover_streams->streams[undiscover_streams->num_streams++] = stream_id;
+
+        
+        for(i = 0 ;i < dumped_state_ids->len ; i++)
+        {
+            if(g_array_index(dumped_state_ids, uint32_t, i) == stream_id)
+                already_dumped_mmio_state = true;
         }
+        
+        if(!already_dumped_mmio_state)
+        {
+            g_array_append_val(dumped_state_ids, stream_id);
+            dump_state(stream_id,true,MMIO_STATE_PREFIX,dump_dir);
+        }
+            
+        prepare_exit(EXIT_NONE,stream_id,precise_pc,num_mmio);
+
 
     }
     else
     {
         num_mmio++;
-        get_fuzz_data(stream, &ret,precise_pc);     
+        outofseed = get_fuzz_data(stream, &ret);     
+        if(!outofseed)
+            prepare_exit(EXIT_OUTOFSEED,stream_id,precise_pc,num_mmio);
+
     }
 
 
     #ifdef DBG
     struct ARM_CPU_STATE state;
     get_arm_cpu_state(&state);
+    fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id);
+    #endif
+
+    #ifdef MMIO_READ_DBG
     fprintf(flog,"%d->mmio read pc:%p mmio_addr:%x val:%x stream_id:%x\n",run_index, get_arm_precise_pc(),addr,ret,stream_id);
     #endif
     return ret;
@@ -466,7 +438,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     if(unlikely(bbl >= max_bbl_exec))
     {
 
-        prepare_exit(EXIT_TIMEOUT,0,pc);
+        prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio);
         exit_with_code_start_new();
 
         return true;
@@ -529,7 +501,7 @@ void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
     int irq = (int)(uint64_t)data;
     if(!get_arm_v7m_is_handler_mode())
     {
-        if(mem_trigger_irq_times[irq] > 10)
+        if(mem_trigger_irq_times[irq] > 5)
         {
             insert_irq = insert_nvic_intc(irq);
             mem_trigger_irq_times[irq] = 0;
@@ -574,7 +546,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
     #endif
 
-    prepare_exit(EXIT_CRASH,0,state.regs[15]);
+    prepare_exit(EXIT_CRASH,0,state.regs[15],num_mmio);
     exit_with_code_start_new();
     return false;
 }
@@ -597,7 +569,7 @@ void enable_nvic_hook(int irq)
     #endif
 
     #ifndef ENABLE_IRQ
-    if(!dumped_irq[irq] && irq >= 15)
+    if(!dumped_irq[irq] && irq > 15)
     {
         sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
@@ -697,11 +669,11 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
         register_post_thread_exec_hook(post_thread_exec);
         register_exec_bbl_hook(arm_exec_bbl);
         register_enable_nvic_hook(enable_nvic_hook);
-        for(i = 0; i < 255 ; i++)
+        for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
         {
-            if(global_config->mmios[i].size == 0)
+            if(config->mmios[i].size == 0)
                 break;
-            add_mmio_region(global_config->mmios[i].name,global_config->mmios[i].start, global_config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)global_config->mmios[i].start);
+            add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)config->mmios[i].start);
         }
         new_snap = arm_take_snapshot();
         arm_restore_snapshot(new_snap);
@@ -709,7 +681,6 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
 
         uint32_t tmp; 
         write(fd_to_fuzzer , &tmp,4);  //forkserver up
-        //num_irqs = get_enabled_nvic_irq2(&irqs);
         start_new();
         collect_streams();
 
@@ -722,17 +693,21 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
         returned = true;
         return true;
     }
+    #ifdef DBG
+    fprintf(flog,"snapshot bbl:%x\n", pc);
+    #endif
     __afl_area_ptr[id] ++;
-    return false;
 
     return false;
 }
 
 
+
+
 void init(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "d:m:l:f:t:")) != -1) 
+    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:")) != -1) 
     {
         switch (opt) {
         case 'd':
@@ -750,12 +725,17 @@ void init(int argc, char **argv)
         case 't':
             fd_to_fuzzer = atoi(optarg);
             break;
+        case 'c':
+            config = generate_xx_config(optarg);
+            fuzzware_config_filename = optarg;
+            break;
         default: /* '?' */
             printf("Usage error\n");
             exit(0);
         }
     }
-
+    if(!config)
+        exit(0);
     char path_buffer[PATH_MAX];
     sprintf(path_buffer,"%s/simulator_log.txt",log_dir);
     flog = fopen(path_buffer,"w");
@@ -768,11 +748,12 @@ void init(int argc, char **argv)
 
     struct SHARED_STREAMS* stream;
     fuzz_streams = g_array_new(FALSE, FALSE, sizeof(struct SHARED_STREAMS*));
-    for(int i = 0; i < 200 ;i ++)
+    for(int i = 0; i < 5000 ;i ++)
     {
         stream = (struct SHARED_STREAMS *)malloc(sizeof(struct SHARED_STREAMS));
         g_array_append_val(fuzz_streams, stream); 
     }
+
     __afl_map_shm();
     dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
 
@@ -782,10 +763,9 @@ void init(int argc, char **argv)
 
 }
 
-int run_config(struct SIMULATOR_CONFIG *config)
+int run_config()
 {
     int i = 0;
-    global_config = config;
 
     struct Simulator *simulator;
     simulator = create_simulator(ARM_CORTEX_M,false);
@@ -833,6 +813,6 @@ int run_config(struct SIMULATOR_CONFIG *config)
     
     register_exec_bbl_hook(exec_bbl_snapshot);
     org_snap = arm_take_snapshot();
-
+    
     exec_simulator(simulator);
 }

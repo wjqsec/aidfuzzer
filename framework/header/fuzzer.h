@@ -19,17 +19,11 @@ typedef int64_t  s64;
 #define EXIT_OUTOFSEED 2
 #define EXIT_CRASH 3
 
-#define FORKSRV_CTLFD          198
-#define FORKSRV_DATAFD          200
-
-#define FUZZ_REQ 0x1
-#define CMP_VAL 0x2
-#define FUZZ_OUTPUT 0x3
-#define ACK 0x4
-
 
 #define MAX_STREAM_LEN 0x500000
-#define DEFAULT_STREAM_LEN 0x1000
+#define DEFAULT_STREAM_LEN 0x150
+
+#define MAX_BBL_EXEC 100000
 
 #define DEFAULT_ELEMENT_SIZE 4
 #define DEFAULT_IRQ_ELEMENT_SIZE 1
@@ -58,7 +52,6 @@ typedef int64_t  s64;
 #define MODE_FUZZ 1
 #define MODE_DEBUG 2
 
-#define EXIT_INFORMATION_SIZE 16
 #define NVIC_MAX_VECTORS 512
 
 #define MMIO_STATE_PREFIX "state_mmio_"
@@ -79,15 +72,46 @@ typedef int64_t  s64;
 #define NUM_IRQ_PER_WATCHPOINT 20
 
 
+struct EXIT_INFO
+{
+    u32 exit_code;
+    u32 exit_oufofseed_mmio_id;
+    u64 exit_pc;
+    u32 num_mmio;
+} __attribute__((packed));
+
+struct stream_metadata
+{
+    u32 stream_id;
+    s32 len;
+    u32 mode;
+    s32 element_size;
+    s32 left_shift;
+    u8 data[];
+} __attribute__((packed));
+
+struct fuzz_queue_stream
+{
+    u32 offset_to_stream_area;
+    u32 used;
+} __attribute__((packed));
+
+struct fuzz_queue
+{
+    u32 num_streams;
+    struct fuzz_queue_stream streams[];
+}__attribute__((packed));
+
+struct undiscovered_streams
+{
+    u32 num_streams;
+    u32 streams[];
+}__attribute__((packed));
+
+
 static __always_inline uint32_t hash_32(uint32_t number)
 {
         return number;
-        // uint32_t hash_value = number ^ (number >> 16);
-        // hash_value = hash_value * 0x85ebca6b;
-        // hash_value = hash_value ^ (hash_value >> 13);
-        // hash_value = hash_value * 0xc2b2ae35;
-        // hash_value = hash_value ^ (hash_value >> 16);
-        // return hash_value;
 }
 
 static __always_inline uint32_t hash_32_ext (uint32_t number)

@@ -20,10 +20,10 @@ static struct ARMM_SNAPSHOT* arm_take_snapshot()
     for(int i = 0; i < NUM_MEM_SNAPSHOT ; i ++)
     {
         snap->mems[i].len = 0;
-        if(global_config->rams[i].size && !global_config->rams[i].readonly)
+        if(config->rams[i].size && !config->rams[i].readonly)
         {
-            snap->mems[i].len = global_config->rams[i].size;
-            snap->mems[i].start = global_config->rams[i].start;
+            snap->mems[i].len = config->rams[i].size;
+            snap->mems[i].start = config->rams[i].start;
             snap->mems[i].data = (uint8_t*)malloc(snap->mems[i].len);
             read_ram(snap->mems[i].start,snap->mems[i].len,snap->mems[i].data);
         }

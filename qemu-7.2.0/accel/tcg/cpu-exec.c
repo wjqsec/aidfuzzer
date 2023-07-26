@@ -338,7 +338,8 @@ static bool check_for_breakpoints_slow(CPUState *cpu, target_ulong pc,
 #ifdef CONFIG_USER_ONLY
                 g_assert_not_reached();
 #else
-                CPUClass *cc = CPU_GET_CLASS(cpu);
+                //CPUClass *cc = CPU_GET_CLASS(cpu);
+                CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
                 assert(cc->tcg_ops->debug_check_breakpoint);
                 match_bp = cc->tcg_ops->debug_check_breakpoint(cpu);
 #endif
@@ -455,7 +456,8 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
          * counter hit zero); we must restore the guest PC to the address
          * of the start of the TB.
          */
-        CPUClass *cc = CPU_GET_CLASS(cpu);
+        //CPUClass *cc = CPU_GET_CLASS(cpu);
+        CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
 
         if (cc->tcg_ops->synchronize_from_tb) {
             cc->tcg_ops->synchronize_from_tb(cpu, last_tb);
@@ -490,7 +492,8 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
 
 static void cpu_exec_enter(CPUState *cpu)
 {
-    CPUClass *cc = CPU_GET_CLASS(cpu);
+    //CPUClass *cc = CPU_GET_CLASS(cpu);
+    CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
 
     if (cc->tcg_ops->cpu_exec_enter) {
         cc->tcg_ops->cpu_exec_enter(cpu);
@@ -499,7 +502,8 @@ static void cpu_exec_enter(CPUState *cpu)
 
 static void cpu_exec_exit(CPUState *cpu)
 {
-    CPUClass *cc = CPU_GET_CLASS(cpu);
+    //CPUClass *cc = CPU_GET_CLASS(cpu);
+    CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
 
     if (cc->tcg_ops->cpu_exec_exit) {
         cc->tcg_ops->cpu_exec_exit(cpu);
@@ -647,7 +651,8 @@ static inline bool cpu_handle_halt(CPUState *cpu)
 
 static inline void cpu_handle_debug_exception(CPUState *cpu)
 {
-    CPUClass *cc = CPU_GET_CLASS(cpu);
+    //CPUClass *cc = CPU_GET_CLASS(cpu);
+    CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
     CPUWatchpoint *wp;
 
     if (!cpu->watchpoint_hit) {
@@ -688,7 +693,8 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
            which will be handled outside the cpu execution
            loop */
 #if defined(TARGET_I386)
-        CPUClass *cc = CPU_GET_CLASS(cpu);
+        //CPUClass *cc = CPU_GET_CLASS(cpu);
+        CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
         cc->tcg_ops->fake_user_interrupt(cpu);
 #endif /* TARGET_I386 */
         *ret = cpu->exception_index;
@@ -696,7 +702,8 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
         return true;
 #else
         if (replay_exception()) {
-            CPUClass *cc = CPU_GET_CLASS(cpu);
+            //CPUClass *cc = CPU_GET_CLASS(cpu);
+            CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
             qemu_mutex_lock_iothread();
             cc->tcg_ops->do_interrupt(cpu);
             qemu_mutex_unlock_iothread();
@@ -806,7 +813,8 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
            True when it is, and we should restart on a new TB,
            and via longjmp via cpu_loop_exit.  */
         else {
-            CPUClass *cc = CPU_GET_CLASS(cpu);
+            //CPUClass *cc = CPU_GET_CLASS(cpu);
+            CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
 
             if (cc->tcg_ops->cpu_exec_interrupt &&
                 cc->tcg_ops->cpu_exec_interrupt(cpu, interrupt_request)) {
@@ -1041,8 +1049,8 @@ int cpu_exec(CPUState *cpu)
 void tcg_exec_realizefn(CPUState *cpu, Error **errp)
 {
     static bool tcg_target_initialized;
-    CPUClass *cc = CPU_GET_CLASS(cpu);
-
+    //CPUClass *cc = CPU_GET_CLASS(cpu);
+    CPUClass *cc = (CPUClass *)cpu->parent_obj.parent_obj.class;
     if (!tcg_target_initialized) {
         cc->tcg_ops->initialize();
         tcg_target_initialized = true;
