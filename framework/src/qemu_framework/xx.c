@@ -12,9 +12,9 @@ void main_loop_wait(int nonblocking);
 pre_thread_exec_cb pre_thread_exec_func;
 post_thread_exec_cb post_thread_exec_func;
 
-struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
+struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
 {
-    struct Simulator *ret = (struct Simulator *)malloc(sizeof(struct Simulator));
+    struct XXSimulator *ret = (struct XXSimulator *)malloc(sizeof(struct XXSimulator));
     set_xx_cpu_type(cpu_type);
     ret->cpu_type = cpu_type;
     ret->enable_gdb_dbg = dbg;
@@ -66,7 +66,7 @@ void load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
     free(tmp);
     fclose(fptr);
 }
-void exec_simulator(struct Simulator *s)
+void exec_simulator(struct XXSimulator *s)
 {
     while(1)
     {
@@ -88,7 +88,7 @@ void exec_simulator(struct Simulator *s)
     }
     
 }
-void init_simulator(struct Simulator * s)
+void init_simulator(struct XXSimulator * s)
 {
     int argc = 0;
     char* args_qemu[20];

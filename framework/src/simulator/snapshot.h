@@ -1,3 +1,5 @@
+#ifndef SNAPSHOT_INCLUDED
+#define SNAPSHOT_INCLUDED
 struct SNAPSHOT_MEM_SEG
 {
     uint8_t *data;
@@ -68,3 +70,5 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
 }
 
 static struct ARMM_SNAPSHOT *org_snap,*new_snap;
+
+#endif

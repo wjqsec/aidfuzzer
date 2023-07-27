@@ -1,3 +1,6 @@
+#ifndef CONFIG_INCLUDED
+
+#define CONFIG_INCLUDED
 #define MAX_NUM_MEM_REGION 255
 struct RAM
 {
@@ -147,3 +150,4 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
     config->mmios[mmio_index].size = 0;
     return config;
 }
+#endif

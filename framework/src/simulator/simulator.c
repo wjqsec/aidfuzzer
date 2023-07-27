@@ -44,7 +44,8 @@ FILE *flog;
 FILE *f_crash_log;
 
 
-uint32_t max_bbl_exec = MAX_BBL_EXEC;
+uint64_t nommio_executed_bbls;
+uint64_t max_bbl_exec = MAX_BBL_EXEC;
 
 
 bool should_exit = false;
@@ -160,6 +161,8 @@ void start_new()
 
 void exit_with_code_start_new()
 {
+    
+    
     run_index++;
     #ifdef DBG
     fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,exit_info.exit_pc);
@@ -174,12 +177,10 @@ void exit_with_code_start_new()
     collect_streams();
     num_mmio = 0;
     arm_restore_snapshot(new_snap);
-    
+    nommio_executed_bbls = 0;
 
     should_exit = false;
     memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
-    
-    
 }
 FILE *state_file;
 void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
@@ -271,8 +272,10 @@ void prepare_exit(uint32_t code,uint32_t oufofseed_mmio_id,uint64_t pc,uint32_t 
     exit_info.exit_pc = pc;
     exit_info.num_mmio = num_mmio;
 }
+
 bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
 {
+
     switch(stream->metadata->mode)
     {
         case MODEL_VALUE_SET:
@@ -353,6 +356,7 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
         }
         break;
     } 
+
 }
 
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
@@ -363,7 +367,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint64_t ret = 0;
     bool outofseed;
     bool already_dumped_mmio_state = false;
-
+    nommio_executed_bbls = 0;
 
     if(should_exit)
         return ret;
@@ -435,7 +439,7 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
 
-    if(unlikely(bbl >= max_bbl_exec))
+    if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
 
         prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio);
@@ -484,7 +488,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
     __afl_area_ptr[id] ++;
-    
+    nommio_executed_bbls++;
 
 
 
@@ -767,7 +771,7 @@ int run_config()
 {
     int i = 0;
 
-    struct Simulator *simulator;
+    struct XXSimulator *simulator;
     simulator = create_simulator(ARM_CORTEX_M,false);
     if(config->vecbase)
         set_armv7_vecbase(config->vecbase);

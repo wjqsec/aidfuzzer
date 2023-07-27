@@ -1,3 +1,8 @@
+#ifndef XX_INCLUDED
+
+#define XX_INCLUDED
+#include <stdint.h>
+#include <glib.h>
 typedef uint64_t hwaddr;
 typedef uint32_t MemTxResult;
 
@@ -8,7 +13,7 @@ enum XX_CPU_TYPE
 };
 
 
-struct Simulator
+struct XXSimulator
 {
     enum XX_CPU_TYPE cpu_type;
     bool enable_gdb_dbg;
@@ -146,9 +151,9 @@ typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void
  
 
   
-struct Simulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     
-void init_simulator(struct Simulator * s);
-void exec_simulator(struct Simulator *s);
+struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     
+void init_simulator(struct XXSimulator * s);
+void exec_simulator(struct XXSimulator *s);
 void check_nostop_watchpoint(hwaddr addr);
 
 enum XX_CPU_TYPE get_xx_cpu_type(void);
@@ -191,5 +196,5 @@ void xx_delete_nostop_watchpoint(void *watchpoint);
 #define insert_nostop_watchpoint xx_insert_nostop_watchpoint
 #define delete_nostop_watchpoint xx_delete_nostop_watchpoint
 
-
+#endif
 

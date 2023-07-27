@@ -1,3 +1,7 @@
+#ifndef FUZZER_INCLUDED
+
+#define FUZZER_INCLUDED
+
 #define SHM_ENV_VAR         "__AFL_SHM_ID"
 #define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
 #define SHM_SHARE_IRQ_VAR         "__AFL_IRQ_SHARE"
@@ -21,12 +25,13 @@ typedef int64_t  s64;
 
 
 #define MAX_STREAM_LEN 0x500000
-#define DEFAULT_STREAM_LEN 0x150
+#define DEFAULT_STREAM_LEN 0x100
 
-#define MAX_BBL_EXEC 100000
+#define MAX_BBL_EXEC 150000
 
 #define DEFAULT_ELEMENT_SIZE 4
-#define DEFAULT_IRQ_ELEMENT_SIZE 1
+
+
 
 #define IRQ_STREAM_ID 0xffffffff
 
@@ -41,7 +46,7 @@ typedef int64_t  s64;
 
 
 #define SHARE_FUZZDATA_SIZE 1 << 30
-#define FUZZ_COVERAGE_SIZE (1 << 18)
+#define FUZZ_COVERAGE_SIZE (1 << 16)
 
 #define MODEL_VALUE_SET 0
 #define MODEL_BIT_EXTRACT 1
@@ -84,6 +89,8 @@ struct stream_metadata
 {
     u32 stream_id;
     s32 len;
+    s32 minimum_len;
+    s32 initial_len;
     u32 mode;
     s32 element_size;
     s32 left_shift;
@@ -124,6 +131,6 @@ static __always_inline uint32_t hash_32_ext (uint32_t number)
         return hash_value;
 }
 
-
+#endif
 
 

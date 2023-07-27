@@ -1,3 +1,9 @@
+#ifndef AFLUTL_INCLUDED
+#define AFLUTL_INCLUDED
+#include <sys/time.h>
+#include <execinfo.h>
+#include <stdio.h>
+#include <stdlib.h>
 #define INTERESTING_8 \
   -128,          /* Overflow signed 8-bit when decremented  */ \
   -1,            /*                                         */ \
@@ -41,7 +47,7 @@ static u8 count_class_lookup8[256];
 
 static u16 count_class_lookup16[65536];
 
-void init_count_class16(void) {
+inline static void init_count_class16(void) {
   count_class_lookup8[0] = 0;
   count_class_lookup8[1] = 1;
   count_class_lookup8[2] = 2;
@@ -318,4 +324,22 @@ inline static u64 get_cur_time(void) {
   return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
 
 }
+static void print_trace (void)
+{
+  void *array[10];
+  char **strings;
+  int size, i;
 
+  size = backtrace (array, 10);
+  strings = backtrace_symbols (array, size);
+  if (strings != NULL)
+  {
+
+    printf ("Obtained %d stack frames.\n", size);
+    for (i = 0; i < size; i++)
+      printf ("%s\n", strings[i]);
+  }
+
+  free (strings);
+}
+#endif
