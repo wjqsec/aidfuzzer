@@ -2,5 +2,6 @@
 #define MUTATOR_INCLUDED
 
 #include "iofuzzer.h"
-void havoc(input_stream* stream);
+input_stream* havoc(FuzzState *state,input_stream* stream);
+input_stream* splicing(FuzzState *state,input_stream* stream);
 #endif

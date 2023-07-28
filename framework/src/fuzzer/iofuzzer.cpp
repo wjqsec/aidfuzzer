@@ -28,6 +28,7 @@
 #include "afl_utl.h"
 #include "iofuzzer.h"
 #include "mutator.h"
+#include "stream.h"
 using namespace std;
 
 
@@ -37,7 +38,6 @@ using namespace std;
 FuzzState global_state;
 
 
-pthread_mutex_t *entry_mutex;
 
 char  *in_dir;
 char  *out_dir;
@@ -61,161 +61,24 @@ char  coverage_file[PATH_MAX];
 
 
 
-inline u32 get_stream_used(FuzzState *state)
-{
-  return state->shared_stream_used;
-}
-inline void update_stream_ptr(FuzzState *state, u32 used)
-{
-  state->shared_stream_used += used;
-}
 
-input_stream *find_queued_stream(FuzzState *state,u32 id)
-{
-  for(input_stream *stream : *state->all_queued_streams)
-  {
-    if(stream->ptr->stream_id == id)
-      return stream;
-  }
-  return nullptr;
-}
-
-void free_stream(FuzzState *state,input_stream *stream)
-{
-  u32 id = stream->ptr->stream_id;
-  vector<input_stream *> *freed_streams;
-  if(state->freed_streams->count(id) == 0)
-  {
-    (*state->freed_streams)[id] = new vector<input_stream *>();
-  }
-  freed_streams = (*state->freed_streams)[id];
-  freed_streams->push_back(stream);
-
-}
-input_stream * allocate_freed_stream_copy_to(FuzzState *state,input_stream *old)
-{
-  input_stream * ret = nullptr;
-  vector<input_stream *>::iterator it;
-  vector<input_stream *> *freed_streams;
-  if(state->freed_streams->count(old->ptr->stream_id) == 0)
-    return ret;
-  freed_streams = (*state->freed_streams)[old->ptr->stream_id];
-
-  for(it = freed_streams->begin(); it != freed_streams->end();it++)
-  {
-    if((*it)->ptr->initial_len >= old->ptr->initial_len)
-    {
-      ret = *it;
-    }
-      
-  }
-  if(!ret)
-    return ret;
-  freed_streams->erase(--it);
-  ret->ptr->len = old->ptr->len;
-  memcpy(ret->ptr->data,old->ptr->data,ret->ptr->len);
-
-  return ret;
-}
-inline input_stream *allocate_new_stream(FuzzState *state,u32 id,input_stream *old , u32 len)
-{
-
-  u8 *fuzz_data_ptr;
-  u32 copy_len;
-  input_stream *stream = new input_stream();
-  if(!stream)
-    fatal("allocate new_stream memory error\n");
-
-  stream->offset_to_stream_area = get_stream_used(state);
-  stream->ptr = (stream_metadata*)(state->shared_stream_data + stream->offset_to_stream_area);
-  
-  if(old)
-  {
-    copy_len = len;
-    if(copy_len < old->ptr->minimum_len)
-      copy_len = old->ptr->minimum_len;
-    
-    stream->priority = old->priority;
-    stream->ptr->stream_id = old->ptr->stream_id;
-    stream->ptr->len = copy_len;
-    stream->ptr->mode = old->ptr->mode;
-    stream->ptr->element_size = old->ptr->element_size;
-    stream->ptr->left_shift = old->ptr->left_shift;
-
-    memcpy(stream->ptr->data,old->ptr->data,copy_len);
-  }
-  else
-  {
-    stream->priority = 1;
-    stream->ptr->stream_id = id;
-    stream->ptr->len = len;
-    stream->ptr->mode = MODEL_NONE;
-    stream->ptr->element_size = DEFAULT_ELEMENT_SIZE;
-    stream->ptr->left_shift = 0;
-    stream->ptr->minimum_len = stream->ptr->element_size;
-    for(int i = 0 ; i < (stream->ptr->len >> 2) ; i++)
-      ((u32*)stream->ptr->data)[i] = UR(0XFFFFFFFF);
-    {
-      for(auto it = state->models->begin() ; it != state->models->end() ; it++)
-      {
-        if(it->first == stream->ptr->stream_id)
-        {
-          stream->ptr->mode = it->second->mode;
-          if(stream->ptr->mode == MODEL_VALUE_SET)
-          {
-            stream->ptr->left_shift = 0;
-            stream->ptr->element_size = 1;
-            u32 *value_set_len_ptr = (u32 *)stream->ptr->data;
-            u32 *value_set_ptr = (u32 *)(stream->ptr->data + sizeof(*value_set_len_ptr));
-            *value_set_len_ptr = it->second->values->size();
-            u32 i = 0;
-            for(auto it2 = it->second->values->begin(); it2 != it->second->values->end(); it2++)
-            {
-              value_set_ptr[i++] = *it2;
-            }
-            stream->ptr->len += sizeof(*value_set_len_ptr) + (*value_set_len_ptr) * sizeof(*value_set_ptr);
-            stream->ptr->minimum_len = sizeof(*value_set_len_ptr) + (*value_set_len_ptr) * sizeof(*value_set_ptr) + stream->ptr->element_size;
-          }
-          if(stream->ptr->mode == MODEL_CONSTANT)
-          {
-            stream->ptr->left_shift = 0;
-            stream->ptr->element_size = 4;
-            stream->ptr->len = 4;
-            stream->ptr->minimum_len = stream->ptr->element_size;
-            fuzz_data_ptr = stream->ptr->data;
-            *(u32*)fuzz_data_ptr = it->second->constant_val;
-          }
-          if(stream->ptr->mode == MODEL_PASSTHROUGH)
-          {
-            stream->ptr->left_shift = 0;
-            stream->ptr->element_size = 4;
-            stream->ptr->len = 4;
-            stream->ptr->minimum_len = stream->ptr->element_size;
-          }
-          if(stream->ptr->mode == MODEL_BIT_EXTRACT)
-          {
-            stream->ptr->left_shift = it->second->left_shift;
-            stream->ptr->element_size = it->second->size;
-            stream->ptr->minimum_len = stream->ptr->element_size;
-          }
-
-        }
-      }
-    }
-  }
-  stream->ptr->initial_len = stream->ptr->len;
-  update_stream_ptr(state, sizeof(stream_metadata) + stream->ptr->len);
-  return stream;
-}
 
 
 inline void insert_queue(FuzzState *state,queue_entry* q)
 {
+  u32 id;
   state->entries->push_back(q);
   state->total_priority += q->priority;
+  vector<input_stream *> *queue_streams;
   for (auto it = q->streams->begin(); it != q->streams->end(); it++)
   {
-    state->all_queued_streams->push_back(it->second);
+    id = it->first;
+    if(state->all_queued_streams->count(id) == 0)
+    {
+      (*state->all_queued_streams)[id] = new vector<input_stream *>();
+    }
+    queue_streams = (*state->all_queued_streams)[id];
+    queue_streams->push_back(it->second);
   }
   
 }
@@ -253,13 +116,17 @@ void fuzzer_init(FuzzState *state, u32 map_size, u32 share_size)
     state->shared_stream_data = (u8*)shmat(shm_id, NULL, 0);
     if (state->shared_stream_data == (void *)-1) 
         fatal("shmat() failed");
+
+    for(u64 i = 0 ; i < (state->share_size >> 2) ; i++)
+      ((u32*)state->shared_stream_data)[i] = UR(0XFFFFFFFF);
+
     state->shm_id_streampool = shm_id;
     
     state->total_exec = 0;
     state->total_priority = 0;
 
     state->entries = new vector<queue_entry*>();
-    state->all_queued_streams = new vector<input_stream*>();
+    state->all_queued_streams = new map<u32,vector<input_stream*>*>();
     state->models = new map<u32,input_model*>();
     state->streamid_mmioaddr_mapping = new map<u32,u32>();
     state->simulators = new vector<Simulator*>();
@@ -335,7 +202,8 @@ Simulator *allocate_new_simulator(FuzzState *state)
   
   simulator->fd_ctl_to_simulator = ctl_pipe[1];
   simulator->fd_ctl_from_simulator = st_pipe[0];
-  
+  simulator->fuzz_stream = new map<u32,input_stream*>();
+
   state->fds[state->num_fds].fd = simulator->fd_ctl_from_simulator;
   state->fds[state->num_fds].events = POLLIN;
   state->fds[state->num_fds].revents = 0;
@@ -393,12 +261,15 @@ void copy_fuzz_data(Simulator *simulator)
 
   for(auto it = simulator->fuzz_entry->streams->begin(); it != simulator->fuzz_entry->streams->end(); it++)
   {
-    if(simulator->fuzz_stream && it->second->ptr->stream_id == simulator->fuzz_stream->ptr->stream_id)
-      queue->streams[i].offset_to_stream_area = simulator->fuzz_stream->offset_to_stream_area;
+    if(simulator->fuzz_stream->count(it->first))
+    {
+      queue->streams[i].offset_to_stream_area = (*simulator->fuzz_stream)[it->first]->offset_to_stream_area;
+    }
     else
       queue->streams[i].offset_to_stream_area = it->second->offset_to_stream_area;
     i++;
   }
+
 }
 void sync_max_stream_used_len(Simulator *simulator)
 {
@@ -428,7 +299,7 @@ bool sync_undiscovered_streams(FuzzState *state,queue_entry* q,Simulator *simula
     input_stream *stream = find_queued_stream(state,id);
 
     if(!stream)
-      stream = allocate_new_stream(state,id,nullptr, DEFAULT_STREAM_LEN);
+      stream = allocate_new_stream(state,id, DEFAULT_STREAM_LEN);
     
     (*q->streams)[id] = stream;
   }
@@ -468,40 +339,11 @@ void save_coverage(FuzzState *state)
 
 void sync_state(FuzzState *state)
 {
-  /*
-  DIR* dir;
-  struct dirent* dir_entry;
-
-  
-  load_stream_pool(state);
-
-  sync_models(state);
-
-  
-  dir = opendir(queue_dir);
-  if (dir == NULL)
-      fatal("opendir error");
-
-  while ((dir_entry = readdir(dir)) != NULL) 
-  {
-    if (dir_entry->d_type == DT_DIR && strcmp(dir_entry->d_name,".") && strcmp(dir_entry->d_name,"..")) 
-    {
-      u32 entry_id = strtol(dir_entry->d_name,0,16);
-      if(state->cksums_entries->count(entry_id) == 0)
-      {
-        queue_entry *q = load_entry(state,entry_id,queue_dir);
-        state->entries->push_back(q);
-      }
-    }
-  }
-  closedir(dir);
-  
-  */
   if(state->entries->size() == 0)
   {
     queue_entry *q = copy_queue(state,nullptr);
     #ifdef ENABLE_IRQ
-    input_stream *stream = allocate_new_stream(state,IRQ_STREAM_ID,nullptr,nullptr,DEFAULT_STREAM_LEN);  //irq always there
+    input_stream *stream = allocate_new_stream(state,IRQ_STREAM_ID,DEFAULT_STREAM_LEN);  //irq always there
     (*q->streams)[IRQ_STREAM_ID] = stream;
     #endif
     insert_queue(state,q);
@@ -554,7 +396,6 @@ void sync_models(FuzzState *state,Simulator *simulator)
   FILE *fp = fopen(line , "r");
   if(fp == NULL) 
   {
-    printf("model file %s not found, try without modelling or model already existed\n",line);
     return;
   }
   while(fgets(line, PATH_MAX, fp))
@@ -628,7 +469,6 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *
 {
   EXIT_INFO exit_info;
   simulator->fuzz_entry = entry;
-  simulator->fuzz_stream = nullptr;
   bool found_new_streams = false;
   
   do
@@ -639,9 +479,6 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *
     sync_models(state,simulator);
     found_new_streams = sync_undiscovered_streams(state,entry,simulator);
   }while(found_new_streams);
-
-
-  
 
   classify_counts((u64*)simulator->trace_bits,simulator->map_size);
   has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
@@ -656,9 +493,8 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *
 void fuzz_one_post(FuzzState *state,Simulator *simulator)
 {
   queue_entry* fuzz_entry;
-  input_stream *fuzz_stream;
+  map<u32,input_stream*> *fuzz_stream;
   EXIT_INFO exit_info;
-  bool is_timeout = false;
   
   if(simulator->status == STATUS_FREE)
     return;
@@ -685,7 +521,6 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   if(exit_info.exit_code == EXIT_TIMEOUT)
   {
     state->exit_timeout++;
-    is_timeout = true;
   }
   
   if(exit_info.exit_code == EXIT_OUTOFSEED)
@@ -698,10 +533,11 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   {
     if(unlikely(r == 2))
       save_coverage(state);
-    // if(unlikely(!is_timeout))
-    //   fuzz_stream->priority += 1;
     queue_entry* q = copy_queue(state,fuzz_entry);
-    (*q->streams)[fuzz_stream->ptr->stream_id] = fuzz_stream;
+    for(auto it = fuzz_stream->begin(); it != fuzz_stream->end(); ++it)
+    {
+      (*q->streams)[it->first] = it->second;
+    }
     q->depth++;
     find_all_streams_save_queue(state,q,simulator);
     insert_queue(state,q);
@@ -709,8 +545,12 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   }
   else
   {
-    free_stream(state,fuzz_stream);
+    for(auto it = fuzz_stream->begin(); it != fuzz_stream->end(); ++it)
+    {
+      free_stream(state,it->second);
+    }
   }
+  fuzz_stream->clear();
 }
 
 Simulator* get_avaliable_simulator(FuzzState *state)
@@ -757,22 +597,46 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
 
     for(i = 0 ; i < it->second->priority ; i++)
     {
-      simulator = get_avaliable_simulator(state);  // may block
+      simulator = get_avaliable_simulator(state);  
       fuzz_one_post(state,simulator);
-
-      fuzz_stream = allocate_freed_stream_copy_to(state,it->second);
-
-      if(!fuzz_stream)
-        fuzz_stream = allocate_new_stream(state,it->second->ptr->stream_id,it->second,it->second->ptr->len);
-
-      havoc(fuzz_stream);
-
-      
       simulator->fuzz_entry = entry;
-      simulator->fuzz_stream = fuzz_stream;
+      if(UR(5))
+      {
+        fuzz_stream = havoc(state,it->second);
+      }
+      else
+      {
+        fuzz_stream = splicing(state,it->second);
+        if(!fuzz_stream)
+          continue;
+      }
+      (*simulator->fuzz_stream)[it->first] = fuzz_stream;
       fuzz_entry(simulator);
+      
     } 
   }
+  simulator = get_avaliable_simulator(state);  
+  fuzz_one_post(state,simulator);
+  simulator->fuzz_entry = entry;
+  for(auto it = entry->streams->begin() ; it != entry->streams->end() ; it++)
+  {
+    if(it->second->ptr->mode == MODEL_CONSTANT || it->second->ptr->mode == MODEL_PASSTHROUGH)
+      continue;
+    if(UR(2))
+    {
+      if(UR(5))
+        fuzz_stream = havoc(state,it->second);
+      else
+      {
+        fuzz_stream = splicing(state,it->second);
+        if(!fuzz_stream)
+          continue;
+      }
+      (*simulator->fuzz_stream)[it->first] = fuzz_stream; 
+    }
+  }
+  fuzz_entry(simulator);
+
 
 }
 

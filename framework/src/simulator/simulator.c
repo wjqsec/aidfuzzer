@@ -70,8 +70,9 @@ char *log_dir;
 struct SHARED_STREAMS
 {
     bool avaliable;
-    struct stream_metadata *metadata;
     struct fuzz_queue_stream *queue_streams;
+    struct stream_metadata *metadata;
+    
 };
 
 GArray* fuzz_streams;
@@ -88,8 +89,9 @@ void collect_streams()
     {
         stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
         stream->avaliable = true;
-        stream->metadata = (struct stream_metadata *)(__afl_share_stream_data + queue->streams[i].offset_to_stream_area);
         stream->queue_streams = &queue->streams[i];
+        stream->metadata = (struct stream_metadata *)(__afl_share_stream_data + stream->queue_streams->offset_to_stream_area);
+        
         stream->queue_streams->used = 0;
     }
     stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
@@ -280,18 +282,11 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
     {
         case MODEL_VALUE_SET:
         {
-
-            uint32_t num_values = *(uint32_t *)(stream->metadata->data);
-
-            uint32_t *value_set = (uint32_t *)(stream->metadata->data + sizeof(num_values));
-
-            if(unlikely(stream->queue_streams->used == 0))
-                stream->queue_streams->used = sizeof(num_values) + num_values * sizeof(uint32_t);
             
             if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
             {
 
-                *out = value_set[0];  //give it a default one
+                *out = stream->metadata->value_set[0];  //give it a default one
                 return false;
 
             }
@@ -299,7 +294,7 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
             {
                 uint32_t tmp = 0;
                 memcpy(&tmp,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
-                *out = value_set[tmp % num_values];
+                *out = stream->metadata->value_set[tmp % stream->metadata->value_set_size];
                 stream->queue_streams->used += stream->metadata->element_size;
                 return true;
             }    

@@ -25,7 +25,7 @@ typedef int64_t  s64;
 
 
 #define MAX_STREAM_LEN 0x500000
-#define DEFAULT_STREAM_LEN 0x100
+#define DEFAULT_STREAM_LEN 0x50
 
 #define MAX_BBL_EXEC 150000
 
@@ -87,13 +87,15 @@ struct EXIT_INFO
 
 struct stream_metadata
 {
+#define MAX_VALUE_SET_SIZE 255
     u32 stream_id;
     s32 len;
-    s32 minimum_len;
     s32 initial_len;
     u32 mode;
     s32 element_size;
     s32 left_shift;
+    s32 value_set_size;
+    u32 value_set[MAX_VALUE_SET_SIZE];
     u8 data[];
 } __attribute__((packed));
 

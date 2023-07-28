@@ -64,7 +64,7 @@ struct Simulator
     int status;
 
     queue_entry* fuzz_entry;
-    input_stream* fuzz_stream;
+    map<u32,input_stream*> *fuzz_stream;
 
     FuzzState *state;
 
@@ -84,7 +84,7 @@ struct FuzzState
     s64 total_priority;
 
     vector<queue_entry*> *entries;
-    vector<input_stream*> *all_queued_streams;
+    map<u32,vector<input_stream*>*> *all_queued_streams;
     map<u32,vector<input_stream*>*> *freed_streams;
     
     
@@ -110,6 +110,4 @@ struct FuzzState
 
 };
 
-inline input_stream *allocate_new_stream(FuzzState *state,u32 id,input_stream *old , u32 len);
-input_stream * allocate_freed_stream_copy_to(FuzzState *state,input_stream *old);
 #endif
