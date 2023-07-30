@@ -22,6 +22,7 @@
 //#define DBG
 #define CRASH_DBG
 //#define MMIO_READ_DBG
+#define EXIT_DBG
 
 
 char *fuzzware_config_filename;
@@ -625,9 +626,15 @@ void enable_nvic_hook(int irq)
 }
 void post_thread_exec(int exec_ret)
 {
-
-    #ifdef DBG
     struct ARM_CPU_STATE state;
+    #ifdef DBG
+
+    get_arm_cpu_state(&state);
+    fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
+    #endif
+
+    #ifdef EXIT_DBG
+    
 
     get_arm_cpu_state(&state);
     fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);

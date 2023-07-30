@@ -704,7 +704,6 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
     uintptr_t align = qemu_icache_linesize;
     TranslationBlock *tb;
     void *next;
-
  retry:
     tb = (void *)ROUND_UP((uintptr_t)s->code_gen_ptr, align);
     next = (void *)ROUND_UP((uintptr_t)(tb + 1), align);

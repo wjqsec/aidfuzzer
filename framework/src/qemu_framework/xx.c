@@ -76,15 +76,15 @@ void exec_simulator(struct XXSimulator *s)
         int ret = xx_thread_loop(s->enable_gdb_dbg);
         if(post_thread_exec_func)
             post_thread_exec_func(ret);
-        if(!main_loop_should_exit(&status))
-        {
-            main_loop_wait(false);
-        }
-        else
-        {
-            printf("exit simulating\n");
-            break;
-        }
+        // if(!main_loop_should_exit(&status))
+        // {
+        //     main_loop_wait(false);
+        // }
+        // else
+        // {
+        //     printf("exit simulating\n");
+        //     break;
+        // }
     }
     
 }

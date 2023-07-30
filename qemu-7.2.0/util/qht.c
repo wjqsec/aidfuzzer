@@ -489,6 +489,7 @@ static inline
 void *qht_do_lookup(const struct qht_bucket *head, qht_lookup_func_t func,
                     const void *userp, uint32_t hash)
 {
+
     const struct qht_bucket *b = head;
     int i;
 
@@ -666,6 +667,7 @@ static inline bool qht_entry_is_last(const struct qht_bucket *b, int pos)
 static void
 qht_entry_move(struct qht_bucket *to, int i, struct qht_bucket *from, int j)
 {
+
     qht_debug_assert(!(to == from && i == j));
     qht_debug_assert(to->pointers[i]);
     qht_debug_assert(from->pointers[j]);
@@ -683,6 +685,7 @@ qht_entry_move(struct qht_bucket *to, int i, struct qht_bucket *from, int j)
  */
 static inline void qht_bucket_remove_entry(struct qht_bucket *orig, int pos)
 {
+
     struct qht_bucket *b = orig;
     struct qht_bucket *prev = NULL;
     int i;
@@ -739,6 +742,7 @@ bool qht_remove__locked(struct qht_bucket *head, const void *p, uint32_t hash)
 
 bool qht_remove(struct qht *ht, const void *p, uint32_t hash)
 {
+
     struct qht_bucket *b;
     struct qht_map *map;
     bool ret;
@@ -756,6 +760,7 @@ bool qht_remove(struct qht *ht, const void *p, uint32_t hash)
 static inline void qht_bucket_iter(struct qht_bucket *head,
                                    const struct qht_iter *iter, void *userp)
 {
+
     struct qht_bucket *b = head;
     int i;
 
@@ -823,6 +828,7 @@ void qht_iter(struct qht *ht, qht_iter_func_t func, void *userp)
 
 void qht_iter_remove(struct qht *ht, qht_iter_bool_func_t func, void *userp)
 {
+
     const struct qht_iter iter = {
         .f.retbool = func,
         .type = QHT_ITER_RM,
@@ -853,6 +859,7 @@ static void qht_map_copy(void *p, uint32_t hash, void *userp)
  */
 static void qht_do_resize_reset(struct qht *ht, struct qht_map *new, bool reset)
 {
+
     struct qht_map *old;
     const struct qht_iter iter = {
         .f.retvoid = qht_map_copy,
@@ -885,6 +892,7 @@ static void qht_do_resize_reset(struct qht *ht, struct qht_map *new, bool reset)
 
 bool qht_resize(struct qht *ht, size_t n_elems)
 {
+
     size_t n_buckets = qht_elems_to_buckets(n_elems);
     size_t ret = false;
 
@@ -904,6 +912,7 @@ bool qht_resize(struct qht *ht, size_t n_elems)
 /* pass @stats to qht_statistics_destroy() when done */
 void qht_statistics_init(const struct qht *ht, struct qht_stats *stats)
 {
+
     const struct qht_map *map;
     int i;
 
@@ -959,6 +968,7 @@ void qht_statistics_init(const struct qht *ht, struct qht_stats *stats)
 
 void qht_statistics_destroy(struct qht_stats *stats)
 {
+
     qdist_destroy(&stats->occupancy);
     qdist_destroy(&stats->chain);
 }

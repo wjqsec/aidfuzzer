@@ -45,7 +45,7 @@ typedef int64_t  s64;
 #endif
 
 
-#define SHARE_FUZZDATA_SIZE 1 << 30
+#define SHARE_FUZZDATA_SIZE 3 << 30
 #define FUZZ_COVERAGE_SIZE (1 << 16)
 
 #define MODEL_VALUE_SET 0

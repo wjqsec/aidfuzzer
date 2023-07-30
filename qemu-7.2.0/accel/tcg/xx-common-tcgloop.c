@@ -118,11 +118,11 @@ void set_xx_cpu_type(enum XX_CPU_TYPE type) { xx_cpu_type = type; }
 
 MemTxResult xx_write_ram(hwaddr addr, hwaddr size, void *buf)
 {
-    return address_space_write(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, size);
+    return address_space_write(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED_NO_SET_INVALID, buf, size);
 }
 MemTxResult xx_read_ram(hwaddr addr, hwaddr size, void *buf)
 {
-    return address_space_read_full(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, size);
+    return address_space_read_full(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED_NO_SET_INVALID, buf, size);
 }
 
 MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len)
@@ -381,7 +381,7 @@ int xx_thread_loop(bool debug)
 	        
 		if(debug)
         {
-            main_loop_wait(true);
+            main_loop_wait(false);
         }
 			
 		if(cpu_can_run(cpu))
@@ -422,7 +422,7 @@ int xx_thread_loop(bool debug)
 			}
 		} else if(debug)
         {
-            main_loop_wait(true);
+            main_loop_wait(false);
         }
     }
     cpu->exit_request = false;

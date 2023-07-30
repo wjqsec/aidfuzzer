@@ -267,10 +267,14 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, target_ulong pc,
                tb_cflags(tb) == cflags)) {
         return tb;
     }
+
     tb = tb_htable_lookup(cpu, pc, cs_base, flags, cflags);
     if (tb == NULL) {
+
         return NULL;
+        
     }
+
     tb_jmp_cache_set(jc, hash, tb, pc);
     return tb;
 }

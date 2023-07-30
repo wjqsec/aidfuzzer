@@ -2835,7 +2835,8 @@ static MemTxResult flatview_write_continue(FlatView *fv, hwaddr addr,
             /* RAM case */
             ram_ptr = qemu_ram_ptr_length(mr->ram_block, addr1, &l, false);
             memcpy(ram_ptr, buf, l);
-            invalidate_and_set_dirty(mr, addr1, l);
+            if(!attrs.no_set_invalid)
+                invalidate_and_set_dirty(mr, addr1, l);
         }
 
         if (release_lock) {

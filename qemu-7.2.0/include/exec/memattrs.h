@@ -57,6 +57,8 @@ typedef struct MemTxAttrs {
     unsigned int target_tlb_bit0 : 1;
     unsigned int target_tlb_bit1 : 1;
     unsigned int target_tlb_bit2 : 1;
+
+    unsigned int no_set_invalid : 1;
 } MemTxAttrs;
 
 /* Bus masters which don't specify any attributes will get this,
@@ -65,6 +67,7 @@ typedef struct MemTxAttrs {
  * from "didn't specify" if necessary).
  */
 #define MEMTXATTRS_UNSPECIFIED ((MemTxAttrs) { .unspecified = 1 })
+#define MEMTXATTRS_UNSPECIFIED_NO_SET_INVALID ((MemTxAttrs) { .unspecified = 1, .no_set_invalid = 1 })
 
 /* New-style MMIO accessors can indicate that the transaction failed.
  * A zero (MEMTX_OK) response means success; anything else is a failure

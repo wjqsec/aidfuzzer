@@ -46,8 +46,6 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
             break;
         int num_pages = snap->mems[num_mem].len / page_size;
         
-        // write_ram(snap->mems[num_mem].start,snap->mems[num_mem].len,snap->mems[num_mem].data);
-        
         get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, (unsigned long*)dirty_bits);
         for(int i = 0 ; i < num_pages ; i++)
         {
