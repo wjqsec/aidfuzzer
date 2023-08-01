@@ -463,6 +463,7 @@ static size_t tcg_n_regions(size_t tb_size, unsigned max_cpus)
  * Users running large scale system emulation may want to tweak their
  * runtime setup via the tb-size control on the command line.
  */
+// #define DEFAULT_CODE_GEN_BUFFER_SIZE_1 (1 * GiB)
 #define DEFAULT_CODE_GEN_BUFFER_SIZE_1 (4 * GiB)
 #endif
 #endif

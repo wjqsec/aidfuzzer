@@ -7,5 +7,7 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len);
 input_stream * allocate_enough_space_stream(FuzzState *state,u32 id, s32 len);
 void free_stream(FuzzState *state,input_stream *stream);
 input_stream *find_queued_stream(FuzzState *state,u32 id);
+u32 get_stream_used(FuzzState *state);
+void update_stream_ptr(FuzzState *state, u32 used);
 
 #endif

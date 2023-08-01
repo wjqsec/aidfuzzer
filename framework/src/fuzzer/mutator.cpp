@@ -4,12 +4,12 @@
 #include "afl_utl.h"
 #include "stream.h"
 
-#define HAVOC_BLK_SMALL     32
-#define HAVOC_BLK_MEDIUM    128
-#define HAVOC_BLK_LARGE     1500
-#define HAVOC_BLK_XL        32768
+#define HAVOC_BLK_SMALL     16
+#define HAVOC_BLK_MEDIUM    64
+#define HAVOC_BLK_LARGE     256
+#define HAVOC_BLK_XL        512
 
-#define MAX_FILE            (1 * 1024 * 1024)
+#define MAX_FILE            (5 * 1024)
 #ifndef MIN
 #  define MIN(_a,_b) ((_a) > (_b) ? (_b) : (_a))
 #  define MAX(_a,_b) ((_a) > (_b) ? (_a) : (_b))
@@ -44,7 +44,7 @@ static u32 choose_block_len(u32 limit) {
 
     default: 
 
-             if (UR(10)) {
+             if (UR(20)) {
 
                min_value = HAVOC_BLK_MEDIUM;
                max_value = HAVOC_BLK_LARGE;
@@ -106,40 +106,6 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   len = ret->ptr->len;
   data = ret->ptr->data;
   
-  /*
-  if(ret->ptr->mode == MODEL_BIT_EXTRACT && ret->ptr->element_size == 1 && UR(4))
-  {
-    for (i = 0; i < use_stacking; i++) 
-    {
-      switch (UR(HAVOC_TOKEN))
-      {
-        case 1:
-        case 2:
-        case 3:
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-        case 8:
-        case 9:
-        case 10:
-        case 11:
-        case 12:
-        case 13:
-        case 14:
-        case 15:
-        case 16:
-        case 18:
-        case 19:
-        default:
-        {
-          data[UR(len)] = 0x61 + UR(0x7a - 0x60);  // ascii printable 
-        }
-      }
-    }
-    return ret;
-  }
-  */
   for (i = 0; i < use_stacking; i++) 
   {
     

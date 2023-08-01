@@ -2,11 +2,11 @@
 #include "stream.h"
 #include "afl_utl.h"
 
-static inline u32 get_stream_used(FuzzState *state)
+u32 get_stream_used(FuzzState *state)
 {
   return state->shared_stream_used;
 }
-static inline void update_stream_ptr(FuzzState *state, u32 used)
+void update_stream_ptr(FuzzState *state, u32 used)
 {
   state->shared_stream_used += used;
 }
@@ -71,7 +71,7 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
   if(!stream)
     fatal("allocate new_stream memory error\n");
 
-  stream->priority = 1;
+  stream->priority = DEFAULT_STREAM_PRIORITY;
   stream->offset_to_stream_area = get_stream_used(state);
   stream->ptr = (stream_metadata*)(state->shared_stream_data + stream->offset_to_stream_area);
   

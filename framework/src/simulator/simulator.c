@@ -54,7 +54,6 @@ struct EXIT_INFO exit_info;
 uint32_t num_mmio;
 
 
-GArray* dumped_state_ids;
 
 bool dumped_irq[NVIC_MAX_VECTORS];
 
@@ -68,55 +67,44 @@ char *log_dir;
 
 
 
-struct SHARED_STREAMS
+struct SHARED_STREAM
 {
-    bool avaliable;
-    struct fuzz_queue_stream *queue_streams;
     struct stream_metadata *metadata;
-    
+    u32 used;
+    bool avaliable;
+    bool dumped;
 };
-
-GArray* fuzz_streams;
 struct undiscovered_streams *undiscover_streams;
+struct SHARED_STREAM * streams[NUM_QUEUE_STREAMS];
+
 
 
 
 void collect_streams()
 {
-    u32 i;
+    u32 i,index;
+    struct SHARED_STREAM *stream;
+    struct stream_metadata *metadata;
+    for(i = 0 ; i < NUM_QUEUE_STREAMS ; i++)
+    {
+        streams[i]->avaliable = false;
+    }
     struct fuzz_queue *queue = (struct fuzz_queue *)__afl_share_fuzz_queue_data;
-    struct SHARED_STREAMS *stream;
     for(i = 0; i < queue->num_streams ; i++)
     {
-        stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
-        stream->avaliable = true;
-        stream->queue_streams = &queue->streams[i];
-        stream->metadata = (struct stream_metadata *)(__afl_share_stream_data + stream->queue_streams->offset_to_stream_area);
-        
-        stream->queue_streams->used = 0;
-    }
-    stream = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
-    stream->avaliable = false;
-    
-}
-
-inline struct SHARED_STREAMS* find_stream(uint32_t stream_id)
-{
-    struct SHARED_STREAMS *ret = NULL, *tmp;
-    for (u32 i = 0; ; i++) 
-    {
-        
-        tmp = g_array_index(fuzz_streams, struct SHARED_STREAMS*, i);
-        if(!tmp->avaliable)
-            break;
-        
-        if(tmp->metadata->stream_id == stream_id)
+        metadata = (struct stream_metadata *)(__afl_share_stream_data + queue->streams[i].offset_to_stream_area);
+        index = metadata->stream_id % NUM_QUEUE_STREAMS;
+        if(streams[index]->avaliable)
         {
-            ret = tmp;
-            break;
+            printf("stream index colission\n");
+            exit(0);
         }
+        streams[index]->avaliable = true;
+        streams[index]->used = 0;
+        streams[index]->metadata = metadata;
+        
     }
-    return ret;
+    
 }
 
 void __afl_map_shm(void) {
@@ -154,12 +142,25 @@ void __afl_map_shm(void) {
 }
 
 
-
+void terminate()
+{
+    shmdt(__afl_area_ptr);
+    shmdt(__afl_share_stream_data);
+    shmdt(__afl_undiscover_stream_data);
+    shmdt(__afl_share_fuzz_queue_data);
+    while (1)
+    {
+        ;
+    }
+    
+}
 
 void start_new()
 {
     uint32_t tmp;
     read(fd_from_fuzzer,&tmp,4);  // start new run
+    if(unlikely(tmp == CMD_TERMINATE))
+        terminate();
 }
 
 void exit_with_code_start_new()
@@ -171,7 +172,6 @@ void exit_with_code_start_new()
     fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,exit_info.exit_pc);
     
     #endif
-
 
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
     start_new();
@@ -276,15 +276,15 @@ void prepare_exit(uint32_t code,uint32_t oufofseed_mmio_id,uint64_t pc,uint32_t 
     exit_info.num_mmio = num_mmio;
 }
 
-bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
+bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
 {
 
     switch(stream->metadata->mode)
     {
         case MODEL_VALUE_SET:
         {
-            
-            if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
+            nommio_executed_bbls = 0;
+            if(stream->metadata->len - stream->used < stream->metadata->element_size)
             {
 
                 *out = stream->metadata->value_set[0];  //give it a default one
@@ -294,9 +294,9 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
             else
             {
                 uint32_t tmp = 0;
-                memcpy(&tmp,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
+                memcpy(&tmp,stream->metadata->data + stream->used,stream->metadata->element_size);
                 *out = stream->metadata->value_set[tmp % stream->metadata->value_set_size];
-                stream->queue_streams->used += stream->metadata->element_size;
+                stream->used += stream->metadata->element_size;
                 return true;
             }    
         }
@@ -309,15 +309,16 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
         break;
         case MODEL_BIT_EXTRACT:
         {
-            if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
+            nommio_executed_bbls = 0;
+            if(stream->metadata->len - stream->used < stream->metadata->element_size)
             {
                 return false;
             }
             else
             {
-                memcpy(out,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
+                memcpy(out,stream->metadata->data + stream->used,stream->metadata->element_size);
                 *out = *out << stream->metadata->left_shift;
-                stream->queue_streams->used += stream->metadata->element_size;
+                stream->used += stream->metadata->element_size;
                 return true;
             }
         }
@@ -330,7 +331,8 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
 
         case MODEL_NONE:
         {
-            if(stream->metadata->len - stream->queue_streams->used < stream->metadata->element_size)
+            nommio_executed_bbls = 0;
+            if(stream->metadata->len - stream->used < stream->metadata->element_size)
             {
                 return false;
             }
@@ -338,8 +340,8 @@ bool get_fuzz_data(struct SHARED_STREAMS * stream, uint64_t *out)
             else
             {
                 
-                memcpy(out,stream->metadata->data + stream->queue_streams->used,stream->metadata->element_size);
-                stream->queue_streams->used += stream->metadata->element_size;
+                memcpy(out,stream->metadata->data + stream->used,stream->metadata->element_size);
+                stream->used += stream->metadata->element_size;
                 return true;
             }    
         }
@@ -362,33 +364,26 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     uint64_t precise_pc = get_arm_precise_pc();
     uint64_t ret = 0;
     bool outofseed;
-    bool already_dumped_mmio_state = false;
-    nommio_executed_bbls = 0;
+    
 
     if(should_exit)
         return ret;
 
-    uint32_t stream_id = hash_32_ext(addr) ^ hash_32_ext(precise_pc) ;//& 0xfffffff0;
+    uint32_t stream_id = hash_32_ext(addr) ^ hash_32_ext(precise_pc) ;
     
+    uint32_t index = stream_id % NUM_QUEUE_STREAMS;
+    struct SHARED_STREAM * stream =  streams[index];
 
-    struct SHARED_STREAMS * stream =  find_stream(stream_id);
 
-    if(!stream)
+    if(!stream->avaliable)
     {
-
         undiscover_streams->streams[undiscover_streams->num_streams++] = stream_id;
 
         
-        for(i = 0 ;i < dumped_state_ids->len ; i++)
+        if(!stream->dumped)
         {
-            if(g_array_index(dumped_state_ids, uint32_t, i) == stream_id)
-                already_dumped_mmio_state = true;
-        }
-        
-        if(!already_dumped_mmio_state)
-        {
-            g_array_append_val(dumped_state_ids, stream_id);
             dump_state(stream_id,true,MMIO_STATE_PREFIX,dump_dir);
+            stream->dumped = true;
         }
             
         prepare_exit(EXIT_NONE,stream_id,precise_pc,num_mmio);
@@ -454,7 +449,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     #ifdef ENABLE_IRQ
     if(bbl != 0 && *num_irqs && (bbl & 0xff) == 0)
     {
-        struct SHARED_STREAMS* stream =  find_stream(IRQ_STREAM_ID);
+        struct SHARED_STREAM* stream =  find_stream(IRQ_STREAM_ID);
         if(!stream)
         {
             printf("fatal:not irq stream found\n");
@@ -571,6 +566,7 @@ void enable_nvic_hook(int irq)
     #ifndef ENABLE_IRQ
     if(!dumped_irq[irq] && irq > 15)
     {
+        dumped_irq[irq] = true;
         sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
         dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
@@ -618,7 +614,7 @@ void enable_nvic_hook(int irq)
         }
         fclose(f);
         puts("model done");
-        dumped_irq[irq] = true;
+        
     }
 
     #endif
@@ -752,16 +748,14 @@ void init(int argc, char **argv)
     setbuf(f_crash_log,0);
 
 
-    struct SHARED_STREAMS* stream;
-    fuzz_streams = g_array_new(FALSE, FALSE, sizeof(struct SHARED_STREAMS*));
-    for(int i = 0; i < 5000 ;i ++)
+    for(int i = 0; i < NUM_QUEUE_STREAMS ;i ++)
     {
-        stream = (struct SHARED_STREAMS *)malloc(sizeof(struct SHARED_STREAMS));
-        g_array_append_val(fuzz_streams, stream); 
+        streams[i] = (struct SHARED_STREAM *)malloc(sizeof(struct SHARED_STREAM));
+        streams[i]->avaliable = false;
+        streams[i]->dumped = false;
     }
 
     __afl_map_shm();
-    dumped_state_ids = g_array_new(FALSE, FALSE, sizeof(uint32_t));
 
     memset(dumped_irq, 0, NVIC_MAX_VECTORS);
     memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));

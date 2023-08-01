@@ -66,6 +66,8 @@ typedef int64_t  s64;
 #define FUZZWARE_PATH "/home/w/hd/iofuzzer/fuzzware"
 #define MMIO_MODEL_FILENAME "mmio_model.yml"
 #define IRQ_MODEL_FILENAME "irq_model.yml"
+#define STREAM_POOL_FILENAME "pool.bin"
+#define FREED_STREAMS_FILENAME "freed_streams"
 //#define ENABLE_IRQ
 
 
@@ -76,6 +78,11 @@ typedef int64_t  s64;
 #define NUM_WATCHPOINT (1 << 20)
 #define NUM_IRQ_PER_WATCHPOINT 20
 
+#define NUM_QUEUE_STREAMS 0x1000
+
+
+#define CMD_FUZZ 0
+#define CMD_TERMINATE 1
 
 struct EXIT_INFO
 {
