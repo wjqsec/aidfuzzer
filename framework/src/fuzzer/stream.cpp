@@ -41,24 +41,26 @@ void free_stream(FuzzState *state,input_stream *stream)
 input_stream * allocate_freed_enough_space_stream(FuzzState *state,u32 id, s32 len)
 {
   input_stream * ret = nullptr;
-  vector<input_stream *>::iterator it;
+  vector<input_stream *>::iterator need_remove;
   vector<input_stream *> *freed_streams;
   if(state->freed_streams->count(id) == 0)
     return ret;
   freed_streams = (*state->freed_streams)[id];
 
-  for(it = freed_streams->begin(); it != freed_streams->end();it++)
+  for(auto it = freed_streams->begin(); it != freed_streams->end();it++)
   {
     if((*it)->ptr->initial_len >= len)
     {
       ret = *it;
+      need_remove = it;
+      break;
     }
       
   }
   if(!ret)
     return ret;
   ret->ptr->len = len;
-  freed_streams->erase(--it);
+  freed_streams->erase(need_remove);
   return ret;
 }
 

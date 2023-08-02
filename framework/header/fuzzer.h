@@ -22,6 +22,8 @@ typedef int64_t  s64;
 #define EXIT_TIMEOUT 1
 #define EXIT_OUTOFSEED 2
 #define EXIT_CRASH 3
+#define EXIT_FORKSRV_UP 4
+#define EXIT_TERMINATE 5
 
 
 #define MAX_STREAM_LEN 0x500000
@@ -78,7 +80,7 @@ typedef int64_t  s64;
 #define NUM_WATCHPOINT (1 << 20)
 #define NUM_IRQ_PER_WATCHPOINT 20
 
-#define NUM_QUEUE_STREAMS 0x1000
+#define NUM_QUEUE_STREAMS 0x10000
 
 
 #define CMD_FUZZ 0

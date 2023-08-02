@@ -33,8 +33,6 @@ struct SIMULATOR_CONFIG* config;
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
 uint8_t *__afl_undiscover_stream_data;
-
-
 uint8_t *__afl_area_ptr;
 uint32_t __afl_prev_loc;
 
@@ -144,10 +142,13 @@ void __afl_map_shm(void) {
 
 void terminate()
 {
+
     shmdt(__afl_area_ptr);
     shmdt(__afl_share_stream_data);
     shmdt(__afl_undiscover_stream_data);
     shmdt(__afl_share_fuzz_queue_data);
+    exit_info.exit_code = EXIT_TERMINATE;
+    write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
     while (1)
     {
         ;
@@ -167,12 +168,11 @@ void exit_with_code_start_new()
 {
     
     
-    run_index++;
     #ifdef DBG
     fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,exit_info.exit_pc);
     
     #endif
-
+    
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
     start_new();
 
@@ -181,7 +181,7 @@ void exit_with_code_start_new()
     num_mmio = 0;
     arm_restore_snapshot(new_snap);
     nommio_executed_bbls = 0;
-
+    run_index++;
     should_exit = false;
     memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
 }
@@ -429,7 +429,6 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 
 bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
-
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
 
@@ -530,15 +529,22 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
         return true;
     }
     
-    #ifdef CRASH_DBG
+    #if defined(DBG) || defined(CRASH_DBG)
     get_arm_cpu_state(&state);
     uint32_t sp0, sp1,sp2;
     read_ram(state.regs[13],4, &sp0);
     read_ram(state.regs[13] + 4,4, &sp1);
     read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(f_crash_log,"crash index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
-    exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
+    #ifdef CRASH_DBG
+    fprintf(f_crash_log,"%d->crash index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    run_index,exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
     state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
+    #endif
+    #ifdef DBG
+    fprintf(flog,"%d->crash index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    run_index,exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
+    state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
+    #endif
     #endif
 
     prepare_exit(EXIT_CRASH,0,state.regs[15],num_mmio);
@@ -567,6 +573,7 @@ void enable_nvic_hook(int irq)
     if(!dumped_irq[irq] && irq > 15)
     {
         dumped_irq[irq] = true;
+        return;
         sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
         dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
@@ -581,7 +588,6 @@ void enable_nvic_hook(int irq)
         int type;
         while(fgets(line, PATH_MAX, f))
         {
-
             if(strstr(line,"-"))
             {
                 int tmp_irq = strtol(strstr(line,"-") + 1,0,10);
@@ -681,8 +687,9 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
         arm_restore_snapshot(new_snap);
         
 
-        uint32_t tmp; 
-        write(fd_to_fuzzer , &tmp,4);  //forkserver up
+        exit_info.exit_code = EXIT_FORKSRV_UP;
+        write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
+        
         start_new();
         collect_streams();
 

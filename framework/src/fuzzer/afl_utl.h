@@ -274,27 +274,10 @@ inline static u32 UR(u32 limit) {
 
 }
 
-// does d2 totally cover d1?
-inline static bool cover_all_bits(u8* d1, u8* d2, u32 size)
-{
-  u32* s1 = (u32*)d1;
-  u32* s2  = (u32*)d2;
-  u32 j = size >> 2;
-  for(u32 i = 0; i < j ; i++ )
-  {
-    if((s1[i] | s2[i]) != s2[i])
-    {
-      //printf("return false %d  %x  %x  %x  %d\n",i,s1[i],s2[i],s1[i] | s2[i],(s1[i] | s2[i]) != s2[i]);
-      return false;
-    }
-  }
-  return true;
-}
 inline static void fatal(const char *msg)
 {
     printf("%s",msg);
     fflush(stdout);
-    system("reset");
     exit(0);
 }
 

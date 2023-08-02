@@ -71,9 +71,6 @@ struct Simulator
 
     FuzzState *state;
 
-    u32 average_exec_per_sec;
-
-
 };
 struct FuzzState
 {
@@ -81,8 +78,10 @@ struct FuzzState
     u32 share_size;
     u8 *virgin_bits;
     u8 *shared_stream_data;
-    u32 shared_stream_used;
     s32 shm_id_streampool;
+
+    u32 shared_stream_used;
+    
 
     u32 total_exec;
     s64 total_priority;
@@ -90,7 +89,7 @@ struct FuzzState
     vector<queue_entry*> *entries;
     map<u32,vector<input_stream*>*> *all_queued_streams;
     map<u32,vector<input_stream*>*> *freed_streams;
-    
+    set<u32> *crash_ids;
     
     map<u32,input_model*> *models;
     map<u32,u32> *streamid_mmioaddr_mapping;
