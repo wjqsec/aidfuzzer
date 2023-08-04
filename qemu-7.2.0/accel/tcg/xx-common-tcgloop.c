@@ -372,7 +372,7 @@ int xx_thread_loop(bool debug)
         init = true;
     }
 
-    if(!cpu->stop && !cpu->exit_request)
+    //if(!cpu->stop && !cpu->exit_request)
     {
         if(!cpu_work_list_empty(cpu))
         {
@@ -426,6 +426,7 @@ int xx_thread_loop(bool debug)
         }
     }
     cpu->exit_request = false;
+    cpu->stop = false;
     return r;
 }
 

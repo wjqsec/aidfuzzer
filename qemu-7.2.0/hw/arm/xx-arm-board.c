@@ -121,7 +121,7 @@ void* xx_save_arm_ctx_state(void)
 }
 void xx_restore_arm_ctx_state(void* state)
 {
-    bbl_counts = 0;
+    bbl_counts = 1;
     //qemu_devices_reset(SHUTDOWN_CAUSE_SNAPSHOT_LOAD);
     struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
     memcpy(&cpu->env,ret->env,offsetof(CPUARMState, end_reset_fields));

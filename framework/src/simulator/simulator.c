@@ -437,6 +437,11 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
         return true;
     }
+    if(unlikely(pc == 0x4500))
+    {
+        insert_nvic_intc(ARMV7M_EXCP_SYSTICK);
+        insert_nvic_intc(0x28);
+    }
     if(unlikely(should_exit))  //run out of seed
     {
 
@@ -578,7 +583,7 @@ void enable_nvic_hook(int irq)
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
         dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
         printf("pc:%x  ",get_arm_precise_pc());
-        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/irq_model.py %s %s %x > /dev/null 2>&1",state_filename,model_filename,irq);
+        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/irq_model.py -s %s -i %x -o %s -c %s > /dev/null 2>&1",state_filename,irq,model_filename,fuzzware_config_filename);
         puts(cmd);
         system(cmd);
         
@@ -635,19 +640,17 @@ void post_thread_exec(int exec_ret)
     fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
     #endif
 
-    #ifdef EXIT_DBG
-    
+    // #ifdef EXIT_DBG
+    // get_arm_cpu_state(&state);
+    // fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
+    // #endif
 
     get_arm_cpu_state(&state);
-    fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
-    #endif
+    prepare_exit(EXIT_TIMEOUT,0,state.regs[15],num_mmio);
+    exit_with_code_start_new();
+
 }
-void exec_ins_icmp(hwaddr pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index)
-{
-    #ifdef DBG
-    fprintf(flog,"%d->ins icmp pc:%p\n",run_index, pc);
-    #endif
-}
+
 //////////////////////////////////////////////////snapshot below
 
 hwaddr snapshot_point = 0;
@@ -735,8 +738,9 @@ void init(int argc, char **argv)
             fd_to_fuzzer = atoi(optarg);
             break;
         case 'c':
+            fuzzware_config_filename = strdup(optarg);
             config = generate_xx_config(optarg);
-            fuzzware_config_filename = optarg;
+            
             break;
         default: /* '?' */
             printf("Usage error\n");
@@ -821,5 +825,6 @@ int run_config()
     register_exec_bbl_hook(exec_bbl_snapshot);
     org_snap = arm_take_snapshot();
     
+
     exec_simulator(simulator);
 }

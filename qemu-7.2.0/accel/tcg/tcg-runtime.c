@@ -49,7 +49,7 @@ uint64_t  HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 	    CPUState *cpu = env_cpu(env);
 	    cpu_loop_exit(cpu);
     }
-    //bbl_counts++;
+    bbl_counts++;
 	//qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
     return 1;
 }

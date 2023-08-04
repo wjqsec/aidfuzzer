@@ -519,12 +519,9 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   fuzz_exit(simulator,&exit_info);
   fuzz_entry = simulator->fuzz_entry;
   fuzz_stream = simulator->fuzz_stream;
-
   
-  classify_counts((u64*)simulator->trace_bits,simulator->map_size);
-  int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  // stackover flow crash may taint our virgin bits so we don't save it to the queue or count their bits.
 
-  
   if(exit_info.exit_code == EXIT_CRASH)
   {
     u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
@@ -544,9 +541,18 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
       free_queue(q);
       state->crash_ids->insert(cksum);
     }
+    for(auto it = fuzz_stream->begin(); it != fuzz_stream->end(); ++it)
+    {
+      free_stream(state,it->second);
+    }
+    fuzz_stream->clear();
+    return;
     
   }
   
+  classify_counts((u64*)simulator->trace_bits,simulator->map_size);
+  int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+
   if(exit_info.exit_code == EXIT_NONE)
   {
     state->exit_none++;
@@ -563,7 +569,7 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
     
   }
 
-  if(unlikely(r))
+  if(unlikely(r && exit_info.exit_code != EXIT_CRASH))
   {
     if(unlikely(r == 2))
       save_coverage(state);
@@ -576,7 +582,6 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
     q->depth++;
     find_all_streams_save_queue(state,q,simulator);
     insert_queue(state,q);
-
   }
   else
   {

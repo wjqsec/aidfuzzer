@@ -3,6 +3,9 @@ import re
 from io import BytesIO
 import angr
 import claripy
+import argparse
+from config import *
+
 state_snapshot_reg_list = ['r0', 'r1', 'r2', 'r3', 'r4',
         'r5', 'r6', 'r7', 'r8', 'r9',
         'r10', 'r11', 'r12', 'lr', 'pc',
@@ -30,17 +33,9 @@ def translate_reg_name_to_vex_internal_name(name):
     return name
 
 
-global_cfg = {      "vecbase" : 0x8000000,
-                    "mmio1" : {
-                        "type" : "mmio",
-                        "start" : 0x20000000,
-                        "len"   : 0x20000000
-} 
-              }
-def parse_cfg_file(cfgfile):
-    return global_cfg
 
-def from_state_file(statefile, cfgfile,irq):
+def from_state_file(statefile, global_cfg,irq):
+        
         with open(statefile, "r") as state_file:
             regs = {}
 
@@ -56,7 +51,7 @@ def from_state_file(statefile, cfgfile,irq):
 
             sio = BytesIO(line.encode()+state_file.read().encode())
 
-        irq_addr = global_cfg["vecbase"] + int(irq,16) * 4
+        irq_addr = global_cfg.vecbase + int(irq,16) * 4
         project = angr.Project(sio, arch="ARMCortexM", main_opts={'backend': 'hex'})
         emptry_state = project.factory.entry_state()
         irq_val = emptry_state.memory.load(irq_addr, 4, endness='Iend_LE')
@@ -85,7 +80,7 @@ def from_state_file(statefile, cfgfile,irq):
             setattr(initial_state.regs, name, ast)
 
         
-        return project, initial_state, parse_cfg_file(cfgfile)
+        return project, initial_state
 
 # def from_elf_file(elffile,cfgfile):
 #     project = angr.Project(elffile)

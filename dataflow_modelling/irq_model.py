@@ -5,15 +5,14 @@ import re
 import sys
 import time
 from pathlib import Path
+import argparse
+from config import *
+
+
+
+config = Configs()
 stack_size = 0x4000
 
-MAX_ACTIVE_STATES = 100
-
-MAX_DEAD_VARS = 3
-MAX_STATES = 20
-MAX_CALL_DEPTH = 2
-MAX_BB_VISITS = 5
-NON_FORKING_STATE_MAX_BB_VISITS = 50
 
 class ACCESS_INFO:
     def __init__(self):
@@ -68,7 +67,13 @@ def write_model_to_file(models,modelfilename):
 
 
 def is_mmio_address(state, addr):
-    return addr >= 0x40000000 and addr <= 0x50000000
+    for mem in config.mems:
+        if addr >= mem.start and addr <= mem.start + mem.size:
+            if mem.ismmio:
+                return True
+            else:
+                return False
+    return False
 
 def is_ast_mmio_address(state, ast):
     try:
@@ -93,7 +98,15 @@ def is_ast_stack_address(state,ast):
 
 
 def is_pointer(state,addr):
-    return (addr >= 0x20000000 and addr <= 0x20020000) or (addr >= 0x8000000 and addr <= 0x8017000)
+    for mem in config.mems:
+        if addr >= mem.start and addr <= mem.start + mem.size:
+            if mem.ismmio:
+                return False
+            else:
+                return True
+    return False
+                
+        
 
 def is_ast_value_pointer(state,value):
     try:
@@ -103,7 +116,13 @@ def is_ast_value_pointer(state,value):
     return is_pointer(state,addr)
 
 def is_readonly_addr(state,addr):
-    return addr >= 0x8000000 and addr <= 0x8044000
+    for mem in config.mems:
+        if addr >= mem.start and addr <= mem.start + mem.size:
+            if mem.isreadonly:
+                return True
+            else:
+                return False
+    return False
 
 def is_ast_addr_readonly(state,addr):
     try:
@@ -111,7 +130,7 @@ def is_ast_addr_readonly(state,addr):
     except Exception as e:
         return False
     return is_readonly_addr(state,addr)
-
+'''
 def mem_read_before(state):
     try:
         address = state.solver.eval_one(state.inspect.mem_read_address)
@@ -144,7 +163,7 @@ def mem_write_before(state):
     pass
 def mem_write_after(state):
     pass
-
+'''
 
 def is_memory_action(action):
     return isinstance(action, angr.state_plugins.sim_action.SimActionData) and action.type == 'mem'
@@ -157,80 +176,67 @@ def is_memory_write_action(action):
 
 
 
-if(len(sys.argv) < 4):
-    print("args error")
-    exit(0)
 
-models = irq_model_from_file(sys.argv[2])
+def main():
+    parser = argparse.ArgumentParser(description="dataflow modeling",
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-s", "--state", help="irq state binary file")
+    parser.add_argument("-i", "--irq",  help="irq number")
+    parser.add_argument("-o", "--output", help="output file name")
+    parser.add_argument("-c","--config",  help="fuzzware config file")
+    args = parser.parse_args()
+    config.from_fuzzware_config_file(args.config)
+    models = irq_model_from_file(args.output)
 
-project, initial_state, cfg = from_state_file(sys.argv[1],None,sys.argv[3])
-
-
-# initial_state.inspect.b('mem_read',when=angr.BP_BEFORE,action=mem_read_before)
-# initial_state.inspect.b('mem_read',when=angr.BP_AFTER,action=mem_read_after)
-# initial_state.inspect.b('mem_write',when=angr.BP_BEFORE,action=mem_write_before)
-# initial_state.inspect.b('mem_write',when=angr.BP_AFTER,action=mem_write_after)
-
-
-simgr = project.factory.simgr(initial_state)
-
-
-
-# simgr.use_technique(TimeoutDetector(1000))
-# simgr.use_technique(LoopEscaper())
-# simgr.use_technique(StateExplosionDetector())
-
-for i in range(200):
-    if i == 20 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
-        break
-    simgr.step(thumb=True)
-
-states = simgr.active + simgr.deadended + simgr.unconstrained
-
-model = IRQ_MODEL()
-accessses = []
-for state in states:
-    access = []
-    for action in state.history.actions:
-        if not is_memory_action(action):
-            continue
-        if is_ast_stack_address(initial_state,action.addr):
-            continue
-        
-        if is_ast_addr_readonly(state,action.addr):
-            continue
-        
-        if is_ast_mmio_address(state,action.addr):
-            info = ACCESS_INFO()
-            info.ins_addr = state.solver.eval_one(action.ins_addr)
-            info.addr = state.solver.min(action.addr)
-            info.size = int((action.size + 0)/8)
-            info.type = "mmio"
-            access.append(info)
-        if not action.addr.symbolic:
-            info = ACCESS_INFO()
-            info.ins_addr = state.solver.eval_one(action.ins_addr)
-            info.addr = state.solver.min(action.addr)
-            info.size = int((action.size + 0)/8)
-            info.type = "mem"
-            access.append(info)
+    project, initial_state = from_state_file(args.state,config,args.irq)
+    simgr = project.factory.simgr(initial_state)
+    for i in range(200):
+        if i == 20 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:
+            break
+        simgr.step(thumb=True)
+    states = simgr.active + simgr.deadended + simgr.unconstrained
+    model = IRQ_MODEL()
+    accessses = []
+    for state in states:
+        access = []
+        for action in state.history.actions:
+            if not is_memory_action(action):
+                continue
+            if is_ast_stack_address(initial_state,action.addr):
+                continue
             
-    if access == []:   
-        continue 
-    accessses.append(access)
+            if is_ast_addr_readonly(state,action.addr):
+                continue
+            
+            if is_ast_mmio_address(state,action.addr):
+                info = ACCESS_INFO()
+                info.ins_addr = state.solver.eval_one(action.ins_addr)
+                info.addr = state.solver.min(action.addr)
+                info.size = int((action.size + 0)/8)
+                info.type = "mmio"
+                access.append(info)
+            if not action.addr.symbolic:
+                info = ACCESS_INFO()
+                info.ins_addr = state.solver.eval_one(action.ins_addr)
+                info.addr = state.solver.min(action.addr)
+                info.size = int((action.size + 0)/8)
+                info.type = "mem"
+                access.append(info)
+                
+        if access == []:   
+            continue 
+        accessses.append(access)
 
-tmp = set()
-for ac in accessses:
-    for info in ac:
-        tmp.add(info)
-model.accesses = [x for x in tmp]
-models[int(sys.argv[3],16)] = model
-write_model_to_file(models,sys.argv[2])
+    tmp = set()
+    for ac in accessses:
+        for info in ac:
+            tmp.add(info)
+    model.accesses = [x for x in tmp]
+    models[int(args.irq,16)] = model
+    write_model_to_file(models,args.output)
 
-
-
-        
-    
+if __name__ == '__main__':
+    main()
             
     
     
