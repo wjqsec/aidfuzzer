@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 import argparse
 from config import *
-
+from inifinite_loop_check import *
 
 
 config = Configs()
@@ -184,11 +184,19 @@ def main():
     parser.add_argument("-i", "--irq",  help="irq number")
     parser.add_argument("-o", "--output", help="output file name")
     parser.add_argument("-c","--config",  help="fuzzware config file")
+    parser.add_argument("-m","--mode",  help="irq/loop mode")
     args = parser.parse_args()
     config.from_fuzzware_config_file(args.config)
     models = irq_model_from_file(args.output)
 
     project, initial_state = from_state_file(args.state,config,args.irq)
+    if args.mode == "loop":
+        loop_addrs = find_all_infinite_loop(project, initial_state,config)
+        with open(args.output,"w") as f:
+            for addr in loop_addrs:
+                f.write("%x\n"%(addr))
+        return
+    
     simgr = project.factory.simgr(initial_state)
     for i in range(200):
         if i == 20 and len(simgr.active + simgr.deadended + simgr.unconstrained) <= 1:

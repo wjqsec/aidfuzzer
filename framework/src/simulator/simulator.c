@@ -54,8 +54,10 @@ uint32_t num_mmio;
 
 
 bool dumped_irq[NVIC_MAX_VECTORS];
-
 uint8_t mem_trigger_irq_times[NVIC_MAX_VECTORS];  // insert an irq when the corresponding memory is accessed for n times.
+uint16_t do_mmio_irqs[NVIC_MAX_VECTORS];
+int num_do_mmio_irqs;
+
 
 uint32_t run_index;
 
@@ -183,6 +185,7 @@ void exit_with_code_start_new()
     nommio_executed_bbls = 0;
     run_index++;
     should_exit = false;
+    num_do_mmio_irqs = 0;
     memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
 }
 FILE *state_file;
@@ -288,7 +291,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
             {
 
                 *out = stream->metadata->value_set[0];  //give it a default one
-                return false;
+                return true;
 
             }
             else
@@ -297,7 +300,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
                 memcpy(&tmp,stream->metadata->data + stream->used,stream->metadata->element_size);
                 *out = stream->metadata->value_set[tmp % stream->metadata->value_set_size];
                 stream->used += stream->metadata->element_size;
-                return true;
+                return false;
             }    
         }
         break;
@@ -305,6 +308,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         case MODEL_CONSTANT:
         {
             *out = *(uint32_t*)(stream->metadata->data);
+            return false;
         }
         break;
         case MODEL_BIT_EXTRACT:
@@ -312,20 +316,20 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
             nommio_executed_bbls = 0;
             if(stream->metadata->len - stream->used < stream->metadata->element_size)
             {
-                return false;
+                return true;
             }
             else
             {
                 memcpy(out,stream->metadata->data + stream->used,stream->metadata->element_size);
                 *out = *out << stream->metadata->left_shift;
                 stream->used += stream->metadata->element_size;
-                return true;
+                return false;
             }
         }
         break;
         case MODEL_PASSTHROUGH:
         {
-            return true;
+            return false;
         }
         break;
 
@@ -334,7 +338,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
             nommio_executed_bbls = 0;
             if(stream->metadata->len - stream->used < stream->metadata->element_size)
             {
-                return false;
+                return true;
             }
                 
             else
@@ -342,7 +346,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
                 
                 memcpy(out,stream->metadata->data + stream->used,stream->metadata->element_size);
                 stream->used += stream->metadata->element_size;
-                return true;
+                return false;
             }    
         }
         break;
@@ -350,7 +354,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         {
             printf("wrong stream type:%d\n",stream->metadata->mode);
             exit(0);
-            return false;
+            return true;
         }
         break;
     } 
@@ -394,7 +398,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     {
         num_mmio++;
         outofseed = get_fuzz_data(stream, &ret);     
-        if(!outofseed)
+        if(outofseed)
             prepare_exit(EXIT_OUTOFSEED,stream_id,precise_pc,num_mmio);
 
     }
@@ -437,11 +441,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
         return true;
     }
-    if(unlikely(pc == 0x4500))
-    {
-        insert_nvic_intc(ARMV7M_EXCP_SYSTICK);
-        insert_nvic_intc(0x28);
-    }
+
     if(unlikely(should_exit))  //run out of seed
     {
 
@@ -490,9 +490,15 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 
 
     return false;
-    
-
-    
+}
+bool arm_exec_loop_bbl(hwaddr pc,uint32_t id,int64_t bbl)
+{
+    insert_nvic_intc(ARMV7M_EXCP_SYSTICK);
+    for(int i=0; i<num_do_mmio_irqs ; i++)
+    {
+        insert_nvic_intc(do_mmio_irqs[i]);
+    }
+    return false;
 }
 void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
 {
@@ -583,7 +589,7 @@ void enable_nvic_hook(int irq)
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
         dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
         printf("pc:%x  ",get_arm_precise_pc());
-        sprintf(cmd,"python3 /home/w/hd/iofuzzer/xxfuzzer/dataflow_modelling/irq_model.py -s %s -i %x -o %s -c %s > /dev/null 2>&1",state_filename,irq,model_filename,fuzzware_config_filename);
+        sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -m %s -s %s -i %x -o %s -c %s > /dev/null 2>&1","irq",state_filename,irq,model_filename,fuzzware_config_filename);
         puts(cmd);
         system(cmd);
         
@@ -713,6 +719,33 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
     return false;
 }
 
+void get_all_infinite_loop()
+{
+    FILE *f;
+    char state_filename[PATH_MAX];
+    char model_filename[PATH_MAX];
+    char line[PATH_MAX];
+    char cmd[PATH_MAX];
+    sprintf(state_filename,"%s/%s%08x",dump_dir,LOOP_STATE_PREFIX,0);
+    sprintf(model_filename,"%s/%s",model_dir,LOOP_MODEL_FILENAME);
+    dump_state(0,false,LOOP_STATE_PREFIX,dump_dir);
+    sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -m %s -s %s -i %x -o %s -c %s > /dev/null 2>&1","loop",state_filename,0,model_filename,fuzzware_config_filename);
+    puts(cmd);
+    system(cmd);
+    
+    f = fopen(model_filename,"r");
+    while(fgets(line, PATH_MAX, f))
+    {
+        uint32_t addr = strtol(line,0,16);
+        if(addr)
+        {
+            register_exec_specific_bbl_hook(addr,arm_exec_loop_bbl);
+            printf("register_exec_specific_bbl_hook %x\n",addr);
+        }
+            
+    }
+    fclose(f);
+}
 
 
 
@@ -821,10 +854,9 @@ int run_config()
     }
     reset_arm_reg();
     
-    
     register_exec_bbl_hook(exec_bbl_snapshot);
     org_snap = arm_take_snapshot();
     
-
+    get_all_infinite_loop();
     exec_simulator(simulator);
 }

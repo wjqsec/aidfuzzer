@@ -63,11 +63,12 @@ typedef int64_t  s64;
 
 #define MMIO_STATE_PREFIX "state_mmio_"
 #define IRQ_STATE_PREFIX "state_irq_"
-
+#define LOOP_STATE_PREFIX "state_loop_"
 
 #define FUZZWARE_PATH "/home/w/hd/iofuzzer/fuzzware"
 #define MMIO_MODEL_FILENAME "mmio_model.yml"
 #define IRQ_MODEL_FILENAME "irq_model.yml"
+#define LOOP_MODEL_FILENAME "loop.yml"
 #define STREAM_POOL_FILENAME "pool.bin"
 #define FREED_STREAMS_FILENAME "freed_streams"
 //#define ENABLE_IRQ

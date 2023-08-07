@@ -56,7 +56,6 @@ def from_state_file(statefile, global_cfg,irq):
         emptry_state = project.factory.entry_state()
         irq_val = emptry_state.memory.load(irq_addr, 4, endness='Iend_LE')
 
-        print(irq_val)
         # We need the following option in order for CBZ to not screw us over
         project.factory.default_engine.default_strict_block_end = True
 

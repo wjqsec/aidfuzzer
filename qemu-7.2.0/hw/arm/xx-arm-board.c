@@ -21,7 +21,6 @@ extern int64_t bbl_counts;
 MemoryRegion *get_system_memory(void);
 #define TYPE_XX_MACHINE "xx"
 
-static uint64_t vecbase = 0;
 static CPUARMState *env;
 static struct NVICState *nvic;
 static CPUState *cs;
@@ -37,7 +36,8 @@ struct ARM_NVIC_ALL_STATE
 
 void xx_set_armv7_vecbase(uint64_t addr)
 {
-    vecbase = addr;
+    cpu->init_svtor = vecbase;
+    cpu->init_nsvtor = vecbase;
 }
 uint64_t xx_get_arm_precise_pc(void)
 {
@@ -174,8 +174,7 @@ static void machine_xx_arm_init(MachineState *mch)
     cpu = ARM_CPU(cs);
     env = &cpu->env;
     nvic = cpu->env.nvic;
-    cpu->init_svtor = vecbase;
-    cpu->init_nsvtor = vecbase;
+    
 
 }
 static void xx_arm_machine_reset(MachineState *machine, ShutdownCause reason)

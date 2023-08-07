@@ -71,7 +71,7 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
     while(fgets(line, PATH_MAX, fp))
     {
         ptr = line;
-        if(strstr(line,"bss:") || strstr(line,"noinit:") || strstr(line,"ram:"))
+        if(strstr(line,"bss:") || strstr(line,"noinit:") || strstr(line,"ram:") || strstr(line,".stack:"))
         {
             while(*ptr == ' ')
                 ptr++;

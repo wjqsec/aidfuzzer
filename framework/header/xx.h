@@ -140,17 +140,32 @@ bool xx_get_arm_v7m_is_handler_mode(void);
 
 //===================common
 
+
+
+
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
 typedef void (*pre_thread_exec_cb)(void); 
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl);
+typedef void (*exec_func_cb)(uint64_t pc,uint64_t *return_val);
+
 typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
 typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data);
  
+struct BBL_Hook
+{
+    hwaddr addr;
+    exec_bbl_cb cb;
+};
+struct Func_Hook
+{
+    hwaddr addr;
+    exec_func_cb cb;
+};
 
-  
+
 struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     
 void init_simulator(struct XXSimulator * s);
 void exec_simulator(struct XXSimulator *s);
@@ -161,6 +176,9 @@ void set_xx_cpu_type(enum XX_CPU_TYPE type);
 int xx_thread_loop(bool debug);
 void xx_register_pre_thread_exec_hook(pre_thread_exec_cb cb);
 void xx_register_exec_bbl_hook(exec_bbl_cb cb);
+void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb);
+void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb);
+
 void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb);
 void xx_register_post_thread_exec_hook(post_thread_exec_cb cb);
 MemTxResult xx_write_ram(hwaddr addr, hwaddr size, void *buf);  //will make the page dirty
@@ -181,6 +199,8 @@ void xx_delete_nostop_watchpoint(void *watchpoint);
 #define thread_loop xx_thread_loop
 #define register_pre_thread_exec_hook xx_register_pre_thread_exec_hook
 #define register_exec_bbl_hook xx_register_exec_bbl_hook
+#define register_exec_specific_bbl_hook xx_register_exec_specific_bbl_hook
+#define register_exec_func_hook xx_register_exec_func_hook
 #define register_exec_ins_icmp_hook xx_register_exec_ins_icmp_hook
 #define register_post_thread_exec_hook xx_register_post_thread_exec_hook
 #define write_ram xx_write_ram

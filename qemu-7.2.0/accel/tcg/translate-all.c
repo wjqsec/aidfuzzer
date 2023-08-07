@@ -23,6 +23,7 @@
 #include "trace.h"
 #include "disas/disas.h"
 #include "exec/exec-all.h"
+
 #include "tcg/tcg.h"
 #if defined(CONFIG_USER_ONLY)
 #include "qemu.h"
@@ -754,9 +755,10 @@ void page_collection_unlock(struct page_collection *set)
  * Return the size of the generated code, or negative on error.
  */
 #include "xx.h"
+#include <glib.h>
 extern exec_bbl_cb exec_bbl_func;
-//extern TCGv_env cpu_env;
-
+extern GArray* specific_bbl_hooks;
+extern GArray* func_hooks;
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
@@ -772,15 +774,54 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
+
+    for (int i = 0; i < func_hooks->len; ++i) 
+    {
+        struct Func_Hook *hook = g_array_index(func_hooks, struct Func_Hook *, i);
+        if(hook->addr == pc) 
+        {
+            TCGv_i64 arg0_pc = tcg_const_i64(pc);
+            TCGv_i32 arg1_id = tcg_const_i32(id);
+            TCGv_ptr arg2_cb = tcg_const_ptr(hook->cb);
+            TCGv_i64 ret_1 = tcg_const_i64(1);
+            
+            gen_helper_xx_func(ret_1,cpu_env,arg0_pc,arg1_id,arg2_cb);
+            tcg_temp_free_i64(arg0_pc);
+            tcg_temp_free_i32(arg1_id);
+            tcg_temp_free_ptr(arg2_cb);
+            tcg_temp_free_i64(ret_1);
+            
+        }
+    }
+
+    for (int i = 0; i < specific_bbl_hooks->len; ++i) 
+    {
+        struct BBL_Hook *hook = g_array_index(specific_bbl_hooks, struct BBL_Hook *, i);
+        if(hook->addr == pc) 
+        {
+            TCGv_i64 arg0_pc = tcg_const_i64(pc);
+            TCGv_i32 arg1_id = tcg_const_i32(id);
+            TCGv_ptr arg2_cb = tcg_const_ptr(hook->cb);
+            TCGv_i64 ret_1 = tcg_const_i64(1);
+            
+            gen_helper_xx_specific_bbls(ret_1,cpu_env,arg0_pc,arg1_id,arg2_cb);
+            tcg_temp_free_i64(arg0_pc);
+            tcg_temp_free_i32(arg1_id);
+            tcg_temp_free_ptr(arg2_cb);
+            tcg_temp_free_i64(ret_1);
+            
+        }
+    }
     if (exec_bbl_func)
     {
+        TCGv_i64 arg0_pc = tcg_const_i64(pc);
         TCGv_i32 arg1_id = tcg_const_i32(id);
         TCGv_i64 ret_1 = tcg_const_i64(1);
-        TCGv_i64 arg0_pc = tcg_const_i64(pc);
+        
         gen_helper_xx_bbl(ret_1,cpu_env,arg0_pc,arg1_id);
         tcg_temp_free_i64(arg0_pc);
-        tcg_temp_free_i64(ret_1);
         tcg_temp_free_i32(arg1_id);
+        tcg_temp_free_i64(ret_1);
         
     }
     gen_intermediate_code(env_cpu(env), tb, *max_insns, pc, host_pc);

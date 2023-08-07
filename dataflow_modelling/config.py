@@ -5,6 +5,7 @@
 class MemSeg:
     def __init__(self):
         self.ismmio = False
+        self.name = ""
         self.start = 0
         self.size = 0
         self.isreadonly = False
@@ -20,6 +21,11 @@ class Configs:
         return self.ismmio
     def get_range(self):
         return self.start,self.start + self.size
+    def get_memseg_by_name(self,name):
+        for mem in self.mems:
+            if name == mem.name:
+                return mem
+        return None
     def from_fuzzware_config_file(self,config_file):
         with open(config_file,"r") as f:
             while True:
@@ -41,6 +47,7 @@ class Configs:
                         memseg.isreadonly = False
                     else:
                         memseg.isreadonly = True
+                    memseg.name = line.split(":")[0].strip()
                     self.mems.append(memseg)
                 elif "ram:" in line:
                     base_addr_str = f.readline()
@@ -57,6 +64,7 @@ class Configs:
                         memseg.isreadonly = False
                     else:
                         memseg.isreadonly = True
+                    memseg.name = line.split(":")[0].strip()
                     self.mems.append(memseg)
                 elif "text:" in line:
                     base_addr_str = f.readline()
@@ -77,6 +85,7 @@ class Configs:
                         memseg.isreadonly = False
                     else:
                         memseg.isreadonly = True
+                    memseg.name = line.split(":")[0].strip()
                     self.vecbase = base_addr + ivt_offset
                     self.mems.append(memseg)
 

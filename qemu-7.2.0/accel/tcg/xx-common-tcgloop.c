@@ -41,14 +41,15 @@
 
 
 bool enabled_gdb_debug;
-
 void **bbl_enable_watchpoint;
-
 enum XX_CPU_TYPE xx_cpu_type;
+
 
 
 exec_bbl_cb exec_bbl_func;
 exec_ins_icmp_cb exec_ins_icmp_func;
+GArray* specific_bbl_hooks;
+GArray* func_hooks;
 
 int64_t bbl_counts;
 #define MILISECONS_PER_BBL 10000
@@ -299,6 +300,21 @@ void xx_register_exec_bbl_hook(exec_bbl_cb cb)
     tlb_flush(cpu);
 
 }
+void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb)
+{
+    struct BBL_Hook *hook = g_malloc0(sizeof(struct BBL_Hook));
+    hook->addr = addr;
+    hook->cb = cb;
+    g_array_append_vals(specific_bbl_hooks,&hook,1);
+}
+void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb)
+{
+    struct Func_Hook *hook = g_malloc0(sizeof(struct Func_Hook));
+    hook->addr = addr;
+    hook->cb = cb;
+    g_array_append_vals(func_hooks,&hook,1);
+}
+
 void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
 {
     exec_ins_icmp_func = cb;
@@ -365,10 +381,8 @@ int xx_thread_loop(bool debug)
         
         tcg_register_thread();
         qemu_guest_random_seed_thread_part2(0);
-
-        bbl_enable_watchpoint = (void **)malloc(NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
-        memset(bbl_enable_watchpoint,0,NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
         enabled_gdb_debug = debug;
+
         init = true;
     }
 
@@ -498,6 +512,12 @@ static void xx_accel_class_init(ObjectClass *oc, void *data)
     ac->init_machine = xx_init_machine;
     ac->allowed = &tcg_allowed;
     ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
+
+    bbl_enable_watchpoint = (void **)malloc(NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
+    memset(bbl_enable_watchpoint,0,NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
+    
+    specific_bbl_hooks = g_array_new(false,false,sizeof(struct BBL_Hook *));
+    func_hooks = g_array_new(false,false,sizeof(struct Func_Hook *));
 }
 
 static void xx_accel_ops_init(AccelOpsClass *ops)

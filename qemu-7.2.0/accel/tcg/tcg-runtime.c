@@ -53,6 +53,32 @@ uint64_t  HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 	//qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
     return 1;
 }
+uint64_t  HELPER(xx_specific_bbls)(CPUArchState *env,uint64_t pc,uint32_t id,void *ptr)
+{
+    exec_bbl_cb cb = (exec_bbl_cb)ptr;
+    bool should_exit = cb(pc,id,bbl_counts);
+    if(should_exit)
+    {
+	    CPUState *cpu = env_cpu(env);
+	    cpu_loop_exit(cpu);
+    }
+    return 1;
+}
+
+uint64_t  HELPER(xx_func)(CPUArchState *env,uint64_t pc,uint32_t id,void *ptr)
+{
+    uint64_t return_val;
+    uint64_t return_addr;
+    return_addr =env->regs[14] & 0xfffffffe;
+    exec_func_cb cb = (exec_func_cb)ptr;
+
+    cb(pc,&return_val);
+    env->regs[0] = return_val;
+    env->regs[15] = return_addr;
+	CPUState *cpu = env_cpu(env);
+	cpu_loop_exit(cpu);
+    return 1;
+}
 
 uint64_t HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)
 {
