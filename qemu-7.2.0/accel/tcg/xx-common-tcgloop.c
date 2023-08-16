@@ -40,8 +40,10 @@
 #include "xx.h"
 
 
-bool enabled_gdb_debug;
-void **bbl_enable_watchpoint;
+bool enabled_gdb_debug = false;
+bool enable_nostop_watchpoint_flag;
+struct NOSTOP_WATCHPOINT **nostop_watchpoints;
+uint8_t *mem_has_watchpoints;
 enum XX_CPU_TYPE xx_cpu_type;
 
 
@@ -104,12 +106,12 @@ struct XX_MMIORegion
 };
 
 
-#define XX_MEM_REGIONS_MAX 256
-struct XX_RAMRegion xx_ram_regions[XX_MEM_REGIONS_MAX];
+
+struct XX_RAMRegion xx_ram_regions[MAX_NUM_MEM_REGION];
 int xx_num_ram_regions;
-struct XX_MMIORegion xx_mmio_regions[XX_MEM_REGIONS_MAX];
+struct XX_MMIORegion xx_mmio_regions[MAX_NUM_MEM_REGION];
 int xx_num_mmio_regions;
-struct XX_ROMRegion xx_rom_regions[XX_MEM_REGIONS_MAX];
+struct XX_ROMRegion xx_rom_regions[MAX_NUM_MEM_REGION];
 int xx_num_rom_regions;
 
 
@@ -162,7 +164,7 @@ static MemoryRegion *find_mr_by_addr(hwaddr start, hwaddr size)
 
 void xx_add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly)
 {
-    if(xx_num_ram_regions >= XX_MEM_REGIONS_MAX)
+    if(xx_num_ram_regions >= MAX_NUM_MEM_REGION)
         return;
 
     MemoryRegion *ram_space = get_system_memory();
@@ -195,7 +197,7 @@ void xx_add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly)
 }
 void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 {
-    if(xx_num_rom_regions >= XX_MEM_REGIONS_MAX)
+    if(xx_num_rom_regions >= MAX_NUM_MEM_REGION)
 	    return;
 
     MemoryRegion *ram_space = get_system_memory();
@@ -222,7 +224,7 @@ void xx_add_rom_region(char *name,hwaddr start, hwaddr size)
 }
 void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read_cb, mmio_write_cb write_cb,void *opaque)
 {
-    if(xx_num_mmio_regions >= XX_MEM_REGIONS_MAX)
+    if(xx_num_mmio_regions >= MAX_NUM_MEM_REGION)
         return;
 
 
@@ -269,7 +271,6 @@ void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
     MemoryRegion *mr = find_mr_by_addr(addr,size);
     tlb_reset_dirty_range_all(addr, size);
     memory_region_clear_dirty_bitmap(mr, addr - mr->addr, size);
-    //printf("clear dirty pages %p-%p\n",addr,addr+size);
 }
 int xx_target_pagesize(void)
 {
@@ -278,27 +279,21 @@ int xx_target_pagesize(void)
 void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 {
     int num_page_in_byte = 0;
-    hwaddr page_size = TARGET_PAGE_BITS == 0 ? 4 << 10 : 1 << TARGET_PAGE_BITS;
 
     MemoryRegion *mr = find_mr_by_addr(addr,size);
     if(!mr)
         return;
     DirtyBitmapSnapshot * snap = memory_region_snapshot_and_clear_dirty(mr,addr - mr->addr , size, DIRTY_MEMORY_VGA);
-    //num_page_in_byte = ((size / page_size) / 8) + (((size / page_size) % 8) ? 1 : 0) ;
-    num_page_in_byte = ((size / page_size) / 8) + 1;
-
+    num_page_in_byte = ((size / xx_target_pagesize()) / 8) + 1;
     memcpy(dirty,snap->dirty,num_page_in_byte);
     g_free(snap);
-    //printf("get dirty pages %p-%p totally :%d byte\n",addr,addr+size,num_page_in_byte);
+
 }
 
 
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
-    CPUState *cpu = qemu_get_cpu(0);
-    tlb_flush(cpu);
-
 }
 void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb)
 {
@@ -306,6 +301,9 @@ void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb)
     hook->addr = addr;
     hook->cb = cb;
     g_array_append_vals(specific_bbl_hooks,&hook,1);
+    CPUState *cpu = qemu_get_cpu(0);
+    tlb_flush(cpu);
+
 }
 void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb)
 {
@@ -313,6 +311,9 @@ void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb)
     hook->addr = addr;
     hook->cb = cb;
     g_array_append_vals(func_hooks,&hook,1);
+    CPUState *cpu = qemu_get_cpu(0);
+    tlb_flush(cpu);
+
 }
 
 void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
@@ -321,50 +322,72 @@ void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
     CPUState *cpu = qemu_get_cpu(0);
     tlb_flush(cpu);
 }
-void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data)
+struct NOSTOP_WATCHPOINT* xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data)
 {
     int i;
-    CPUWatchpoint *wp;
-    CPUState *cpu = qemu_get_cpu(0);
-    cpu_watchpoint_insert(cpu,addr,len, flag ,&wp);
-
-    wp->callback = cb;
-    wp->data = data;
-
+    struct NOSTOP_WATCHPOINT *point = g_malloc0(sizeof(struct NOSTOP_WATCHPOINT));
+    point->addr = addr;
+    point->len = len;
+    point->flag = flag;
+    point->cb = cb;
+    point->data = data;
+    
     uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
-    void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
+    struct NOSTOP_WATCHPOINT ** ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
     {
         if(ptr[i] == 0)
         {
-            ptr[i] = wp;
+            ptr[i] = point;
+            mem_has_watchpoints[id]++;
             break;
         }
     }
-    return wp;
+    return point;
 }
-void check_nostop_watchpoint(hwaddr addr)
+inline void check_nostop_watchpoint(hwaddr addr,enum qemu_plugin_mem_rw_ rw)
 {
-    CPUWatchpoint *wp;
     int i;
     uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
-    void ** ptr = bbl_enable_watchpoint + id * NUM_IRQ_PER_WATCHPOINT;
-    for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
+    if(likely(mem_has_watchpoints[id] == 0))
+        return;
+    struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
+    for(i = 0; i < mem_has_watchpoints[id];)
     {
-        if(unlikely(ptr[i]))
-        {
-            wp = (CPUWatchpoint *)(ptr[i]);
-            wp->callback(wp->vaddr,wp->len,wp->vaddr,wp->data);
+        if(likely(ptr[i]))
+        {   
+            if(ptr[i]->addr == addr && (ptr[i]->flag & rw))
+            {
+                ptr[i]->cb(ptr[i]->addr,ptr[i]->len,ptr[i]->data);
+            }
+            i++;
         }
-        else
-            break;
     }
 }
-void xx_delete_nostop_watchpoint(void *watchpoint)
+void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint)
 {
-    // not implement yet
+    int i;
+    uint32_t id = hash_32(watchpoint->addr) % NUM_WATCHPOINT;
+    struct NOSTOP_WATCHPOINT ** ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
+    for(i = 0; i < NUM_IRQ_PER_WATCHPOINT ;i++)
+    {
+        if(ptr[i] == watchpoint)
+        {
+            g_free(watchpoint);
+            ptr[i] = 0;
+            mem_has_watchpoints[id]--;
+            break;
+        }
+    }
 }
-
+void xx_enable_nostop_watchpoint(void)
+{
+    enable_nostop_watchpoint_flag = true;
+}
+void xx_disable_nostop_watchpoint(void)
+{
+    enable_nostop_watchpoint_flag = false;
+}
 
 int xx_thread_loop(bool debug)
 {
@@ -513,9 +536,11 @@ static void xx_accel_class_init(ObjectClass *oc, void *data)
     ac->allowed = &tcg_allowed;
     ac->gdbstub_supported_sstep_flags = tcg_gdbstub_supported_sstep_flags;
 
-    bbl_enable_watchpoint = (void **)malloc(NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
-    memset(bbl_enable_watchpoint,0,NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
-    
+    nostop_watchpoints = (struct NOSTOP_WATCHPOINT **)malloc(NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
+    memset(nostop_watchpoints,0,NUM_WATCHPOINT * sizeof(void*) * NUM_IRQ_PER_WATCHPOINT);
+    mem_has_watchpoints = (uint8_t *)malloc(NUM_WATCHPOINT * sizeof(mem_has_watchpoints[0]));
+    memset(mem_has_watchpoints,0,NUM_WATCHPOINT * sizeof(mem_has_watchpoints[0]));
+
     specific_bbl_hooks = g_array_new(false,false,sizeof(struct BBL_Hook *));
     func_hooks = g_array_new(false,false,sizeof(struct Func_Hook *));
 }

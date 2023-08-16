@@ -34,7 +34,7 @@ struct ARM_NVIC_ALL_STATE
 };
 
 
-void xx_set_armv7_vecbase(uint64_t addr)
+void xx_set_armv7_vecbase(uint64_t vecbase)
 {
     cpu->init_svtor = vecbase;
     cpu->init_nsvtor = vecbase;

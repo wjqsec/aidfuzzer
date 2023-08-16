@@ -288,6 +288,8 @@ DEF_HELPER_FLAGS_5(gvec_bitsel, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, ptr, i32)
 DEF_HELPER_3(xx_bbl, i64,env,i64,i32)
 DEF_HELPER_4(xx_specific_bbls, i64,env,i64,i32,ptr)
 DEF_HELPER_4(xx_func, i64,env,i64,i32,ptr)
+DEF_HELPER_2(xx_nostop_watchpoint, i64,i32,i32)
+
 DEF_HELPER_2(xx_icmp32_ins, i64,i32,i32)
 DEF_HELPER_2(xx_icmp64_ins, i64,i64,i64)
 

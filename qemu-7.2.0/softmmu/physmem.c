@@ -891,13 +891,9 @@ int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len)
 }
 
 /* Generate a debug exception if a watchpoint has been hit.  */
-extern bool enabled_gdb_debug;
 void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
                           MemTxAttrs attrs, int flags, uintptr_t ra)
 {
-    check_nostop_watchpoint(addr);
-    if(!enabled_gdb_debug)
-        return;
     CPUClass *cc = CPU_GET_CLASS(cpu);
     CPUWatchpoint *wp;
 
@@ -919,8 +915,6 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
         addr = cc->tcg_ops->adjust_watchpoint_address(cpu, addr, len);
     }
     QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
-        if(wp->flags & BP_CALLBACK_ONLY_NO_STOP)
-            continue;
         if (watchpoint_address_matches(wp, addr, len)
             && (wp->flags & flags)) {
             if (replay_running_debug()) {

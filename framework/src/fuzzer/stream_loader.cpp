@@ -1,6 +1,8 @@
 #include "stream_loader.h"
 void save_pool(FuzzState *state,char *queue_dir)
 {
+  if(state->shared_stream_used == 0)
+    return;
   char filename[PATH_MAX];
   sprintf(filename,"%s/%s",queue_dir,STREAM_POOL_FILENAME);
   FILE *f_pool = fopen(filename,"wb");

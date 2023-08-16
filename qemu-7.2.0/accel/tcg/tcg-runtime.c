@@ -35,11 +35,15 @@
 
 
 #include "xx.h"
+#include "fuzzer.h"
 extern int64_t bbl_counts;
 
 extern exec_bbl_cb exec_bbl_func;
-
+extern bool enable_nostop_watchpoint_flag;
 extern exec_ins_icmp_cb exec_ins_icmp_func;
+
+extern struct NOSTOP_WATCHPOINT **nostop_watchpoints;
+extern uint8_t *mem_has_watchpoints;
 uint64_t  HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
     
@@ -77,6 +81,28 @@ uint64_t  HELPER(xx_func)(CPUArchState *env,uint64_t pc,uint32_t id,void *ptr)
     env->regs[15] = return_addr;
 	CPUState *cpu = env_cpu(env);
 	cpu_loop_exit(cpu);
+    return 1;
+}
+uint64_t HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t flag)
+{
+    if(!enable_nostop_watchpoint_flag)
+        return 1;
+    int i;
+    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
+    if(likely(mem_has_watchpoints[id] == 0))
+        return 1;
+    struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
+    for(i = 0; i < mem_has_watchpoints[id];)
+    {
+        if(likely(ptr[i]))
+        {   
+            if(ptr[i]->addr == addr && (ptr[i]->flag & flag))
+            {
+                ptr[i]->cb(ptr[i]->addr,ptr[i]->len,ptr[i]->data);
+            }
+            i++;
+        }
+    }
     return 1;
 }
 

@@ -26,10 +26,12 @@ struct XXSimulator
 #define EXCP_YIELD      0x10004 /* cpu wants to yield timeslice to another */
 #define EXCP_ATOMIC     0x10005 /* stop-the-world and emulate atomic */
 
-#define BP_MEM_READ           0x01
-#define BP_MEM_WRITE          0x02
-#define BP_MEM_ACCESS         (BP_MEM_READ | BP_MEM_WRITE)
-#define BP_CALLBACK_ONLY_NO_STOP 0X100
+enum qemu_plugin_mem_rw_ {
+    QEMU_PLUGIN_MEM_R_ = 1,
+    QEMU_PLUGIN_MEM_W_,
+    QEMU_PLUGIN_MEM_RW_,
+};
+
 //----------------x86
 struct X86_CPU_STATE
 {
@@ -140,8 +142,10 @@ bool xx_get_arm_v7m_is_handler_mode(void);
 
 //===================common
 
+#define MAX_NUM_MEM_REGION 255
 
-
+#define NUM_WATCHPOINT (1 << 20)
+#define NUM_IRQ_PER_WATCHPOINT 20
 
 typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
@@ -152,7 +156,7 @@ typedef void (*exec_func_cb)(uint64_t pc,uint64_t *return_val);
 
 typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
-typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data);
+typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,void *data);
  
 struct BBL_Hook
 {
@@ -164,12 +168,20 @@ struct Func_Hook
     hwaddr addr;
     exec_func_cb cb;
 };
-
+struct NOSTOP_WATCHPOINT
+{
+    hwaddr addr;
+    hwaddr len;
+    enum qemu_plugin_mem_rw_ flag;
+    nostop_watchpoint_cb cb;
+    void *data;
+    uint64_t id;
+};
 
 struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     
 void init_simulator(struct XXSimulator * s);
 void exec_simulator(struct XXSimulator *s);
-void check_nostop_watchpoint(hwaddr addr);
+void check_nostop_watchpoint(hwaddr addr,enum qemu_plugin_mem_rw_ rw);
 
 enum XX_CPU_TYPE get_xx_cpu_type(void);
 void set_xx_cpu_type(enum XX_CPU_TYPE type);
@@ -192,9 +204,10 @@ void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size);
 int xx_target_pagesize(void);
 void xx_clear_dirty_mem(hwaddr start, hwaddr size);
 void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
-void *xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb, void *data);
-void xx_delete_nostop_watchpoint(void *watchpoint);
-
+struct NOSTOP_WATCHPOINT* xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data);
+void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint);
+void xx_enable_nostop_watchpoint(void);
+void xx_disable_nostop_watchpoint(void);
 
 #define thread_loop xx_thread_loop
 #define register_pre_thread_exec_hook xx_register_pre_thread_exec_hook
@@ -215,6 +228,8 @@ void xx_delete_nostop_watchpoint(void *watchpoint);
 #define get_dirty_pages xx_get_dirty_pages
 #define insert_nostop_watchpoint xx_insert_nostop_watchpoint
 #define delete_nostop_watchpoint xx_delete_nostop_watchpoint
+#define enable_nostop_watchpoint xx_enable_nostop_watchpoint
+#define disable_nostop_watchpoint xx_disable_nostop_watchpoint
 
 #endif
 

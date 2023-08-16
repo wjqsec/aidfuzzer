@@ -54,7 +54,8 @@ uint32_t num_mmio;
 
 
 bool dumped_irq[NVIC_MAX_VECTORS];
-uint8_t mem_trigger_irq_times[NVIC_MAX_VECTORS];  // insert an irq when the corresponding memory is accessed for n times.
+uint8_t mem_access_trigger_irq_times_count[NVIC_MAX_VECTORS];  // insert an irq when the corresponding memory is accessed for n times.
+uint8_t mem_access_trigger_irq_times[NVIC_MAX_VECTORS];
 uint16_t do_mmio_irqs[NVIC_MAX_VECTORS];
 int num_do_mmio_irqs;
 
@@ -76,7 +77,8 @@ struct SHARED_STREAM
 };
 struct undiscovered_streams *undiscover_streams;
 struct SHARED_STREAM * streams[NUM_QUEUE_STREAMS];
-
+int num_stream_indexs;
+u32 stream_indexs[NUM_QUEUE_STREAMS];
 
 
 
@@ -85,10 +87,11 @@ void collect_streams()
     u32 i,index;
     struct SHARED_STREAM *stream;
     struct stream_metadata *metadata;
-    for(i = 0 ; i < NUM_QUEUE_STREAMS ; i++)
+    for(i = 0 ;i < num_stream_indexs; i++)
     {
-        streams[i]->avaliable = false;
+        streams[stream_indexs[i]]->avaliable = false;
     }
+    num_stream_indexs = 0;
     struct fuzz_queue *queue = (struct fuzz_queue *)__afl_share_fuzz_queue_data;
     for(i = 0; i < queue->num_streams ; i++)
     {
@@ -102,7 +105,8 @@ void collect_streams()
         streams[index]->avaliable = true;
         streams[index]->used = 0;
         streams[index]->metadata = metadata;
-        
+        stream_indexs[num_stream_indexs] = index;
+        num_stream_indexs++;
     }
     
 }
@@ -177,16 +181,15 @@ void exit_with_code_start_new()
     
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
     start_new();
-
-    undiscover_streams->num_streams = 0;
     collect_streams();
+    
     num_mmio = 0;
-    arm_restore_snapshot(new_snap);
+    undiscover_streams->num_streams = 0;
     nommio_executed_bbls = 0;
     run_index++;
     should_exit = false;
-    num_do_mmio_irqs = 0;
-    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
+    memset(mem_access_trigger_irq_times_count, 0, NVIC_MAX_VECTORS * sizeof(mem_access_trigger_irq_times_count[0]));
+    arm_restore_snapshot(new_snap);
 }
 FILE *state_file;
 void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
@@ -243,7 +246,7 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
         state.xpsr
     );
     ihex_init(&ihex);
-    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
         if(config->rams[i].size == 0)
             break;
@@ -254,7 +257,7 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
 
         free(buf);
     }
-    for(i = 0; i < NUM_MEM_SNAPSHOT ; i++)
+    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
         if(config->roms[i].size == 0)
             break;
@@ -281,13 +284,13 @@ void prepare_exit(uint32_t code,uint32_t oufofseed_mmio_id,uint64_t pc,uint32_t 
 
 bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
 {
-
+    bool outofstream = stream->metadata->len - stream->used < stream->metadata->element_size;
     switch(stream->metadata->mode)
     {
         case MODEL_VALUE_SET:
         {
             nommio_executed_bbls = 0;
-            if(stream->metadata->len - stream->used < stream->metadata->element_size)
+            if(unlikely(outofstream))
             {
 
                 *out = stream->metadata->value_set[0];  //give it a default one
@@ -314,7 +317,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         case MODEL_BIT_EXTRACT:
         {
             nommio_executed_bbls = 0;
-            if(stream->metadata->len - stream->used < stream->metadata->element_size)
+            if(unlikely(outofstream))
             {
                 return true;
             }
@@ -336,7 +339,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         case MODEL_NONE:
         {
             nommio_executed_bbls = 0;
-            if(stream->metadata->len - stream->used < stream->metadata->element_size)
+            if(unlikely(outofstream))
             {
                 return true;
             }
@@ -450,24 +453,14 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
         return true;
     }
     
-    #ifdef ENABLE_IRQ
-    if(bbl != 0 && *num_irqs && (bbl & 0xff) == 0)
+    #ifdef ENABLE_ROUNDROBIN_IRQ
+    if(*num_irqs && (bbl % ROUNDROBIN_IRQ_BBLS) == 0)
     {
-        struct SHARED_STREAM* stream =  find_stream(IRQ_STREAM_ID);
-        if(!stream)
-        {
-            printf("fatal:not irq stream found\n");
-            exit(0);
-        }
-        else
-        {
-            uint64_t tmp;
-            get_fuzz_data(stream, &tmp,pc);     
-            insert_nvic_intc(irqs[tmp % (*num_irqs)],false);
-            #ifdef DBG
-            fprintf(flog,"insert irq %d\n",irqs[tmp % (*num_irqs)]);
-            #endif
-        }
+        insert_nvic_intc(irqs[tmp % (*num_irqs)],false);
+        #ifdef DBG
+        fprintf(flog,"insert irq %d\n",irqs[tmp % (*num_irqs)]);
+        #endif
+
     }
     #endif
 
@@ -486,40 +479,52 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     nommio_executed_bbls++;
 
 
-
-
-
     return false;
 }
 bool arm_exec_loop_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
-    insert_nvic_intc(ARMV7M_EXCP_SYSTICK);
+    bool insert_irq;
+    insert_irq = insert_nvic_intc(ARMV7M_EXCP_SYSTICK);
+    #ifdef DBG
+    if(insert_irq)
+        fprintf(flog,"%d->arm_exec_loop_bbl insert irq:%d pc:%x\n",run_index,ARMV7M_EXCP_SYSTICK,pc);
+    #endif
+    
     for(int i=0; i<num_do_mmio_irqs ; i++)
     {
-        insert_nvic_intc(do_mmio_irqs[i]);
+        insert_irq = insert_nvic_intc(do_mmio_irqs[i]);
+        #ifdef DBG
+        if(insert_irq)
+            fprintf(flog,"%d->arm_exec_loop_bbl insert irq:%d pc:%x\n",run_index,do_mmio_irqs[i],pc);
+        #endif
     }
     return false;
 }
-void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,hwaddr hitaddr,void *data)
+void arm_exec_func_dummy(uint64_t pc,uint64_t *return_val)
+{
+
+}
+void nostop_watchpoint_exec(hwaddr vaddr,hwaddr len,void *data)
 {
     bool insert_irq;
     int irq = (int)(uint64_t)data;
     if(!get_arm_v7m_is_handler_mode())
     {
-        if(mem_trigger_irq_times[irq] > 5)
+        if(mem_access_trigger_irq_times_count[irq] > mem_access_trigger_irq_times[irq])
         {
             insert_irq = insert_nvic_intc(irq);
-            mem_trigger_irq_times[irq] = 0;
+            mem_access_trigger_irq_times_count[irq] = 0;
+            #ifdef DBG
+            if(insert_irq)
+                fprintf(flog,"%d->nostop_watchpoint_exec insert irq:%d pc:%x stopwatch hit addr:%x\n",run_index,irq,get_arm_precise_pc(),vaddr);
+            #endif
         }
         else
         {
-             mem_trigger_irq_times[irq] ++;
+             mem_access_trigger_irq_times_count[irq] ++;
         }
         
-        #ifdef DBG
-        if(insert_irq)
-            fprintf(flog,"%d->insert irq:%d pc:%x stopwatch hit addr:%x\n",run_index,irq,get_arm_precise_pc(),hitaddr);
-        #endif
+        
        
     }
    
@@ -580,22 +585,31 @@ void enable_nvic_hook(int irq)
     fprintf(flog,"%d->enable irq:%d pc:%x\n",run_index, irq,get_arm_precise_pc());
     #endif
 
-    #ifndef ENABLE_IRQ
-    if(!dumped_irq[irq] && irq > 15)
+
+    if(!dumped_irq[irq])
     {
         dumped_irq[irq] = true;
-        return;
+
         sprintf(state_filename,"%s/%s%08x",dump_dir,IRQ_STATE_PREFIX,irq);
         sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
-        dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
-        printf("pc:%x  ",get_arm_precise_pc());
-        sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -m %s -s %s -i %x -o %s -c %s > /dev/null 2>&1","irq",state_filename,irq,model_filename,fuzzware_config_filename);
-        puts(cmd);
-        system(cmd);
+
+        // if(access(model_filename,F_OK) != 0)
+        // {
+
+            dump_state(irq,false,IRQ_STATE_PREFIX,dump_dir);
+            printf("pc:%x  ",get_arm_precise_pc());
+            sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -m %s -s %s -i 0x%x -o %s -c %s > /dev/null 2>&1","irq",state_filename,irq,model_filename,fuzzware_config_filename);
+            puts(cmd);
+            system(cmd);
+            puts("model done");
+        // }
+        
+
         
         f = fopen(model_filename,"r");
         
         bool start = false;
+        bool do_mmio_irq = false;
         int type;
         while(fgets(line, PATH_MAX, f))
         {
@@ -626,15 +640,18 @@ void enable_nvic_hook(int irq)
             uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
             if(!addr)
                 continue;
-            insert_nostop_watchpoint(addr,len,BP_MEM_ACCESS | BP_CALLBACK_ONLY_NO_STOP,nostop_watchpoint_exec,(void*)(uint64_t)irq);
+            insert_nostop_watchpoint(addr,len,QEMU_PLUGIN_MEM_RW_ ,nostop_watchpoint_exec,(void*)(uint64_t)irq);
+            mem_access_trigger_irq_times[irq]++;
+            do_mmio_irq = true;
             printf("insert_nostop_watchpoint irq:%d addr:%x\n",irq,addr);
         }
+        if(do_mmio_irq)
+            do_mmio_irqs[num_do_mmio_irqs++] = irq;
         fclose(f);
-        puts("model done");
+        
         
     }
 
-    #endif
     
 }
 void post_thread_exec(int exec_ret)
@@ -645,11 +662,6 @@ void post_thread_exec(int exec_ret)
     get_arm_cpu_state(&state);
     fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
     #endif
-
-    // #ifdef EXIT_DBG
-    // get_arm_cpu_state(&state);
-    // fprintf(flog,"%d->post thread exec:%d  pc:%p\n",run_index, exec_ret,state.regs[15]);
-    // #endif
 
     get_arm_cpu_state(&state);
     prepare_exit(EXIT_TIMEOUT,0,state.regs[15],num_mmio);
@@ -676,6 +688,26 @@ uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
 }
 void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
 
+bool arm_cpu_do_interrupt_hook_early(int32_t exec_index)
+{
+    struct ARM_CPU_STATE state;
+    if(exec_index == EXCP_SWI || exec_index == EXCP_IRQ || exec_index == EXCP_EXCEPTION_EXIT)
+    {
+        return true;
+    }
+    get_arm_cpu_state(&state);
+    uint32_t sp0, sp1,sp2;
+    read_ram(state.regs[13],4, &sp0);
+    read_ram(state.regs[13] + 4,4, &sp1);
+    read_ram(state.regs[13] + 8,4, &sp2);
+    printf("%d->crash index:%d pc:%p  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x sp:%x [sp]=%x, [sp+4]=%x [sp+8]=%x\n",
+    run_index,exec_index,state.regs[15], state.regs[0],state.regs[1],state.regs[2],state.regs[3],state.regs[4],state.regs[5],state.regs[6],state.regs[7],state.regs[8],state.regs[9],
+    state.regs[10],state.regs[11],state.regs[12],state.regs[13],state.regs[14], sp0, sp1,sp2);
+    exit_info.exit_code = EXIT_CRASH;
+    write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver crash
+    terminate();
+    
+}
 bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
 {
     int i;
@@ -693,14 +725,10 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
             add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)config->mmios[i].start);
         }
         new_snap = arm_take_snapshot();
-        arm_restore_snapshot(new_snap);
         
 
         exit_info.exit_code = EXIT_FORKSRV_UP;
-        write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
-        
-        start_new();
-        collect_streams();
+        exit_with_code_start_new();
 
         return true;
     }
@@ -728,23 +756,33 @@ void get_all_infinite_loop()
     char cmd[PATH_MAX];
     sprintf(state_filename,"%s/%s%08x",dump_dir,LOOP_STATE_PREFIX,0);
     sprintf(model_filename,"%s/%s",model_dir,LOOP_MODEL_FILENAME);
-    dump_state(0,false,LOOP_STATE_PREFIX,dump_dir);
-    sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -m %s -s %s -i %x -o %s -c %s > /dev/null 2>&1","loop",state_filename,0,model_filename,fuzzware_config_filename);
-    puts(cmd);
-    system(cmd);
+
+    
+    if(access(model_filename,F_OK) != 0)
+    {
+        dump_state(0,false,LOOP_STATE_PREFIX,dump_dir);
+        sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -m %s -s %s -i %x -o %s -c %s > /dev/null 2>&1","loop",state_filename,0,model_filename,fuzzware_config_filename);
+        puts(cmd);
+        system(cmd);
+    }
+    
     
     f = fopen(model_filename,"r");
-    while(fgets(line, PATH_MAX, f))
+    if(f)
     {
-        uint32_t addr = strtol(line,0,16);
-        if(addr)
+        while(fgets(line, PATH_MAX, f))
         {
-            register_exec_specific_bbl_hook(addr,arm_exec_loop_bbl);
-            printf("register_exec_specific_bbl_hook %x\n",addr);
+            uint32_t addr = strtol(line,0,16);
+            if(addr)
+            {
+                register_exec_specific_bbl_hook(addr,arm_exec_loop_bbl);
+                printf("register_exec_specific_bbl_hook %x\n",addr);
+            }
+                
         }
-            
+        fclose(f);
     }
-    fclose(f);
+    
 }
 
 
@@ -801,10 +839,6 @@ void init(int argc, char **argv)
 
     __afl_map_shm();
 
-    memset(dumped_irq, 0, NVIC_MAX_VECTORS);
-    memset(mem_trigger_irq_times, 0, NVIC_MAX_VECTORS * sizeof(mem_trigger_irq_times[0]));
-    
-
 }
 
 int run_config()
@@ -813,9 +847,10 @@ int run_config()
 
     struct XXSimulator *simulator;
     simulator = create_simulator(ARM_CORTEX_M,false);
+    init_simulator(simulator);
     if(config->vecbase)
         set_armv7_vecbase(config->vecbase);
-    init_simulator(simulator);
+    
 
     for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
@@ -853,10 +888,11 @@ int run_config()
         add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->mmios[i].start);
     }
     reset_arm_reg();
-    
+    register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook_early);
     register_exec_bbl_hook(exec_bbl_snapshot);
     org_snap = arm_take_snapshot();
-    
+    enable_nvic_hook(ARMV7M_EXCP_SYSTICK);
     get_all_infinite_loop();
+    enable_nostop_watchpoint();
     exec_simulator(simulator);
 }

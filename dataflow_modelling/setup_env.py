@@ -33,8 +33,10 @@ def translate_reg_name_to_vex_internal_name(name):
     return name
 
 
-
-def from_state_file(statefile, global_cfg,irq):
+def from_elf_file(elf_file):
+    project = angr.Project(elf_file)
+    initial_state = project.factory.blank_state() 
+def from_state_file(statefile, global_cfg,irq,symbolize_all_register):
         
         with open(statefile, "r") as state_file:
             regs = {}
@@ -59,8 +61,9 @@ def from_state_file(statefile, global_cfg,irq):
         # We need the following option in order for CBZ to not screw us over
         project.factory.default_engine.default_strict_block_end = True
 
-        initial_state = project.factory.call_state(addr=irq_val,add_options=angr.options.refs)
 
+        initial_state = project.factory.call_state(addr=irq_val,add_options=angr.options.refs)
+        # initial_state.options.add(angr.options.LAZY_SOLVES)
         # arm_thumb_quirks.add_special_initstate_reg_vals(initial_state, regs) maybe later
 
         # apply registers to state
@@ -72,9 +75,10 @@ def from_state_file(statefile, global_cfg,irq):
             if name == "pc":
                 continue
             ast = claripy.BVS(f"initstate_{name}", 32)
-            bitvecval = claripy.BVV(val, 32)
-            constraint = ast == bitvecval
-            initial_state.add_constraints(constraint)
+            if not symbolize_all_register:
+                bitvecval = claripy.BVV(val, 32)
+                constraint = ast == bitvecval
+                initial_state.add_constraints(constraint)
 
             setattr(initial_state.regs, name, ast)
 

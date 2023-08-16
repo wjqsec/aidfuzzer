@@ -1,7 +1,8 @@
 #ifndef CONFIG_INCLUDED
 
 #define CONFIG_INCLUDED
-#define MAX_NUM_MEM_REGION 255
+#include <libgen.h>
+#include "xx.h"
 struct RAM
 {
     char *name;
@@ -36,9 +37,9 @@ struct SIMULATOR_CONFIG
 };
 int run_config();
 void init(int argc, char **argv);
-static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename);
 
-#include <libgen.h>
+
+
 static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
 {
     int ram_index = 0;
@@ -71,7 +72,7 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
     while(fgets(line, PATH_MAX, fp))
     {
         ptr = line;
-        if(strstr(line,"bss:") || strstr(line,"noinit:") || strstr(line,"ram:") || strstr(line,".stack:"))
+        if(strstr(line,"bss:") || strstr(line,"noinit:") || strstr(line,"ram:") || strstr(line,".stack:") || strstr(line,"dynamically_added_crash_region"))
         {
             while(*ptr == ' ')
                 ptr++;

@@ -1,7 +1,7 @@
 #ifndef FUZZER_INCLUDED
 
 #define FUZZER_INCLUDED
-
+#include <sys/time.h>
 #define SHM_ENV_VAR         "__AFL_SHM_ID"
 #define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
 #define SHM_SHARE_IRQ_VAR         "__AFL_IRQ_SHARE"
@@ -26,8 +26,8 @@ typedef int64_t  s64;
 #define EXIT_TERMINATE 5
 
 
-#define MAX_STREAM_LEN 0x500000
-#define DEFAULT_STREAM_LEN 0x50
+
+#define DEFAULT_STREAM_LEN 0x1000
 
 #define MAX_BBL_EXEC 150000
 
@@ -71,17 +71,17 @@ typedef int64_t  s64;
 #define LOOP_MODEL_FILENAME "loop.yml"
 #define STREAM_POOL_FILENAME "pool.bin"
 #define FREED_STREAMS_FILENAME "freed_streams"
-//#define ENABLE_IRQ
 
+//#define ENABLE_ROUNDROBIN_IRQ
+#define ROUNDROBIN_IRQ_BBLS 0x100
 
 
 #define STOPWATCH_TYPE_MMIO 0
 #define STOPWATCH_TYPE_MEM 1
 
-#define NUM_WATCHPOINT (1 << 20)
-#define NUM_IRQ_PER_WATCHPOINT 20
 
-#define NUM_QUEUE_STREAMS 0x10000
+
+#define NUM_QUEUE_STREAMS 0x100000
 
 
 #define CMD_FUZZ 0
@@ -142,7 +142,16 @@ static __always_inline uint32_t hash_32_ext (uint32_t number)
         hash_value = hash_value ^ (hash_value >> 16);
         return hash_value;
 }
+inline static u64 get_cur_time(void) {
 
+  struct timeval tv;
+  struct timezone tz;
+
+  gettimeofday(&tv, &tz);
+
+  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
+
+}
 #endif
 
 

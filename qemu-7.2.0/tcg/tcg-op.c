@@ -2903,6 +2903,12 @@ static inline TCGv plugin_prep_mem_callbacks(TCGv vaddr)
 static void plugin_gen_mem_callbacks(TCGv vaddr, MemOpIdx oi,
                                      enum qemu_plugin_mem_rw rw)
 {
+    TCGv_i64 ret_1 = tcg_const_i64(1);
+    TCGv_i32 arg2_flag = tcg_const_i32(rw);
+    gen_helper_xx_nostop_watchpoint(ret_1,vaddr,arg2_flag);
+    tcg_temp_free(vaddr);
+    tcg_temp_free_i32(arg2_flag);
+    tcg_temp_free_i64(ret_1);
 #ifdef CONFIG_PLUGIN
     if (tcg_ctx->plugin_insn != NULL) {
         qemu_plugin_meminfo_t info = make_plugin_meminfo(oi, rw);

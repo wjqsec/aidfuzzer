@@ -297,16 +297,7 @@ inline static void fatal(const char *msg)
     snprintf((char*)_tmp, _len + 1, _str); \
     _tmp; \
   })
-inline static u64 get_cur_time(void) {
 
-  struct timeval tv;
-  struct timezone tz;
-
-  gettimeofday(&tv, &tz);
-
-  return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
-
-}
 static void print_trace (void)
 {
   void *array[10];

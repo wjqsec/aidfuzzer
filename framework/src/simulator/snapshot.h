@@ -1,5 +1,7 @@
 #ifndef SNAPSHOT_INCLUDED
 #define SNAPSHOT_INCLUDED
+
+#include "config.h"
 struct SNAPSHOT_MEM_SEG
 {
     uint8_t *data;
@@ -8,8 +10,7 @@ struct SNAPSHOT_MEM_SEG
 };
 struct ARMM_SNAPSHOT
 {
-    #define NUM_MEM_SNAPSHOT 255
-    struct SNAPSHOT_MEM_SEG mems[NUM_MEM_SNAPSHOT];
+    struct SNAPSHOT_MEM_SEG mems[MAX_NUM_MEM_REGION];
     void *arm_ctx;
 };
 
@@ -19,7 +20,7 @@ static struct ARMM_SNAPSHOT* arm_take_snapshot()
     struct ARMM_SNAPSHOT *snap = (struct ARMM_SNAPSHOT*)malloc(sizeof(struct ARMM_SNAPSHOT));
     snap->arm_ctx = save_arm_ctx_state();
 
-    for(int i = 0; i < NUM_MEM_SNAPSHOT ; i ++)
+    for(int i = 0; i < MAX_NUM_MEM_REGION ; i ++)
     {
         snap->mems[i].len = 0;
         if(config->rams[i].size && !config->rams[i].readonly)
@@ -40,7 +41,7 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
     int page_size = target_pagesize();
-    for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
+    for(int num_mem = 0; num_mem < MAX_NUM_MEM_REGION; num_mem++)
     {
         if(snap->mems[num_mem].len ==0)
             break;
@@ -52,17 +53,10 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
             if(1 & (dirty_bits[i / 8] >> (i & 7)))
             {
                 uint32_t offset = page_size * i;
-                //fprintf(flog,"restore memory %x\n",snap->mems[num_mem].start + offset);
                 write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
             }
             
         }  
-    }
-    for(int num_mem = 0; num_mem < NUM_MEM_SNAPSHOT; num_mem++)
-    {
-        if(snap->mems[num_mem].len ==0)
-            break;
-        clear_dirty_mem(snap->mems[num_mem].start, snap->mems[num_mem].len);
     }
 
 }
