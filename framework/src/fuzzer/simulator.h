@@ -1,0 +1,15 @@
+#ifndef SIMULATOR_INCLUDED
+#define SIMULATOR_INCLUDED
+
+#include "iofuzzer.h"
+
+void fuzz_start(Simulator *simulator);
+void fuzz_continue(Simulator *simulator);
+void fuzz_terminate(Simulator *simulator);
+void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info);
+void fuzz_exit_timeout(Simulator *simulator,EXIT_INFO *exit_info, u32 seconds, bool *timeout);
+Simulator* get_avaliable_simulator(FuzzState *state);
+void wait_forkserver_terminate(Simulator * simulator);
+void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream);
+void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream);
+#endif

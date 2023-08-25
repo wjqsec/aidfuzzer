@@ -972,7 +972,7 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
 #endif /* CONFIG_TCG */
 
 /* Called from RCU critical section */
-RAMBlock *qemu_get_ram_block(ram_addr_t addr)
+static RAMBlock *qemu_get_ram_block(ram_addr_t addr)
 {
     RAMBlock *block;
 
@@ -1010,7 +1010,7 @@ found:
     return block;
 }
 
-void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length)
+static void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length)
 {
     CPUState *cpu;
     ram_addr_t start1;

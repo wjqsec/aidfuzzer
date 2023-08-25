@@ -46,7 +46,7 @@ struct NOSTOP_WATCHPOINT **nostop_watchpoints;
 uint8_t *mem_has_watchpoints;
 enum XX_CPU_TYPE xx_cpu_type;
 
-
+bool mmio_exit = false;
 
 exec_bbl_cb exec_bbl_func;
 exec_ins_icmp_cb exec_ins_icmp_func;
@@ -63,7 +63,7 @@ struct DirtyBitmapSnapshot {
 };
 
 
-void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+
 void page_init(void);
 void tb_htable_init(void);
 void vm_state_notify(bool running, RunState state);
@@ -265,13 +265,11 @@ void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read
     printf("add mmio %lx-%lx %s\n",start, start+size,name);
 }
 
-
-void xx_clear_dirty_mem(ram_addr_t addr, ram_addr_t size)
+void xx_mmio_exit_cpu_loop(void)
 {
-    MemoryRegion *mr = find_mr_by_addr(addr,size);
-    tlb_reset_dirty_range_all(addr, size);
-    memory_region_clear_dirty_bitmap(mr, addr - mr->addr, size);
+    mmio_exit = true;
 }
+
 int xx_target_pagesize(void)
 {
     return 1 << TARGET_PAGE_BITS;

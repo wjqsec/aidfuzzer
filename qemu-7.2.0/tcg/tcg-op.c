@@ -28,7 +28,9 @@
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-mo.h"
 #include "exec/plugin-gen.h"
-
+#include "exec/gen-icount.h"
+#include "xx.h"
+extern uint32_t precise_pc;
 /* Reduce the number of ifdefs below.  This assumes that all uses of
    TCGV_HIGH and TCGV_LOW are properly protected by a conditional that
    the compiler can eliminate.  */
@@ -2903,12 +2905,14 @@ static inline TCGv plugin_prep_mem_callbacks(TCGv vaddr)
 static void plugin_gen_mem_callbacks(TCGv vaddr, MemOpIdx oi,
                                      enum qemu_plugin_mem_rw rw)
 {
+    #ifdef MEMORY_ACCESS_CALLBACK
     TCGv_i64 ret_1 = tcg_const_i64(1);
     TCGv_i32 arg2_flag = tcg_const_i32(rw);
     gen_helper_xx_nostop_watchpoint(ret_1,vaddr,arg2_flag);
     tcg_temp_free(vaddr);
     tcg_temp_free_i32(arg2_flag);
     tcg_temp_free_i64(ret_1);
+    #endif
 #ifdef CONFIG_PLUGIN
     if (tcg_ctx->plugin_insn != NULL) {
         qemu_plugin_meminfo_t info = make_plugin_meminfo(oi, rw);
@@ -2935,7 +2939,9 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
             memop &= ~MO_SIGN;
         }
     }
-
+    #ifndef PRECISE_PC_EACH_INS
+    gen_op_update_pc(precise_pc);
+    #endif
     addr = plugin_prep_mem_callbacks(addr);
     gen_ldst_i32(INDEX_op_qemu_ld_i32, val, addr, memop, idx);
     plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);
@@ -3021,7 +3027,9 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
             memop &= ~MO_SIGN;
         }
     }
-
+    #ifndef PRECISE_PC_EACH_INS
+    gen_op_update_pc(precise_pc);
+    #endif
     addr = plugin_prep_mem_callbacks(addr);
     gen_ldst_i64(INDEX_op_qemu_ld_i64, val, addr, memop, idx);
     plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);

@@ -27,8 +27,9 @@
           ((_ret >> 8) & 0x0000FF00)); \
   })
 
-static u32 choose_block_len(u32 limit) {
+static u32 choose_block_len(u32 limit,u32 align) {
 
+  u32 ret;
   u32 min_value, max_value;
   u32 rlim = 4;
 
@@ -47,7 +48,7 @@ static u32 choose_block_len(u32 limit) {
              break;
     default: 
 
-             if (UR(10)) {
+             if (UR(5)) {
 
                min_value = HAVOC_BLK_LARGE;
                max_value = HAVOC_BLK_XL;
@@ -63,7 +64,8 @@ static u32 choose_block_len(u32 limit) {
 
   if (min_value >= limit) min_value = 1;
 
-  return min_value + UR(MIN(max_value, limit) - min_value + 1);
+  ret = min_value + UR(MIN(max_value, limit) - min_value + 1);
+  return (ret / align) * align;
 
 }
 
@@ -90,22 +92,57 @@ static void locate_diffs(u8* ptr1, u8* ptr2, u32 len, s32* first, s32* last) {
   return;
 
 }
+
+
+
+
+input_stream* increase_stream(FuzzState *state,input_stream* stream)
+{
+
+  s32 incease_len;
+  input_stream* ret;
+  s32 len = stream->ptr->len;
+  if (len + HAVOC_BLK_XXL < MAX_FILE) 
+  {
+    incease_len = choose_block_len(HAVOC_BLK_XXL,stream->ptr->element_size);
+  }
+  else
+    incease_len = 0;
+  
+  ret =  extend_stream(state,stream, incease_len);
+
+  return ret;
+  
+}
+
+
 input_stream* havoc(FuzzState *state,input_stream* stream)
 
 {
   #define HAVOC_STACK 32
-  #define HAVOC_TOKEN 20 
+  #define HAVOC_TOKEN 16
   #define ARITH_MAX   35
 
   s32 len;
   u8 *data;
   input_stream * ret;
-  u32 use_stacking = 1 << (1 + UR(7));
+  u32 use_stacking;
+  u32 max_num_element;
   s32 i;
+  
 
-  ret = allocate_enough_space_stream(state,stream->ptr->stream_id,stream->ptr->len);
-  memcpy(ret->ptr->data,stream->ptr->data,stream->ptr->len);
-  ret->priority = stream->priority;
+  
+  if(UR(20))
+    ret = clone_stream(state,stream);
+  else
+    ret = increase_stream(state,stream);
+  max_num_element = stream->mutation_len / stream->ptr->element_size;
+    
+  use_stacking = (1 << (1 + UR(7)));
+  
+  use_stacking = use_stacking < max_num_element ? use_stacking : max_num_element;
+
+
   len = ret->ptr->len;
   data = ret->ptr->data;
   
@@ -282,46 +319,10 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
       }
       case 14:
       {
-        if(ret->ptr->element_size != 4) break;
-        if(len < 8)
-          break;
-        s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
-        s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
-        s32 val = UR(0xffffffff);
-        *tmp1 = val;
-        *tmp2 = val;
-        break;
-      }
-        
-      case 15:
-      {
-        if(ret->ptr->element_size != 4) break;
-        if(len < 8)
-          break;
-        s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
-        s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
-        s32 val = 0;
-        *tmp1 = val;
-        *tmp2 = val;
-        break;
-      }
-      case 16:
-      {
-        if(ret->ptr->element_size != 4) break;
-        if(len < 8)
-          break;
-        s32* tmp1 = (s32*)(data + (UR(len - 7) & 0xfffffffc));
-        s32* tmp2 = tmp1 + 1; //(s32*)(data + UR(len - 3));
-        s32 val = 0xffffffff;
-        *tmp1 = val;
-        *tmp2 = val;
-        break;
-      }
-      case 17:
-      {
         u32 del_from, del_len;
         if (len <= ret->ptr->element_size) break;
-        del_len = choose_block_len(0x20);
+        del_len = choose_block_len(0x20,ret->ptr->element_size);
+        if(del_len == 0)  break;
         if (len < ret->ptr->element_size + del_len) break;
         del_from = UR(len - del_len + 1);
         memmove(data + del_from, data + del_from + del_len,
@@ -330,62 +331,15 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
         len  -= del_len;
         break;
       }
-      case 18:
-      {
-        if (len + HAVOC_BLK_XXL < MAX_FILE) {
 
-          /* Clone bytes (75%) or insert a block of constant bytes (25%). */
-
-          u8  actually_clone = UR(4);
-          u32 clone_from, clone_to, clone_len;
-          input_stream *new_stream;
-
-          if (actually_clone) {
-
-            clone_len  = choose_block_len(len);
-            clone_from = UR(len - clone_len + 1);
-
-          } else {
-
-            clone_len = choose_block_len(HAVOC_BLK_XXL);
-            clone_from = 0;
-
-          }
-
-          clone_to   = UR(len);
-
-          new_stream = allocate_enough_space_stream(state,ret->ptr->stream_id,len+clone_len);
-
-          /* Head */
-
-          memcpy(new_stream->ptr->data, ret->ptr->data, clone_to);
-
-          /* Inserted part */
-
-          if (actually_clone)
-            memcpy(new_stream->ptr->data + clone_to, ret->ptr->data + clone_from, clone_len);
-          else
-            memset(new_stream->ptr->data + clone_to,
-                    UR(2) ? UR(256) : ret->ptr->data[UR(len)], clone_len);
-
-          /* Tail */
-          memcpy(new_stream->ptr->data + clone_to + clone_len, ret->ptr->data + clone_to,
-                  len - clone_to);
-
-          free_stream(state,ret);
-          ret = new_stream;
-          len = ret->ptr->len;
-          data = ret->ptr->data;
-        }
-      }
-      case 19:
+      case 15:
       {
         u32 copy_from, copy_to, copy_len;
 
         if (len < 2) break;
 
-        copy_len  = choose_block_len(len - 1);
-
+        copy_len  = choose_block_len(len - 1,ret->ptr->element_size);
+        if (copy_len == 0) break; 
         copy_from = UR(len - copy_len + 1);
         copy_to   = UR(len - copy_len + 1);
 
@@ -396,6 +350,7 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
 
         } else memset(ret->ptr->data + copy_to,
                       UR(2) ? UR(256) : ret->ptr->data[UR(len)], copy_len);
+        break;
       }
       default:
       break;
@@ -409,39 +364,37 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
 
 
 
-input_stream* splicing(FuzzState *state,input_stream* stream)
-{
-  s32 len;
-  u8 *data;
-  s32 f_diff, l_diff,split_at;
-  input_stream * ret;
-  input_stream* target;
-  vector<input_stream *> *queue_streams;
+// input_stream* splicing(FuzzState *state,input_stream* stream)
+// {
+//   s32 len;
+//   u8 *data;
+//   s32 f_diff, l_diff,split_at;
+//   input_stream * ret;
+//   input_stream* target;
+//   vector<input_stream *> *queue_streams;
 
   
-  if(state->all_queued_streams->count(stream->ptr->stream_id) == 0)
-  {
-    return nullptr;
-  }
-  queue_streams = (*state->all_queued_streams)[stream->ptr->stream_id];
-  if(queue_streams->size() <= 1)
-    return nullptr;
-  target = (*queue_streams)[UR(queue_streams->size())];
-  if(target == stream)
-    return nullptr;
-  ret = allocate_enough_space_stream(state,stream->ptr->stream_id,stream->ptr->len);
-  memcpy(ret->ptr->data,stream->ptr->data,stream->ptr->len);
-  ret->priority = stream->priority;
-  len = ret->ptr->len;
-  data = ret->ptr->data;
+//   if(state->all_queued_streams->count(stream->ptr->stream_id) == 0)
+//   {
+//     return nullptr;
+//   }
+//   queue_streams = (*state->all_queued_streams)[stream->ptr->stream_id];
+//   if(queue_streams->size() <= 1)
+//     return nullptr;
+//   target = (*queue_streams)[UR(queue_streams->size())];
+//   if(target == stream)
+//     return nullptr;
+//   ret = clone_stream(state,stream);
+//   len = ret->ptr->len;
+//   data = ret->ptr->data;
 
-  locate_diffs(data, target->ptr->data, MIN(len, target->ptr->len), &f_diff, &l_diff);
+//   locate_diffs(data, target->ptr->data, MIN(len, target->ptr->len), &f_diff, &l_diff);
 
-  if (f_diff < 0 || l_diff < 2 || f_diff == l_diff) 
-  {
-    return ret;
-  }
-  split_at = f_diff + UR(l_diff - f_diff);
-  memcpy(data, target->ptr->data, split_at);
-  return ret;
-}
+//   if (f_diff < 0 || l_diff < 2 || f_diff == l_diff) 
+//   {
+//     return ret;
+//   }
+//   split_at = f_diff + UR(l_diff - f_diff);
+//   memcpy(data, target->ptr->data, split_at);
+//   return ret;
+// }

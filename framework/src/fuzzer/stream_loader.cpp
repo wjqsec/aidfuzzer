@@ -29,14 +29,10 @@ void save_queue(queue_entry *q,char *dir)
   char filename[PATH_MAX];
   sprintf(filename,"%s/queue_%08x",dir,q->cksum);
   FILE *f_queue = fopen(filename,"wb");
-  fwrite(&q->depth,sizeof(q->depth),1,f_queue);
-  fwrite(&q->edges,sizeof(q->edges),1,f_queue);
-  fwrite(&q->cksum,sizeof(q->cksum),1,f_queue);
-  fwrite(&q->priority,sizeof(q->priority),1,f_queue);
+  fwrite(q,offsetof(queue_entry,offset_to_save),1,f_queue);
   for(auto it = q->streams->begin(); it != q->streams->end();it++)
   {
-    fwrite(&it->second->priority,sizeof(it->second->priority),1,f_queue);
-    fwrite(&it->second->offset_to_stream_area,sizeof(it->second->offset_to_stream_area),1,f_queue);
+    fwrite(it->second,offsetof(input_stream,offset_to_save),1,f_queue);
   }
   fclose(f_queue);
 }
@@ -51,16 +47,13 @@ queue_entry *load_queue(FuzzState *state,char *seedfile)
   FILE *f_queue = fopen(seedfile,"rb");
   if(!f_queue)
     fatal("queue file doesnt exist\n");
-  fread(&q->depth,sizeof(q->depth),1,f_queue);
-  fread(&q->edges,sizeof(q->edges),1,f_queue);
-  fread(&q->cksum,sizeof(q->cksum),1,f_queue);
-  fread(&q->priority,sizeof(q->priority),1,f_queue);
+  fread(q,offsetof(queue_entry,offset_to_save),1,f_queue);
+
   while(1)
   {
     stream = new input_stream();
-    if(!fread(&stream->priority,sizeof(stream->priority),1,f_queue))
+    if(!fread(stream,offsetof(input_stream,offset_to_save),1,f_queue))
       break;
-    fread(&stream->offset_to_stream_area,sizeof(stream->offset_to_stream_area),1,f_queue);
     stream->ptr = (stream_metadata*) (state->shared_stream_data + stream->offset_to_stream_area);
     (*q->streams)[stream->ptr->stream_id] = stream;
   }
@@ -114,8 +107,7 @@ void save_freed_streams(FuzzState *state,char *queue_dir)
     streams = it->second;
     for(input_stream* stream: *streams)
     {
-      fwrite(&stream->priority,sizeof(stream->priority),1,f_freed_streams);
-      fwrite(&stream->offset_to_stream_area,sizeof(stream->offset_to_stream_area),1,f_freed_streams);
+      fwrite(stream,offsetof(input_stream,offset_to_save),1,f_freed_streams);
     }
   }
   fclose(f_freed_streams);
@@ -131,9 +123,8 @@ void load_freed_streams(FuzzState *state,char *queue_dir)
   while(true)
   {
     stream = new input_stream();
-    if(!fread(&stream->priority,sizeof(stream->priority),1,f_freed_streams))
+    if(!fread(stream,offsetof(input_stream,offset_to_save),1,f_freed_streams))
       break;
-    fread(&stream->offset_to_stream_area,sizeof(stream->offset_to_stream_area),1,f_freed_streams);
     stream->ptr = (stream_metadata*) (state->shared_stream_data + stream->offset_to_stream_area);
     free_stream(state,stream);
   }

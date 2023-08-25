@@ -1346,7 +1346,7 @@ static inline void cpu_transaction_failed(CPUState *cpu, hwaddr physaddr,
                                            response, retaddr);
     }
 }
-
+extern bool mmio_exit;
 static uint64_t io_readx(CPUArchState *env, CPUTLBEntryFull *full,
                          int mmu_idx, target_ulong addr, uintptr_t retaddr,
                          MMUAccessType access_type, MemOp op)
@@ -1384,7 +1384,11 @@ static uint64_t io_readx(CPUArchState *env, CPUTLBEntryFull *full,
     if (locked) {
         qemu_mutex_unlock_iothread();
     }
-
+    if(mmio_exit)
+    {
+        mmio_exit = false;
+        cpu_loop_exit(cpu);
+    }
     return val;
 }
 
@@ -1908,6 +1912,7 @@ load_helper(CPUArchState *env, target_ulong addr, MemOpIdx oi,
             uintptr_t retaddr, MemOp op, bool code_read,
             FullLoadHelper *full_load)
 {
+
     const size_t tlb_off = code_read ?
         offsetof(CPUTLBEntry, addr_code) : offsetof(CPUTLBEntry, addr_read);
     const MMUAccessType access_type =
@@ -2318,6 +2323,7 @@ static inline void QEMU_ALWAYS_INLINE
 store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
              MemOpIdx oi, uintptr_t retaddr, MemOp op)
 {
+
     const size_t tlb_off = offsetof(CPUTLBEntry, addr_write);
     const unsigned a_bits = get_alignment_bits(get_memop(oi));
     const size_t size = memop_size(op);

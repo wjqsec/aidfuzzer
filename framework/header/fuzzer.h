@@ -18,26 +18,6 @@ typedef int16_t  s16;
 typedef int32_t  s32;
 typedef int64_t  s64;
 
-#define EXIT_NONE 0
-#define EXIT_TIMEOUT 1
-#define EXIT_OUTOFSEED 2
-#define EXIT_CRASH 3
-#define EXIT_FORKSRV_UP 4
-#define EXIT_TERMINATE 5
-
-
-
-#define DEFAULT_STREAM_LEN 0x1000
-
-#define MAX_BBL_EXEC 150000
-
-#define DEFAULT_ELEMENT_SIZE 4
-
-
-
-#define IRQ_STREAM_ID 0xffffffff
-
-
 #ifndef likely
 #define likely(_x)   __builtin_expect(!!(_x), 1)
 #endif
@@ -45,6 +25,29 @@ typedef int64_t  s64;
 #ifndef unlikely
 #define unlikely(_x)  __builtin_expect(!!(_x), 0)
 #endif
+
+
+
+//#define STREAM_MAGIC_CHECK
+
+#define EXIT_STREAM_NOTFOUND 1
+#define EXIT_TIMEOUT 2
+#define EXIT_OUTOFSTREAM 3
+#define EXIT_CRASH 4
+#define EXIT_FORKSRV_UP 5
+#define EXIT_TERMINATE 6
+
+
+
+#define DEFAULT_STREAM_LEN 0x10
+#define DEFAULT_MAX_STREAM_INCREASE_LEN 0x1000
+
+#define MAX_BBL_EXEC 150000
+
+#define DEFAULT_ELEMENT_SIZE 4
+
+
+
 
 
 #define SHARE_FUZZDATA_SIZE 3 << 30
@@ -56,8 +59,8 @@ typedef int64_t  s64;
 #define MODEL_PASSTHROUGH 3
 #define MODEL_NONE 4
 
-#define MODE_FUZZ 1
-#define MODE_DEBUG 2
+#define DEFAULT_PASSTHROUGH_CONSTANT_LEN 0x2000
+
 
 #define NVIC_MAX_VECTORS 512
 
@@ -85,19 +88,44 @@ typedef int64_t  s64;
 
 
 #define CMD_FUZZ 0
-#define CMD_TERMINATE 1
+#define CMD_CONTINUE_UPDATE_STREAM 1
+#define CMD_CONTINUE_ADD_STREAM 2
+#define CMD_TERMINATE 3
+
+struct CMD_INFO
+{
+    u32 cmd;
+    union 
+    {
+        u32 added_stream_index;
+        u32 updated_stream_index;
+    };
+    
+    
+} __attribute__((packed));
+
+
+
 
 struct EXIT_INFO
 {
     u32 exit_code;
-    u32 exit_oufofseed_mmio_id;
+    u32 exit_stream_id;
     u64 exit_pc;
     u32 num_mmio;
 } __attribute__((packed));
 
+
+
+
+
 struct stream_metadata
 {
 #define MAX_VALUE_SET_SIZE 255
+#ifdef STREAM_MAGIC_CHECK
+#define STREAM_MAGIC 0xdeadbeef
+    u32 magic_number;
+#endif
     u32 stream_id;
     s32 len;
     s32 initial_len;

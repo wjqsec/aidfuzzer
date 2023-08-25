@@ -46,7 +46,6 @@ extern struct NOSTOP_WATCHPOINT **nostop_watchpoints;
 extern uint8_t *mem_has_watchpoints;
 uint64_t  HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
 {
-    
     bool should_exit = exec_bbl_func(pc,id,bbl_counts);
     if(should_exit)
     {
@@ -85,8 +84,8 @@ uint64_t  HELPER(xx_func)(CPUArchState *env,uint64_t pc,uint32_t id,void *ptr)
 }
 uint64_t HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t flag)
 {
-    if(!enable_nostop_watchpoint_flag)
-        return 1;
+    // if(unlikely(!enable_nostop_watchpoint_flag))
+    //     return 1;
     int i;
     uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     if(likely(mem_has_watchpoints[id] == 0))

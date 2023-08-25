@@ -7,13 +7,22 @@
 #include <poll.h>
 using namespace std;
 #include "fuzzer.h"
+
+
+#define MODE_FUZZ 1
+#define MODE_DEBUG 2
+
+
 struct input_stream
 {
 #define DEFAULT_STREAM_PRIORITY 1
     s32 priority;
+    s32 mutation_len;
+    s32 ref_count;
     u32 offset_to_stream_area;
+    u8 offset_to_save[0];
     stream_metadata *ptr;
-};
+}__attribute__((packed));
 
 struct queue_entry
 {
@@ -22,10 +31,11 @@ struct queue_entry
     u32 cksum;
 #define DEFAULT_QUEUE_PRIORITY 1
     s32 priority;
+    u8 offset_to_save[0];
 
     map<u32,input_stream *> *streams;
     
-};
+}__attribute__((packed));
 
 struct input_model
 {
@@ -45,10 +55,8 @@ struct Simulator
     u32 map_size;
     u8 *trace_bits;
     u8 *shared_fuzz_queue_data;
-    u8 *shared_undiscovered_stream_data;
 
     s32 shm_id_trace_bit;
-    s32 shm_id_undiscover_stream_var;
     s32 shm_id_fuzz_queue;
 
     int fd_ctl_to_simulator;
@@ -67,8 +75,7 @@ struct Simulator
     int status;
 
     queue_entry* fuzz_entry;
-    map<u32,input_stream*> *fuzz_stream;
-
+    map<u32,int> *id_queue_idx_mapping;
     FuzzState *state;
 
 };
@@ -87,7 +94,6 @@ struct FuzzState
     s64 total_priority;
 
     vector<queue_entry*> *entries;
-    map<u32,vector<input_stream*>*> *all_queued_streams;
     map<u32,vector<input_stream*>*> *freed_streams;
     set<u32> *crash_ids;
     
@@ -114,5 +120,5 @@ void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *
 Simulator* get_avaliable_simulator(FuzzState *state);
 void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info);
 void fuzz_entry(Simulator *simulator);
-
+bool fuzz_one_post(FuzzState *state,Simulator *simulator);
 #endif

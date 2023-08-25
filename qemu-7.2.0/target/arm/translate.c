@@ -34,7 +34,7 @@
 #include "exec/helper-gen.h"
 #include "exec/log.h"
 #include "cpregs.h"
-
+#include "xx.h"
 
 #define ENABLE_ARCH_4T    arm_dc_feature(s, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_dc_feature(s, ARM_FEATURE_V5)
@@ -57,7 +57,7 @@ static TCGv_i32 cpu_R[16];
 TCGv_i32 cpu_CF, cpu_NF, cpu_VF, cpu_ZF;
 TCGv_i64 cpu_exclusive_addr;
 TCGv_i64 cpu_exclusive_val;
-
+extern uint32_t precise_pc;
 #include "exec/gen-icount.h"
 
 static const char * const regnames[] =
@@ -9590,7 +9590,10 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
+    #ifdef PRECISE_PC_EACH_INS
     gen_op_update_pc(dc->pc_curr);
+    #endif
+    precise_pc = dc->pc_curr;
     disas_arm_insn(dc, insn);
 
     arm_post_translate_insn(dc);
@@ -9731,7 +9734,10 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
             arm_skip_unless(dc, cond);
         }
     }
+    #ifdef PRECISE_PC_EACH_INS
     gen_op_update_pc(dc->pc_curr);
+    #endif
+    precise_pc = dc->pc_curr;
     if (is_16bit) {
         disas_thumb_insn(dc, insn);
     } else {

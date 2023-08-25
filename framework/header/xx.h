@@ -1,6 +1,10 @@
 #ifndef XX_INCLUDED
 
 #define XX_INCLUDED
+
+// #define PRECISE_PC_EACH_INS
+// #define MEMORY_ACCESS_CALLBACK
+
 #include <stdint.h>
 #include <glib.h>
 typedef uint64_t hwaddr;
@@ -119,6 +123,7 @@ void xx_reset_arm_reg(void);
 void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb);
 void xx_set_armv7_vecbase(hwaddr addr);
 hwaddr xx_get_arm_precise_pc(void);
+hwaddr xx_get_arm_pc(void);
 void xx_register_exec_nvic_hook(exec_nvic_cb cb);
 void xx_register_enable_nvic_hook(enable_nvic_cb cb);
 bool xx_get_arm_v7m_is_handler_mode(void);
@@ -136,6 +141,7 @@ bool xx_get_arm_v7m_is_handler_mode(void);
 #define register_arm_do_interrupt_hook xx_register_arm_do_interrupt_hook
 #define set_armv7_vecbase xx_set_armv7_vecbase
 #define get_arm_precise_pc xx_get_arm_precise_pc
+#define get_arm_pc xx_get_arm_pc
 #define register_exec_nvic_hook xx_register_exec_nvic_hook
 #define register_enable_nvic_hook xx_register_enable_nvic_hook
 #define get_arm_v7m_is_handler_mode xx_get_arm_v7m_is_handler_mode
@@ -202,12 +208,13 @@ void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio
 void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int size);
 void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size);
 int xx_target_pagesize(void);
-void xx_clear_dirty_mem(hwaddr start, hwaddr size);
 void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
 struct NOSTOP_WATCHPOINT* xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data);
 void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint);
 void xx_enable_nostop_watchpoint(void);
 void xx_disable_nostop_watchpoint(void);
+void xx_mmio_exit_cpu_loop(void);
+
 
 #define thread_loop xx_thread_loop
 #define register_pre_thread_exec_hook xx_register_pre_thread_exec_hook
@@ -224,7 +231,8 @@ void xx_disable_nostop_watchpoint(void);
 #define load_file_ram xx_load_file_ram
 #define load_file_rom xx_load_file_rom
 #define target_pagesize xx_target_pagesize
-#define clear_dirty_mem xx_clear_dirty_mem
+#define mmio_exit_cpu_loop xx_mmio_exit_cpu_loop
+
 #define get_dirty_pages xx_get_dirty_pages
 #define insert_nostop_watchpoint xx_insert_nostop_watchpoint
 #define delete_nostop_watchpoint xx_delete_nostop_watchpoint

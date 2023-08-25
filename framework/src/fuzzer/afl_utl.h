@@ -75,6 +75,42 @@ inline static void init_count_class16(void) {
         count_class_lookup8[b2];
 
 }
+
+
+inline static void init_count_class16_2(void)
+{
+  int i;
+  count_class_lookup16[0] = 0;
+  count_class_lookup16[1] = 1;
+  count_class_lookup16[2] = 2;
+  count_class_lookup16[3] = 4;
+  for(i = 4;i <= 7; i++)
+    count_class_lookup16[i] = 8;
+  for(i = 8;i <= 15; i++)
+    count_class_lookup16[i] = 16;
+  for(i = 16;i <= 31; i++)
+    count_class_lookup16[i] = 32;
+  for(i = 32;i <= 63; i++)
+    count_class_lookup16[i] = 64;
+  for(i = 65;i <= 127; i++)
+    count_class_lookup16[i] = 128;
+  for(i = 128;i <= 255; i++)
+    count_class_lookup16[i] = 256;
+  for(i = 256;i <= 511; i++)
+    count_class_lookup16[i] = 512;
+  for(i = 512;i <= 1023; i++)
+    count_class_lookup16[i] = 1024;
+  for(i = 1024;i <= 2047; i++)
+    count_class_lookup16[i] = 2048;
+  for(i = 2048;i <= 4095; i++)
+    count_class_lookup16[i] = 4096;
+  for(i = 4096;i <= 8191; i++)
+    count_class_lookup16[i] = 8192;
+  for(i = 8192;i <= 16383; i++)
+    count_class_lookup16[i] = 16384;
+  for(i = 16384;i <= 65535; i++)
+    count_class_lookup16[i] = 32768;
+}
 inline static void classify_counts(u64* mem, u32 size) {
 
   u32 i = size >> 3;
@@ -135,8 +171,46 @@ inline static u8 has_new_bits_update_virgin(u8* virgin_map, u8 *trace_bits, u32 
   }
 
   return ret;
-
 }
+
+inline static u8 has_new_bits_update_virgin_2(u8* virgin_map, u8 *trace_bits, u32 size) 
+{
+  u64* current = (u64*)trace_bits;
+  u64* virgin  = (u64*)virgin_map;
+
+  u32  i = (size >> 3);
+
+  u8   ret = 0;
+
+  while (i--) {
+
+    if (unlikely(*current) && unlikely(*current & *virgin)) {
+
+      if (likely(ret < 2)) {
+
+        u16* cur = (u16*)current;
+        u16* vir = (u16*)virgin;
+
+        if ((cur[0] && vir[0] == 0xffff) || (cur[1] && vir[1] == 0xffff) ||
+            (cur[2] && vir[2] == 0xffff) || (cur[3] && vir[3] == 0xffff)
+           ) ret = 2;
+        else ret = 1;
+
+      }
+
+      *virgin &= ~*current;
+
+    }
+
+    current++;
+    virgin++;
+
+  }
+
+  return ret;
+}
+
+
 inline static u32 count_bits(u8* mem, u32 size) {
 
   u32* ptr = (u32*)mem;
@@ -177,6 +251,27 @@ inline static u32 count_bytes(u8* mem, u32 size) {
     if (v & FF(1)) ret++;
     if (v & FF(2)) ret++;
     if (v & FF(3)) ret++;
+
+  }
+
+  return ret;
+}
+inline static u32 count_words(u8* mem, u32 size) {
+
+#define FF_WORD(_b)  ((u64)0xffff << ((_b) << 4))
+  u64* ptr = (u64*)mem;
+  u32  i   = (size >> 3);
+  u32  ret = 0;
+
+  while (i--) {
+
+    u64 v = *(ptr++);
+
+    if (!v) continue;
+    if (v & FF_WORD(0)) ret++;
+    if (v & FF_WORD(1)) ret++;
+    if (v & FF_WORD(2)) ret++;
+    if (v & FF_WORD(3)) ret++;
 
   }
 

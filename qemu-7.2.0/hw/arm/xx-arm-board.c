@@ -33,7 +33,7 @@ struct ARM_NVIC_ALL_STATE
     struct NVICState *nvic;
 };
 
-
+uint32_t precise_pc;
 void xx_set_armv7_vecbase(uint64_t vecbase)
 {
     cpu->init_svtor = vecbase;
@@ -43,9 +43,13 @@ uint64_t xx_get_arm_precise_pc(void)
 {
     return cs->precise_pc;
 }
+uint64_t xx_get_arm_pc(void)
+{
+    return env->regs[15];
+}
+
 bool xx_insert_nvic_intc(int irq)
 {
-    //if(armv7m_nvic_get_ready_status(nvic, irq, secure))
     if(nvic->vectors[irq].enabled && !nvic->vectors[irq].pending)
     {
         armv7m_nvic_set_pending(nvic, irq, false);
