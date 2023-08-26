@@ -1384,11 +1384,7 @@ static uint64_t io_readx(CPUArchState *env, CPUTLBEntryFull *full,
     if (locked) {
         qemu_mutex_unlock_iothread();
     }
-    if(mmio_exit)
-    {
-        mmio_exit = false;
-        cpu_loop_exit(cpu);
-    }
+
     return val;
 }
 

@@ -27,6 +27,13 @@
           ((_ret >> 8) & 0x0000FF00)); \
   })
 
+#define FLIP_BIT(_ar, _b) do { \
+    u8* _arf = (u8*)(_ar); \
+    u32 _bf = (_b); \
+    _arf[(_bf) >> 3] ^= (128 >> ((_bf) & 7)); \
+  } while (0)
+
+
 static u32 choose_block_len(u32 limit,u32 align) {
 
   u32 ret;

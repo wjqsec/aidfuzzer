@@ -18,9 +18,9 @@ struct input_stream
 #define DEFAULT_STREAM_PRIORITY 1
     s32 priority;
     s32 mutation_len;
-    s32 ref_count;
     u32 offset_to_stream_area;
     u8 offset_to_save[0];
+    s32 ref_count;
     stream_metadata *ptr;
 }__attribute__((packed));
 
@@ -102,10 +102,7 @@ struct FuzzState
 
     FILE *flog;
 
-    u64 exit_none;
-    u64 exit_outofseed;
-    u64 exit_timeout;
-    u64 exit_crash;
+    u64 exit_reason[EXIT_MAX];
 
     vector<Simulator *> *simulators;
 #define MAX_NUM_PIPES 100

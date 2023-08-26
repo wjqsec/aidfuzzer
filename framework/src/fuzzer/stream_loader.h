@@ -6,6 +6,7 @@
 #include "stream.h"
 #include "xx.h"
 #include "afl_utl.h"
+#include "mis_utl.h"
 #include <sys/stat.h>
 void save_pool(FuzzState *state,char *queue_dir);
 

@@ -13,10 +13,11 @@ void update_stream_ptr(FuzzState *state, u32 used)
 
 void free_stream(FuzzState *state,input_stream *stream)
 {
-  if(stream->ref_count > 0 )
-    stream->ref_count--;
+  return;
+  stream->ref_count--;
   if(stream->ref_count > 0)
     return;
+  stream->ref_count = 0;
   u32 id = stream->ptr->stream_id;
   vector<input_stream *> *freed_streams;
   if(state->freed_streams->count(id) == 0)
@@ -136,12 +137,7 @@ input_stream *clone_stream(FuzzState *state,input_stream *stream)
   return extend_stream(state,stream,0);
 }
 
-void replace_stream(FuzzState *state,queue_entry* q,input_stream *old_tream, input_stream *new_tream)
-{
-  free_stream(state,old_tream);
-  new_tream->ref_count++;
-  (*q->streams)[old_tream->ptr->stream_id] = new_tream;
-}
+
 void insert_stream(queue_entry* q,input_stream *stream)
 {
   stream->ref_count++;
@@ -151,5 +147,10 @@ void remove_stream(FuzzState *state,queue_entry* q,input_stream *stream)
 {
   free_stream(state,stream);
   q->streams->erase(stream->ptr->stream_id);
+}
+void replace_stream(FuzzState *state,queue_entry* q,input_stream *old_tream, input_stream *new_tream)
+{
+  free_stream(state,old_tream);
+  insert_stream(q,new_tream);
 }
 

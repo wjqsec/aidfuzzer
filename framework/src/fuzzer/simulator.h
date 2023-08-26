@@ -12,4 +12,5 @@ Simulator* get_avaliable_simulator(FuzzState *state);
 void wait_forkserver_terminate(Simulator * simulator);
 void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream);
 void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream);
+void simulator_env_init(void);
 #endif

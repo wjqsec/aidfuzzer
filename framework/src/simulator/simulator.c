@@ -21,7 +21,7 @@
 
 //#define DBG
 #define CRASH_DBG
-//#define MMIO_READ_DBG
+// #define MMIO_READ_DBG
 #define EXIT_DBG
 
 
@@ -48,6 +48,7 @@ uint64_t max_bbl_exec = MAX_BBL_EXEC;
 
 
 struct EXIT_INFO exit_info;
+bool next_bbl_should_exit = false;
 uint32_t num_mmio;
 
 
@@ -88,6 +89,7 @@ void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio
 
 inline void add_stream(int index_to_shared_queue)
 {
+    
     u32 index_to_streams;
     struct SHARED_STREAM *stream;
     struct stream_metadata *metadata;
@@ -109,12 +111,12 @@ inline void add_stream(int index_to_shared_queue)
         printf("stream index colission id:%x\n",metadata->stream_id);
         exit(0);
     }
-
     stream->avaliable = true;
     stream->used = &queue->streams[index_to_shared_queue].used;
     stream->metadata = metadata;
     stream_indexs[num_stream_indexs] = index_to_streams;
     num_stream_indexs++;
+
 }
 inline void update_stream(int index_to_shared_queue)
 {
@@ -138,11 +140,13 @@ inline void clear_streams()
 void collect_streams()
 {
     u32 i;
+
     clear_streams();
     for(i = 0; i < queue->num_streams ; i++)
     {
         add_stream(i);
     }
+
     
 }
 
@@ -196,10 +200,11 @@ bool exit_with_code_start()
     struct CMD_INFO cmd_info;
 
     
-    
+
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
 
     read(fd_from_fuzzer,&cmd_info,sizeof(struct CMD_INFO)); 
+
 
     if(unlikely(cmd_info.cmd == CMD_TERMINATE))
     {
@@ -232,6 +237,7 @@ bool exit_with_code_start()
         exit(0);
         pc_changed = true;
     }
+    
     #ifdef DBG
     if(pc_changed)
         fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,(uint32_t)exit_info.exit_pc);
@@ -325,24 +331,38 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
 }
 void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio)
 {
+    
     exit_info.exit_code = code;
     exit_info.exit_stream_id = stream_id;
     exit_info.exit_pc = pc;
     exit_info.num_mmio = num_mmio;
 }
 
-bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
+
+inline int get_stream_status(struct SHARED_STREAM * stream)
 {
-    bool outofstream = false;
-    if( stream->metadata->len >= stream->metadata->element_size + *stream->used && 
-        stream->metadata->len < (stream->metadata->element_size * 2) + *stream->used
-    )
-        outofstream = true;
+    int outofstream = STREAM_STATUS_OK;
+    if( stream->metadata->len < stream->metadata->element_size + *stream->used)
+    {
+        if(stream->metadata->len > DEFAULT_MAX_STREAM_INCREASE_LEN)
+        {
+            outofstream = STREAM_STATUS_OUTOF;
+        }
+        else
+        {
+            outofstream = STREAM_STATUS_NOTENOUGH;
+        }
+    }
+    return outofstream;
+}
+void get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
+{
     
     switch(stream->metadata->mode)
     {
         case MODEL_VALUE_SET:
         {
+
             uint32_t tmp = 0;
             memcpy(&tmp,stream->metadata->data + *stream->used,stream->metadata->element_size);
             *out = stream->metadata->value_set[tmp % stream->metadata->value_set_size];
@@ -356,6 +376,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         
         case MODEL_BIT_EXTRACT:
         {
+
             memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
             *out = *out << stream->metadata->left_shift;
             break;
@@ -369,6 +390,7 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
 
         case MODEL_NONE:
         {
+
             memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
             break;
         }
@@ -380,20 +402,23 @@ bool get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
             break;
         }
     } 
+
     num_mmio++;
     nommio_executed_bbls = 0;
     *stream->used += stream->metadata->element_size;
-    return outofstream;
 
 }
 
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
     uint64_t ret = 0;
+    if(next_bbl_should_exit)
+        return ret;
+
     addr = (hwaddr)opaque + addr;
     uint64_t precise_pc = get_arm_precise_pc();
     
-    bool outofseed;
+    int stream_status;
     bool pc_changed;
 
     uint32_t stream_id = hash_32_ext(addr) ^ hash_32_ext(precise_pc) ;
@@ -414,19 +439,37 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
         exit_with_code_start();
         if(!stream->avaliable)
         {
-            printf("stream not added by fuzzer\n");
+            printf("stream not added by fuzzer id:%x\n",stream_id);
             exit(0);
         }
     }
     
-    outofseed = get_fuzz_data(stream, &ret);     
-    if(outofseed)
+    stream_status = get_stream_status(stream);
+       
+    if(likely(stream_status == STREAM_STATUS_OK))
     {
-        prepare_exit(EXIT_OUTOFSTREAM,stream_id,precise_pc,num_mmio);
-        pc_changed = exit_with_code_start();
-        if(pc_changed)
-            mmio_exit_cpu_loop();
-            
+        get_fuzz_data(stream, &ret);  
+    }
+    else if(stream_status == STREAM_STATUS_NOTENOUGH)
+    {
+        do
+        {
+            prepare_exit(EXIT_NOTENOUGHT_STREAM,stream_id,precise_pc,num_mmio);
+            pc_changed = exit_with_code_start();
+            stream_status = get_stream_status(stream);
+            /* code */
+        } while (stream_status != STREAM_STATUS_OK);
+        get_fuzz_data(stream, &ret);  
+       
+    }
+    else if(stream_status == STREAM_STATUS_OUTOF)
+    {
+        prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio);
+        next_bbl_should_exit = true;
+    }
+    else
+    {
+
     }
         
 
@@ -438,9 +481,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     fprintf(flog,"%d->mmio read pc:%x mmio_addr:%x val:%x stream_id:%x\n",run_index, (uint32_t)get_arm_precise_pc(),(uint32_t)addr,(uint32_t)ret,stream_id);
     #endif
 
-    #ifdef MMIO_READ_DBG
-    fprintf(flog,"%d->mmio read pc:%x mmio_addr:%x val:%x stream_id:%x\n",run_index, (uint32_t)get_arm_precise_pc(),(uint32_t)addr,(uint32_t)ret,stream_id);
-    #endif
+    
     return ret;
 }
 
@@ -460,6 +501,12 @@ void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
 bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
 {
     bool pc_changed = false;
+    if(unlikely(next_bbl_should_exit))
+    {
+        next_bbl_should_exit = false;
+        pc_changed = exit_with_code_start();
+        return pc_changed;
+    }
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
 
@@ -757,7 +804,7 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
             add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)config->mmios[i].start);
         }
         new_snap = arm_take_snapshot();
-        
+
         prepare_exit(EXIT_FORKSRV_UP,0,0,0);
         pc_changed = exit_with_code_start();
 
@@ -774,7 +821,6 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
     fprintf(flog,"snapshot bbl:%x\n", (uint32_t)pc);
     #endif
     __afl_area_ptr[id] ++;
-
     return false;
 }
 
