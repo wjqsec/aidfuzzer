@@ -17,7 +17,6 @@ struct input_stream
 {
 #define DEFAULT_STREAM_PRIORITY 1
     s32 priority;
-    s32 mutation_len;
     u32 offset_to_stream_area;
     u8 offset_to_save[0];
     s32 ref_count;
@@ -111,11 +110,9 @@ struct FuzzState
 
 };
 
-queue_entry* copy_queue(queue_entry* q);
-void insert_queue(FuzzState *state,queue_entry* q);
-void find_all_streams_save_queue(FuzzState *state,queue_entry* entry,Simulator *simulator);
-Simulator* get_avaliable_simulator(FuzzState *state);
-void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info);
-void fuzz_entry(Simulator *simulator);
+
+
+
 bool fuzz_one_post(FuzzState *state,Simulator *simulator);
+void show_stat(FuzzState *state);
 #endif

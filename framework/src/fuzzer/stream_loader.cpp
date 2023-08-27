@@ -42,7 +42,7 @@ void save_crash(queue_entry *q,char *crash_dir)
 }
 queue_entry *load_queue(FuzzState *state,char *seedfile)
 {
-  queue_entry *q = copy_queue(nullptr);
+  queue_entry *q = copy_queue(state,nullptr);
   input_stream *stream;
   FILE *f_queue = fopen(seedfile,"rb");
   if(!f_queue)

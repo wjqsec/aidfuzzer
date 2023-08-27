@@ -1,7 +1,7 @@
 #include "queue_entry.h"
 #include "stream.h"
 
-queue_entry* copy_queue(queue_entry* q)
+queue_entry* copy_queue(FuzzState *state,queue_entry* q)
 {
     queue_entry *entry = new queue_entry();
     entry->depth = 1;
@@ -9,10 +9,13 @@ queue_entry* copy_queue(queue_entry* q)
     entry->streams = new map<u32,input_stream*>();
     if(q)
     {
+
         for(auto it = q->streams->begin(); it != q->streams->end();it++) 
         {
-            insert_stream(entry,it->second);
+
+            insert_stream(state,entry,it->second);
         }
+
         entry->depth = q->depth;
     }
     
@@ -33,3 +36,4 @@ void insert_queue(FuzzState *state,queue_entry* q)
   state->entries->push_back(q);
   state->total_priority += q->priority;
 }
+

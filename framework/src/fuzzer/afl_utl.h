@@ -175,6 +175,8 @@ inline static u8 has_new_bits_update_virgin(u8* virgin_map, u8 *trace_bits, u32 
 
 inline static u8 has_new_bits_update_virgin_2(u8* virgin_map, u8 *trace_bits, u32 size) 
 {
+
+  
   u64* current = (u64*)trace_bits;
   u64* virgin  = (u64*)virgin_map;
 

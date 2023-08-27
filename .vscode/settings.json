@@ -22,6 +22,7 @@
         "errno.h": "c",
         "xmemory": "cpp",
         "stdio.h": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "algorithm": "cpp"
     }
 }

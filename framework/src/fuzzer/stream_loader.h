@@ -4,6 +4,7 @@
 #include "fuzzer.h"
 #include "iofuzzer.h"
 #include "stream.h"
+#include "queue_entry.h"
 #include "xx.h"
 #include "afl_utl.h"
 #include "mis_utl.h"

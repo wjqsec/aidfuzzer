@@ -84,7 +84,7 @@ struct fuzz_queue *queue;
 
 
 
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio);
+void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio,u32 stream_dumped);
 
 
 inline void add_stream(int index_to_shared_queue)
@@ -108,7 +108,7 @@ inline void add_stream(int index_to_shared_queue)
     stream = streams[index_to_streams];
     if(stream->avaliable)
     {
-        printf("stream index colission id:%x\n",metadata->stream_id);
+        printf("stream index colission id:%x  %x\n",metadata->stream_id,stream->metadata->stream_id);
         exit(0);
     }
     stream->avaliable = true;
@@ -147,6 +147,7 @@ void collect_streams()
         add_stream(i);
     }
 
+
     
 }
 
@@ -183,7 +184,7 @@ void terminate()
     shmdt(__afl_area_ptr);
     shmdt(__afl_share_stream_data);
     shmdt(__afl_share_fuzz_queue_data);
-    prepare_exit(EXIT_TERMINATE,0,0,0);
+    prepare_exit(EXIT_TERMINATE,0,0,0,0);
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
     while (1)
     {
@@ -213,7 +214,9 @@ bool exit_with_code_start()
     }   
     else if(unlikely(cmd_info.cmd == CMD_CONTINUE_ADD_STREAM))
     {
+
         add_stream(cmd_info.added_stream_index);
+
         pc_changed = false;
     }
     else if(unlikely(cmd_info.cmd == CMD_CONTINUE_UPDATE_STREAM))
@@ -223,27 +226,26 @@ bool exit_with_code_start()
     }
     else if(unlikely(cmd_info.cmd == CMD_FUZZ))
     {
+        pc_changed = true;
+    }
+    else
+    {
+        printf("invlaid cmd %d\n",cmd_info.cmd);
+        exit(0);
+        pc_changed = true;
+    }
+    if(pc_changed)
+    {
+        #ifdef DBG
+        fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,(uint32_t)exit_info.exit_pc);
+        #endif
         num_mmio = 0;
         nommio_executed_bbls = 0;
         run_index++;
         memset(mem_access_trigger_irq_times_count, 0, NVIC_MAX_VECTORS * sizeof(mem_access_trigger_irq_times_count[0]));
         arm_restore_snapshot(new_snap);
         collect_streams();
-        pc_changed = true;
     }
-    else
-    {
-        printf("invlaid cmd\n");
-        exit(0);
-        pc_changed = true;
-    }
-    
-    #ifdef DBG
-    if(pc_changed)
-        fprintf(flog,"%d->exit_code = %x pc = %x\n",run_index, exit_info.exit_code,(uint32_t)exit_info.exit_pc);
-    else
-        fprintf(flog,"%d->continue_code = %x pc = %x\n",run_index, exit_info.exit_code,(uint32_t)exit_info.exit_pc);
-    #endif
     return pc_changed;
      
 }
@@ -329,11 +331,12 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
     fclose(state_file);
 
 }
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio)
+void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio,u32 stream_dumped)
 {
     
     exit_info.exit_code = code;
     exit_info.exit_stream_id = stream_id;
+    exit_info.stream_dumped = stream_dumped;
     exit_info.exit_pc = pc;
     exit_info.num_mmio = num_mmio;
 }
@@ -412,6 +415,7 @@ void get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
 uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 {
     uint64_t ret = 0;
+    u32 stream_dumped = 1;
     if(next_bbl_should_exit)
         return ret;
 
@@ -431,12 +435,15 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
         
         if(!stream->dumped)
         {
+            stream_dumped = 0;
             dump_state(stream_id,true,MMIO_STATE_PREFIX,dump_dir);
             stream->dumped = true;
-        }
             
-        prepare_exit(EXIT_STREAM_NOTFOUND,stream_id,precise_pc,num_mmio);
+        }
+
+        prepare_exit(EXIT_STREAM_NOTFOUND,stream_id,precise_pc,num_mmio,stream_dumped);
         exit_with_code_start();
+
         if(!stream->avaliable)
         {
             printf("stream not added by fuzzer id:%x\n",stream_id);
@@ -454,7 +461,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     {
         do
         {
-            prepare_exit(EXIT_NOTENOUGHT_STREAM,stream_id,precise_pc,num_mmio);
+            prepare_exit(EXIT_NOTENOUGHT_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
             pc_changed = exit_with_code_start();
             stream_status = get_stream_status(stream);
             /* code */
@@ -464,7 +471,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     }
     else if(stream_status == STREAM_STATUS_OUTOF)
     {
-        prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio);
+        prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
         next_bbl_should_exit = true;
     }
     else
@@ -510,7 +517,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id,int64_t bbl)
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
 
-        prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio);
+        prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio,0);
         pc_changed = exit_with_code_start();
         return pc_changed;
     }
@@ -660,7 +667,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     #endif
     #endif
     bool pc_changed;
-    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio);
+    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0);
     pc_changed = exit_with_code_start();
     return false;
 }
@@ -761,7 +768,7 @@ void post_thread_exec(int exec_ret)
     fprintf(flog,"%d->post thread exec:%d  pc:%x\n",run_index, exec_ret,state.regs[15]);
     #endif
 
-    prepare_exit(EXIT_TIMEOUT,0,get_arm_pc(),num_mmio);
+    prepare_exit(EXIT_TIMEOUT,0,get_arm_pc(),num_mmio,0);
     pc_changed = exit_with_code_start();
 
 }
@@ -805,7 +812,7 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id,int64_t bbl)
         }
         new_snap = arm_take_snapshot();
 
-        prepare_exit(EXIT_FORKSRV_UP,0,0,0);
+        prepare_exit(EXIT_FORKSRV_UP,0,0,0,0);
         pc_changed = exit_with_code_start();
 
         return pc_changed;
@@ -861,7 +868,6 @@ void get_all_infinite_loop()
     }
     
 }
-
 
 
 void init(int argc, char **argv)

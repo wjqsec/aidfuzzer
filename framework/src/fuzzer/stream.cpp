@@ -1,6 +1,7 @@
 #include <assert.h>
 #include "stream.h"
 #include "afl_utl.h"
+#include "mis_utl.h"
 #include <string.h>
 u32 get_stream_used(FuzzState *state)
 {
@@ -13,7 +14,6 @@ void update_stream_ptr(FuzzState *state, u32 used)
 
 void free_stream(FuzzState *state,input_stream *stream)
 {
-  return;
   stream->ref_count--;
   if(stream->ref_count > 0)
     return;
@@ -108,7 +108,7 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
       }
     }
   }
-  stream->mutation_len =  stream->ptr->len;
+
   stream->ptr->initial_len = stream->ptr->len;
   update_stream_ptr(state, sizeof(stream_metadata) + stream->ptr->len);
   return stream;
@@ -125,10 +125,9 @@ input_stream * allocate_enough_space_stream(FuzzState *state,u32 id, s32 len)
 input_stream *extend_stream(FuzzState *state,input_stream *stream,u32 ext_len)
 {
   input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,stream->ptr->len + ext_len);
-  ret->ptr->len = stream->ptr->len + ext_len;
   memcpy(ret->ptr->data,stream->ptr->data,stream->ptr->len);
   ret->priority = stream->priority;
-  ret->mutation_len = stream->mutation_len;
+
   return ret;
 }
 
@@ -136,10 +135,25 @@ input_stream *clone_stream(FuzzState *state,input_stream *stream)
 {
   return extend_stream(state,stream,0);
 }
-
-
-void insert_stream(queue_entry* q,input_stream *stream)
+input_stream *decrease_stream(FuzzState *state,input_stream *stream,u32 new_len)
 {
+  if(new_len >= stream->ptr->len)
+  {
+    fatal("decrease stream should at lease remove some elements\n");
+  }
+  input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,new_len);
+  ret->priority = stream->priority;
+  memcpy(ret->ptr->data,stream->ptr->data,new_len);
+  return ret;
+}
+
+void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream)
+{
+  if(q->streams->find(stream->ptr->stream_id) != q->streams->end())
+  {
+    free_stream(state,stream);
+  }
+    
   stream->ref_count++;
   (*q->streams)[stream->ptr->stream_id] = stream;
 }
@@ -151,6 +165,7 @@ void remove_stream(FuzzState *state,queue_entry* q,input_stream *stream)
 void replace_stream(FuzzState *state,queue_entry* q,input_stream *old_tream, input_stream *new_tream)
 {
   free_stream(state,old_tream);
-  insert_stream(q,new_tream);
+  q->streams->erase(new_tream->ptr->stream_id);
+  insert_stream(state,q,new_tream);
 }
 

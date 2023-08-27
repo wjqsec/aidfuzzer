@@ -783,13 +783,13 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
             TCGv_i64 arg0_pc = tcg_const_i64(pc);
             TCGv_i32 arg1_id = tcg_const_i32(id);
             TCGv_ptr arg2_cb = tcg_const_ptr(hook->cb);
-            TCGv_i64 ret_1 = tcg_const_i64(1);
+
             
-            gen_helper_xx_func(ret_1,cpu_env,arg0_pc,arg1_id,arg2_cb);
+            gen_helper_xx_func(cpu_env,arg0_pc,arg1_id,arg2_cb);
             tcg_temp_free_i64(arg0_pc);
             tcg_temp_free_i32(arg1_id);
             tcg_temp_free_ptr(arg2_cb);
-            tcg_temp_free_i64(ret_1);
+
             
         }
     }
@@ -802,13 +802,13 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
             TCGv_i64 arg0_pc = tcg_const_i64(pc);
             TCGv_i32 arg1_id = tcg_const_i32(id);
             TCGv_ptr arg2_cb = tcg_const_ptr(hook->cb);
-            TCGv_i64 ret_1 = tcg_const_i64(1);
+
             
-            gen_helper_xx_specific_bbls(ret_1,cpu_env,arg0_pc,arg1_id,arg2_cb);
+            gen_helper_xx_specific_bbls(cpu_env,arg0_pc,arg1_id,arg2_cb);
             tcg_temp_free_i64(arg0_pc);
             tcg_temp_free_i32(arg1_id);
             tcg_temp_free_ptr(arg2_cb);
-            tcg_temp_free_i64(ret_1);
+
             
         }
     }
@@ -816,12 +816,12 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     {
         TCGv_i64 arg0_pc = tcg_const_i64(pc);
         TCGv_i32 arg1_id = tcg_const_i32(id);
-        TCGv_i64 ret_1 = tcg_const_i64(1);
+
         
-        gen_helper_xx_bbl(ret_1,cpu_env,arg0_pc,arg1_id);
+        gen_helper_xx_bbl(cpu_env,arg0_pc,arg1_id);
         tcg_temp_free_i64(arg0_pc);
         tcg_temp_free_i32(arg1_id);
-        tcg_temp_free_i64(ret_1);
+
         
     }
     gen_intermediate_code(env_cpu(env), tb, *max_insns, pc, host_pc);

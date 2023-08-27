@@ -1,10 +1,12 @@
-
+#include <stdio.h>
 #include "simulator.h"
 #include "iofuzzer.h"
 #include "afl_utl.h"
 #include <string.h>
 #include <unistd.h>
 #include "mis_utl.h"
+
+
 
 void copy_fuzz_data(Simulator *simulator)
 {
@@ -64,7 +66,7 @@ void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream)
 void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info)
 {
   read(simulator->fd_ctl_from_simulator, exit_info,sizeof(EXIT_INFO));
-  classify_counts((u64*)simulator->trace_bits,simulator->map_size);
+  
   simulator->status = STATUS_FREE;
   simulator->state->total_exec++;
 
@@ -92,14 +94,14 @@ void fuzz_exit_timeout(Simulator *simulator,EXIT_INFO *exit_info, u32 seconds, b
     *timeout = false;
     read(simulator->fd_ctl_from_simulator, exit_info,sizeof(EXIT_INFO));
   } 
-  simulator->status = STATUS_EXIT;
+  simulator->status = STATUS_FREE;
   simulator->state->total_exec++;
 }
 void fuzz_terminate(Simulator *simulator)
 {
   CMD_INFO cmd_info;
   cmd_info.cmd = CMD_TERMINATE;
-  write(simulator->fd_ctl_to_simulator, &cmd_info,4);
+  write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
   simulator->status = STATUS_EXIT;
 }
 void wait_forkserver_terminate(Simulator * simulator)
@@ -111,7 +113,7 @@ void wait_forkserver_terminate(Simulator * simulator)
     fuzz_exit_timeout(simulator,&exit_info,5,&timeout);
     if(timeout)
       break;
-    else if(exit_info.exit_code & EXIT_TERMINATE)
+    else if(exit_info.exit_code == EXIT_TERMINATE)
       break;
   }
 }
@@ -128,7 +130,19 @@ Simulator* get_avaliable_simulator(FuzzState *state)
     }
       
   }
-  ret = poll(state->fds, state->num_fds, -1);
+  while(1)
+  {
+    ret = poll(state->fds, state->num_fds, -1);
+    if(ret == -1 && errno == EINTR)
+      continue;
+    else if(ret == -1)
+      fatal("poll error\n");
+    break;
+  }
+    
+
+  
+  
   if (ret == -1) fatal("poll error");
   for (i = 0; i < state->num_fds; i++) 
   {
@@ -146,6 +160,10 @@ Simulator* get_avaliable_simulator(FuzzState *state)
   }
   fatal("no avaliable simulator\n");
   return nullptr;
+}
+void simulator_classify_count(Simulator * simulator)
+{
+  classify_counts((u64*)simulator->trace_bits,simulator->map_size);
 }
 void simulator_env_init(void)
 {

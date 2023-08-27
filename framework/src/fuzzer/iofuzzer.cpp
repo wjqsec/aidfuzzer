@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <stdio.h>
 #include "fuzzer.h"
 #include "mis_utl.h"
 #include "iofuzzer.h"
@@ -41,7 +42,7 @@ void clean_simualtor_shm(Simulator * simulator);
 void sync_models(FuzzState *state,Simulator *simulator);
 
 FuzzState global_state;
-
+bool terminate_next = false;
 
 
 char  *in_dir;
@@ -68,8 +69,31 @@ char *seed_file;
 
 
 
+void fuzzer_terminate() 
+{
+  int status;
+  
+  for(Simulator * simulator : *global_state.simulators)
+  {
+    if(simulator->status != STATUS_RUNNING)
+      continue;
+    fuzz_terminate(simulator);
+    wait_forkserver_terminate(simulator);
+      
+    kill(simulator->pid,SIGKILL);
+    printf("%d terminate\n",simulator->pid);
+    waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
+    clean_simualtor_shm(simulator);
 
+  }
+  show_stat(&global_state);
+  save_pool(&global_state,queue_dir);
+  save_queues(&global_state,queue_dir);
+  save_freed_streams(&global_state,queue_dir);
+  clean_fuzzer_shm(&global_state);
 
+  exit(EXIT_FAILURE);
+}
 
 
 
@@ -116,7 +140,15 @@ void fuzzer_init(FuzzState *state, u32 max_edge, u32 share_size)
 
 }
 
-
+// void add_new_stream_for_all_queue(FuzzState *state,u32 id)
+// {
+//   vector<queue_entry*> *entries = state->entries;
+//   for(queue_entry* entry : *entries)
+//   {
+//     input_stream *new_stream = allocate_enough_space_stream(state,id, DEFAULT_STREAM_LEN);
+//     insert_stream(state,entry,new_stream);
+//   }
+// }
 
 void allocate_new_simulator(FuzzState *state)
 {
@@ -219,6 +251,7 @@ void allocate_new_simulator(FuzzState *state)
     exit(EXIT_FAILURE);
   }
   printf("pid:%d fork server is up\n",simulator->pid);
+  simulator_classify_count(simulator);
   has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   sync_models(state,simulator);
   
@@ -274,7 +307,7 @@ void sync_state(FuzzState *state)
   if(state->entries->size() == 0)
   {
     simulator = get_avaliable_simulator(state);
-    queue_entry *q = copy_queue(nullptr);
+    queue_entry *q = copy_queue(state,nullptr);
     simulator->fuzz_entry = q;
     fuzz_start(simulator);
     do 
@@ -283,72 +316,27 @@ void sync_state(FuzzState *state)
 
     } while(should_continue);
   }
-  for(queue_entry *q : *state->entries)
+  else
   {
-    simulator = get_avaliable_simulator(state);
-    simulator->fuzz_entry = q;
-    fuzz_start(simulator);
-    fuzz_exit(simulator,&exit_info);
-    has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+    for(queue_entry *q : *state->entries)
+    {
+      simulator = get_avaliable_simulator(state);
+      simulator->fuzz_entry = q;
+      fuzz_start(simulator);
+      fuzz_exit(simulator,&exit_info);
+      simulator_classify_count(simulator);
+      has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+    }
   }
-
+  
+  
   show_stat(state);
   printf("**********************sync state done**********************\n");
-}
-
-
-
-
-
-void trim_stream(FuzzState *state,queue_entry* entry,input_stream* stream,Simulator *simulator)
-{
-  EXIT_INFO exit_info;
-  u32 cksum;
-  simulator->fuzz_entry = entry;
-
-  u32 new_size;
-  u32 trim_size = 0;
-  
-  u32 round = 1;
-  u32 round_size = 0;
-  input_stream* old_stream = stream;
-  input_stream* new_stream = clone_stream(state,old_stream);
-  (*entry->streams)[old_stream->ptr->stream_id] = new_stream;
-
-  while (1)
-  {
-    round_size = old_stream->ptr->len >> round;
-    round_size = (round_size / old_stream->ptr->element_size) * old_stream->ptr->element_size;
-    if(round_size < old_stream->ptr->element_size)
-      break;
-    
-    if(trim_size + round_size + old_stream->ptr->element_size > old_stream->ptr->len)
-      break;
-    new_size = old_stream->ptr->len - trim_size - round_size;
-
-
-    new_stream->ptr->len = new_size;
-    
-    fuzz_start(simulator);
-    fuzz_exit(simulator,&exit_info);
-    cksum = hash32(simulator->trace_bits,simulator->map_size);
-
-    if (cksum == entry->cksum)
-    {
-      trim_size += round_size;
-    }
-
-    round++;
-  }
-  if(trim_size == 0)
-  {
-    (*entry->streams)[old_stream->ptr->stream_id] = old_stream;
-    free_stream(state,new_stream);
-  }
-  else
-    new_stream->ptr->len = old_stream->ptr->len - trim_size;
 
 }
+
+
+
 void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 {
   int i;
@@ -360,24 +348,21 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 
   simulator->fuzz_entry = entry;
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
-  fuzz_start(simulator);
-  fuzz_exit(simulator,&exit_info);
-  cksum = hash32(simulator->trace_bits,simulator->map_size);
+
 
   input_stream* new_stream;
   input_stream* old_stream;
-  for(i = 0 ; i < entry->streams->size(); i++)
+  for(i = 0 ; i < queue->num_streams; i++)
   {
     stream = (stream_metadata*)(queue->streams[i].offset_to_stream_area + state->shared_stream_data);
     old_stream = (*entry->streams)[stream->stream_id];
     if(old_stream->ptr->mode == MODEL_CONSTANT || old_stream->ptr->mode == MODEL_PASSTHROUGH)
       continue;
 
-    if(old_stream->mutation_len != queue->streams[i].used)
+    if(old_stream->ptr->len > queue->streams[i].used)
     {
-      new_stream = clone_stream(state,old_stream);
-      new_stream->mutation_len = queue->streams[i].used;
-      (*entry->streams)[stream->stream_id] = new_stream;
+      new_stream = decrease_stream(state,old_stream,queue->streams[i].used);
+      replace_stream(state,entry,old_stream, new_stream);
     }
   }
 
@@ -400,6 +385,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 
   if(exit_info.exit_code & EXIT_CRASH)
   {
+    simulator_classify_count(simulator);
     u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
     if(state->crash_ids->find(cksum) != state->crash_ids->end())
     {
@@ -416,10 +402,16 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   
   if(exit_info.exit_code == EXIT_STREAM_NOTFOUND)
   {
-    run_modelling(state,simulator);
-    sync_models(state,simulator);
+    if(exit_info.stream_dumped == 0)
+    {
+      run_modelling(state,simulator);
+      sync_models(state,simulator);
+      // add_new_stream_for_all_queue(state,exit_info.exit_stream_id);
+    }
     new_stream = allocate_enough_space_stream(state,exit_info.exit_stream_id, DEFAULT_STREAM_LEN);
-    insert_stream(fuzz_entry,new_stream);
+
+    insert_stream(state,fuzz_entry,new_stream);
+
     fuzz_continue_stream_notfound(simulator,new_stream);
 
     return true;
@@ -434,7 +426,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     return true;
     
   }
-  
+  simulator_classify_count(simulator);
   int r = has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
 
   if(unlikely(r))
@@ -444,7 +436,11 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     fuzz_entry->depth++;
     fuzz_entry->edges = count_words(simulator->trace_bits, simulator->map_size);
     fuzz_entry->cksum = hash32(simulator->trace_bits,simulator->map_size);
+    
     fuzz_entry->priority = fuzz_entry->edges + 1;
+    if(exit_info.exit_code == EXIT_TIMEOUT)
+      fuzz_entry->priority = fuzz_entry->priority / 10 + 1;
+    trim_queue(state,fuzz_entry,simulator);
     insert_queue(state,fuzz_entry);
   }
   else
@@ -469,13 +465,13 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
 
   for(auto it = entry->streams->begin() ; it != entry->streams->end() ; it++)
   {
-    if(it->second->ptr->mode == MODEL_CONSTANT || it->second->ptr->mode == MODEL_PASSTHROUGH)
+    if(it->second->ptr->mode == MODEL_CONSTANT || it->second->ptr->mode == MODEL_PASSTHROUGH || it->second->ptr->len == 0)
       continue;
 
     for(i = 0 ; i < it->second->priority ; i++)
     {
       simulator = get_avaliable_simulator(state);  
-      fuzz_entry = copy_queue(entry);
+      fuzz_entry = copy_queue(state,entry);
       simulator->fuzz_entry = fuzz_entry;
       fuzz_stream = havoc(state,it->second);
 
@@ -516,6 +512,8 @@ void fuzz_loop(FuzzState *state)
     {
         entry = select_entry(state);
         fuzz_queue(state,entry);
+        if(terminate_next)
+          fuzzer_terminate();
         round++;
         if((round & 0xf) == 0)
             show_stat(state);
@@ -560,44 +558,25 @@ void clean_fuzzer_shm(FuzzState *state)
   shmdt(state->shared_stream_data);
   shmctl(state->shm_id_streampool, IPC_RMID, 0);
 }
-void terminate(int signal) 
+
+
+void prepare_terminate(int signal)
 {
-  int status;
-  
-  for(Simulator * simulator : *global_state.simulators)
-  {
-    fuzz_terminate(simulator);
-    wait_forkserver_terminate(simulator);
-      
-    kill(simulator->pid,SIGKILL);
-    printf("%d terminate\n",simulator->pid);
-    waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
-    clean_simualtor_shm(simulator);
-
-  }
-  show_stat(&global_state);
-  save_pool(&global_state,queue_dir);
-  save_queues(&global_state,queue_dir);
-  save_freed_streams(&global_state,queue_dir);
-  clean_fuzzer_shm(&global_state);
-
-  if(signal == SIGSEGV)
-    print_trace();
-  exit(EXIT_FAILURE);
+  terminate_next = true;
 }
-
-void init_signal_handler()
+void init_signal_handler(void)
 {
-  if (signal(SIGINT, terminate) == SIG_ERR) 
+  if (signal(SIGINT, prepare_terminate) == SIG_ERR) 
   {
-    fatal("Error setting signal handler");
+    printf("Error setting signal handler");
+    exit(0);
   }
-  if (signal(SIGSEGV, terminate) == SIG_ERR) 
+  if (signal(SIGSEGV, prepare_terminate) == SIG_ERR) 
   {
-    fatal("Error setting signal handler");
+    printf("Error setting signal handler");
+    exit(0);
   }
 }
-
 int main(int argc, char **argv)
 {
   int status;
@@ -606,9 +585,8 @@ int main(int argc, char **argv)
   int mode = -1;
   int opt;
   int cores;
-
-  simulator_env_init();
   init_signal_handler();
+  simulator_env_init();
   while ((opt = getopt(argc, argv, "m:i:o:c:e:s:")) != -1) 
   {
       switch (opt) {
@@ -684,6 +662,6 @@ int main(int argc, char **argv)
       fuzz_exit(simulator,&exit_info);
     }
   }
-  terminate(SIGINT);
+  fuzzer_terminate();
 }
 

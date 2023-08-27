@@ -48,7 +48,7 @@ enum EXIT_REASON
 #define STREAM_STATUS_OUTOF 2
 
 #define DEFAULT_STREAM_LEN 0x10
-#define DEFAULT_MAX_STREAM_INCREASE_LEN 0x1000
+#define DEFAULT_MAX_STREAM_INCREASE_LEN 0x500
 
 #define MAX_BBL_EXEC 150000
 
@@ -92,7 +92,7 @@ enum EXIT_REASON
 
 
 
-#define NUM_QUEUE_STREAMS 0x100000
+#define NUM_QUEUE_STREAMS 0x1000000
 
 
 #define CMD_FUZZ 0
@@ -103,13 +103,8 @@ enum EXIT_REASON
 struct CMD_INFO
 {
     u32 cmd;
-    union 
-    {
-        u32 added_stream_index;
-        u32 updated_stream_index;
-    };
-    
-    
+    u32 added_stream_index;
+    u32 updated_stream_index;
 } __attribute__((packed));
 
 
@@ -119,6 +114,7 @@ struct EXIT_INFO
 {
     u32 exit_code;
     u32 exit_stream_id;
+    u32 stream_dumped;
     u64 exit_pc;
     u32 num_mmio;
 } __attribute__((packed));
@@ -157,11 +153,7 @@ struct fuzz_queue
     struct fuzz_queue_stream streams[];
 }__attribute__((packed));
 
-struct undiscovered_streams
-{
-    u32 num_streams;
-    u32 streams[];
-}__attribute__((packed));
+
 
 
 static __always_inline uint32_t hash_32(uint32_t number)

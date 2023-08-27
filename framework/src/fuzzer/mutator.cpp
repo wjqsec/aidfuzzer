@@ -143,7 +143,7 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
     ret = clone_stream(state,stream);
   else
     ret = increase_stream(state,stream);
-  max_num_element = stream->mutation_len / stream->ptr->element_size;
+  max_num_element = stream->ptr->len / stream->ptr->element_size;
     
   use_stacking = (1 << (1 + UR(7)));
   
