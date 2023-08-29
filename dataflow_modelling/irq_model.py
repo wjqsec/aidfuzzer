@@ -18,7 +18,7 @@ class ACCESS_INFO:
     def __init__(self):
         pass
     def __eq__(self, other):
-        if self.addr == other.addr and self.size==other.size:
+        if self.addr == other.addr and self.type == other.type:
             return True
         else:
             return False
@@ -28,7 +28,7 @@ class ACCESS_INFO:
 class IRQ_MODEL:
     def __init__(self):
         self.irq = 0
-        self.accesses = []
+        self.accesses = set()
     def dump(self):
         print("-{}".format(self.irq))
         for access in self.accesses:
@@ -51,7 +51,7 @@ def irq_model_from_file(modelfilename):
                 accessinfo.type = line.split(":")[0]
                 accessinfo.addr = int(line.split(":")[1].split(" ")[0],16)
                 accessinfo.size = int(line.split(":")[1].split(" ")[1],16)
-                models[current_irq].accesses.append(accessinfo)
+                models[current_irq].accesses.add(accessinfo)
     return models
                 
 
@@ -212,7 +212,6 @@ def get_memory_access(states,initial_state,accessses,irq):
     if int(irq,16) == 0xf:
         has_mmio_read_op = True
     for state in states:
-        access = []
         for action in state.history.actions:
             if not is_memory_action(action):
                 continue
@@ -230,19 +229,16 @@ def get_memory_access(states,initial_state,accessses,irq):
                 info.addr = state.solver.min(action.addr)
                 info.size = int((action.size + 0)/8)
                 info.type = "mmio"
-                access.append(info)
+                accessses.append(info)
+                continue
             if not action.addr.symbolic and is_ast_addr_valid(state,action.addr) and is_memory_write_action(action):
                 info = ACCESS_INFO()
                 info.ins_addr = state.solver.eval_one(action.ins_addr)
                 info.addr = state.solver.min(action.addr)
                 info.size = int((action.size + 0)/8)
                 info.type = "mem"
-                access.append(info)
+                accessses.append(info)
                 
-                
-        if access == []:   
-            continue 
-        accessses.append(access)
     return has_mmio_read_op
     
 
@@ -267,9 +263,11 @@ def main():
             for addr in loop_addrs:
                 f.write("%x\n"%(addr))
         return
-    
-    models = {}
+    models = irq_model_from_file(args.output)
+
     model = IRQ_MODEL()
+    if int(args.irq,16) in models:
+        model = models[int(args.irq,16)]
     accessses = []
     initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("call",when=angr.BP_AFTER, action=call_after)
@@ -286,21 +284,18 @@ def main():
     #     print("clear cear clear lear")
     #     accessses = []
     for func in func_pointer_init_mem:
+        for ac in accessses:
+            if ac.addr == func:
+                accessses.remove(ac)
         access = ACCESS_INFO()
         access.ins_addr = 0
         access.addr = func
         access.size = 4
         access.type = "func"
-        accessses.append([access])
-    tmp = set()
+        accessses.append(access)
     for ac in accessses:
-        for info in ac:
-            tmp.add(info)
-    model.accesses = [x for x in tmp]
+            model.accesses.add(ac)
     models[int(args.irq,16)] = model
-
-    
-
 
     write_model_to_file(models,args.output)
     

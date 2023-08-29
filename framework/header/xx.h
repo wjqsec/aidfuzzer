@@ -3,10 +3,11 @@
 #define XX_INCLUDED
 
 // #define PRECISE_PC_EACH_INS
-// #define MEMORY_ACCESS_CALLBACK
+#define MEMORY_ACCESS_CALLBACK
 
 #include <stdint.h>
 #include <glib.h>
+#include <stdbool.h>
 typedef uint64_t hwaddr;
 typedef uint32_t MemTxResult;
 
@@ -157,12 +158,12 @@ typedef uint64_t (*mmio_read_cb)(void *opaque,hwaddr addr_offset,unsigned size);
 typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsigned size);
 
 typedef void (*pre_thread_exec_cb)(void); 
-typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id,int64_t bbl);
+typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id);
 typedef void (*exec_func_cb)(uint64_t pc,uint64_t *return_val);
 
 typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
 typedef void (*post_thread_exec_cb)(int exec_ret);
-typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,void *data);
+typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,uint32_t val,void *data);
  
 struct BBL_Hook
 {
@@ -181,7 +182,6 @@ struct NOSTOP_WATCHPOINT
     enum qemu_plugin_mem_rw_ flag;
     nostop_watchpoint_cb cb;
     void *data;
-    uint64_t id;
 };
 
 struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     

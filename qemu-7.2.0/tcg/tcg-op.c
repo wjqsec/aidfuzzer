@@ -2893,10 +2893,26 @@ static inline TCGv plugin_prep_mem_callbacks(TCGv vaddr)
 static void plugin_gen_mem_callbacks(TCGv vaddr, MemOpIdx oi,
                                      enum qemu_plugin_mem_rw rw)
 {
+#ifdef CONFIG_PLUGIN
+    if (tcg_ctx->plugin_insn != NULL) {
+        qemu_plugin_meminfo_t info = make_plugin_meminfo(oi, rw);
+        plugin_gen_empty_mem_callback(vaddr, info);
+        tcg_temp_free(vaddr);
+    }
+#endif
+}
+extern uint8_t *mem_has_watchpoints;
+
+static void plugin_gen_mem_callbacks_32(TCGv vaddr, MemOpIdx oi,TCGv_i32 val,
+                                     enum qemu_plugin_mem_rw rw)
+{
     #ifdef MEMORY_ACCESS_CALLBACK
 
+
     TCGv_i32 arg2_flag = tcg_const_i32(rw);
-    gen_helper_xx_nostop_watchpoint(vaddr,arg2_flag);
+    gen_helper_xx_nostop_watchpoint(vaddr,val,arg2_flag);
+    
+
     tcg_temp_free(vaddr);
     tcg_temp_free_i32(arg2_flag);
 
@@ -2933,6 +2949,7 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
     addr = plugin_prep_mem_callbacks(addr);
     gen_ldst_i32(INDEX_op_qemu_ld_i32, val, addr, memop, idx);
     plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);
+    plugin_gen_mem_callbacks_32(addr, oi,val, QEMU_PLUGIN_MEM_R);
 
     if ((orig_memop ^ memop) & MO_BSWAP) {
         switch (orig_memop & MO_SIZE) {
@@ -2982,7 +2999,7 @@ void tcg_gen_qemu_st_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
         gen_ldst_i32(INDEX_op_qemu_st_i32, val, addr, memop, idx);
     }
     plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_W);
-
+    plugin_gen_mem_callbacks_32(addr, oi,val, QEMU_PLUGIN_MEM_W);
     if (swap) {
         tcg_temp_free_i32(swap);
     }

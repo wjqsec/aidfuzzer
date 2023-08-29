@@ -785,7 +785,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
             TCGv_ptr arg2_cb = tcg_const_ptr(hook->cb);
 
             
-            gen_helper_xx_func(cpu_env,arg0_pc,arg1_id,arg2_cb);
+            gen_helper_xx_func(arg0_pc,arg1_id,arg2_cb);
             tcg_temp_free_i64(arg0_pc);
             tcg_temp_free_i32(arg1_id);
             tcg_temp_free_ptr(arg2_cb);
@@ -804,7 +804,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
             TCGv_ptr arg2_cb = tcg_const_ptr(hook->cb);
 
             
-            gen_helper_xx_specific_bbls(cpu_env,arg0_pc,arg1_id,arg2_cb);
+            gen_helper_xx_specific_bbls(arg0_pc,arg1_id,arg2_cb);
             tcg_temp_free_i64(arg0_pc);
             tcg_temp_free_i32(arg1_id);
             tcg_temp_free_ptr(arg2_cb);
@@ -818,7 +818,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
         TCGv_i32 arg1_id = tcg_const_i32(id);
 
         
-        gen_helper_xx_bbl(cpu_env,arg0_pc,arg1_id);
+        gen_helper_xx_bbl(arg0_pc,arg1_id);
         tcg_temp_free_i64(arg0_pc);
         tcg_temp_free_i32(arg1_id);
 

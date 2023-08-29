@@ -44,49 +44,53 @@ extern exec_ins_icmp_cb exec_ins_icmp_func;
 
 extern struct NOSTOP_WATCHPOINT **nostop_watchpoints;
 extern uint8_t *mem_has_watchpoints;
-void  HELPER(xx_bbl)(CPUArchState *env,uint64_t pc,uint32_t id)
+
+extern CPUState *xx_cs;
+extern CPUARMState *xx_env;
+
+
+void  HELPER(xx_bbl)(uint64_t pc,uint32_t id)
 {
-    register bool should_exit = exec_bbl_func(pc,id,bbl_counts);
-    if(should_exit)
+
+    register bool should_exit = exec_bbl_func(pc,id);
+    if(unlikely(should_exit))
     {
-	    CPUState *cpu = env_cpu(env);
-	    cpu_loop_exit(cpu);
+	    cpu_loop_exit(xx_cs);
     }
-    //bbl_counts++;
 	//qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
 }
-void  HELPER(xx_specific_bbls)(CPUArchState *env,uint64_t pc,uint32_t id,void *ptr)
+void  HELPER(xx_specific_bbls)(uint64_t pc,uint32_t id,void *ptr)
 {
     exec_bbl_cb cb = (exec_bbl_cb)ptr;
-    bool should_exit = cb(pc,id,bbl_counts);
-    if(should_exit)
+    bool should_exit = cb(pc,id);
+    if(unlikely(should_exit))
     {
-	    CPUState *cpu = env_cpu(env);
-	    cpu_loop_exit(cpu);
+	    cpu_loop_exit(xx_cs);
     }
 }
 
-void  HELPER(xx_func)(CPUArchState *env,uint64_t pc,uint32_t id,void *ptr)
+void  HELPER(xx_func)(uint64_t pc,uint32_t id,void *ptr)
 {
     uint64_t return_val;
     uint64_t return_addr;
-    return_addr =env->regs[14] & 0xfffffffe;
+    return_addr =xx_env->regs[14] & 0xfffffffe;
     exec_func_cb cb = (exec_func_cb)ptr;
 
     cb(pc,&return_val);
-    env->regs[0] = return_val;
-    env->regs[15] = return_addr;
-	CPUState *cpu = env_cpu(env);
-	cpu_loop_exit(cpu);
+    xx_env->regs[0] = return_val;
+    xx_env->regs[15] = return_addr;
+
+	cpu_loop_exit(xx_cs);
 }
-void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t flag)
+void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)
 {
     // if(unlikely(!enable_nostop_watchpoint_flag))
     //     return 1;
     int i;
-    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
+    register uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     if(likely(mem_has_watchpoints[id] == 0))
         return ;
+    
     struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < mem_has_watchpoints[id];)
     {
@@ -94,7 +98,7 @@ void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t flag)
         {   
             if(ptr[i]->addr == addr && (ptr[i]->flag & flag))
             {
-                ptr[i]->cb(ptr[i]->addr,ptr[i]->len,ptr[i]->data);
+                ptr[i]->cb(ptr[i]->addr,ptr[i]->len,val,ptr[i]->data);
             }
             i++;
         }

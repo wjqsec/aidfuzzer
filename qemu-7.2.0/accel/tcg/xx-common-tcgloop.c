@@ -343,25 +343,7 @@ struct NOSTOP_WATCHPOINT* xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, i
     }
     return point;
 }
-inline void check_nostop_watchpoint(hwaddr addr,enum qemu_plugin_mem_rw_ rw)
-{
-    int i;
-    uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
-    if(likely(mem_has_watchpoints[id] == 0))
-        return;
-    struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
-    for(i = 0; i < mem_has_watchpoints[id];)
-    {
-        if(likely(ptr[i]))
-        {   
-            if(ptr[i]->addr == addr && (ptr[i]->flag & rw))
-            {
-                ptr[i]->cb(ptr[i]->addr,ptr[i]->len,ptr[i]->data);
-            }
-            i++;
-        }
-    }
-}
+
 void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint)
 {
     int i;
