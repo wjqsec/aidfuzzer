@@ -48,7 +48,7 @@ extern uint8_t *mem_has_watchpoints;
 extern CPUState *xx_cs;
 extern CPUARMState *xx_env;
 
-
+void xx_nostop_watchpoint_(uint32_t id,uint32_t addr,uint32_t val, uint32_t flag);
 void  HELPER(xx_bbl)(uint64_t pc,uint32_t id)
 {
 
@@ -82,15 +82,10 @@ void  HELPER(xx_func)(uint64_t pc,uint32_t id,void *ptr)
 
 	cpu_loop_exit(xx_cs);
 }
-void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)
+
+__attribute__((noinline)) void xx_nostop_watchpoint_(uint32_t addr,uint32_t val, uint32_t flag,uint32_t id)
 {
-    // if(unlikely(!enable_nostop_watchpoint_flag))
-    //     return 1;
     int i;
-    register uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
-    if(likely(mem_has_watchpoints[id] == 0))
-        return ;
-    
     struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < mem_has_watchpoints[id];)
     {
@@ -103,6 +98,17 @@ void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)
             i++;
         }
     }
+}
+void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)
+{
+    // if(unlikely(!enable_nostop_watchpoint_flag))
+    //     return 1;
+   
+    register uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
+    if(likely(mem_has_watchpoints[id] == 0))
+        return ;
+    xx_nostop_watchpoint_(addr,val,flag,id);
+    
 }
 
 void HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)
