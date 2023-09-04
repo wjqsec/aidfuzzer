@@ -444,6 +444,7 @@ int xx_thread_loop(bool debug)
     }
     cpu->exit_request = false;
     cpu->stop = false;
+    cpu->halted = false;
     return r;
 }
 

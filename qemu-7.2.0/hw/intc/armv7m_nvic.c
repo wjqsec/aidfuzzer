@@ -311,7 +311,10 @@ static void nvic_recompute_state(NVICState *s)
         nvic_recompute_state_secure(s);
         return;
     }
-    for (i = 1; i < s->num_irq; i++) {
+
+   
+    for (int j = 0; j < s->enabled_irqs_idx; j++) {
+        i = s->enabled_irqs[j];
         VecInfo *vec = &s->vectors[i];  
         if (vec->enabled && vec->pending && vec->prio < pend_prio) {
             pend_prio = vec->prio;
@@ -2376,7 +2379,11 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
                 (attrs.secure || s->itns[startvec + i])) {
                 s->vectors[startvec + i].enabled = setval;
                 if(setval == 1 && enable_nvic_func)
+                {
                     enable_nvic_func(startvec + i);
+                    s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
+                }
+                    
             }
         }
         nvic_irq_update(s);
@@ -2652,6 +2659,11 @@ static void armv7m_nvic_reset(DeviceState *dev)
         }
     }
     s->enabled_irqs_idx = 0;
+    for(int i = 0; i < NVIC_INTERNAL_VECTORS ; i ++)
+    {
+        s->enabled_irqs[s->enabled_irqs_idx] = i + 1;
+        s->enabled_irqs_idx++;
+    }
     /*
      * We updated state that affects the CPU's MMUidx and thus its hflags;
      * and we can't guarantee that we run before the CPU reset function.

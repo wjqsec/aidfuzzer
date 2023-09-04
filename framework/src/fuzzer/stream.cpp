@@ -18,6 +18,7 @@ void free_stream(FuzzState *state,input_stream *stream)
   if(stream->ref_count > 0)
     return;
   stream->ref_count = 0;
+  stream->priority = DEFAULT_STREAM_PRIORITY;
   u32 id = stream->ptr->stream_id;
   vector<input_stream *> *freed_streams;
   if(state->freed_streams->count(id) == 0)

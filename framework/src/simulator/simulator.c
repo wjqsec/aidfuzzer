@@ -30,7 +30,7 @@ struct SIMULATOR_CONFIG* config;
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
 
-uint16_t *__afl_area_ptr;
+uint8_t *__afl_area_ptr;
 // uint32_t __afl_prev_loc;
 
 
@@ -411,41 +411,48 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
     
     return pc_changed;
 }
-bool arm_exec_loop_bbl(hwaddr pc,uint32_t id)
+
+void insert_idel_irq()
 {
-    bool insert_irq;
-    insert_irq = insert_nvic_intc(ARMV7M_EXCP_SYSTICK);
-    if(insert_irq)
-        simple_log(flog,false,"arm_exec_loop_bbl",ARMV7M_EXCP_SYSTICK,0,0);
     
+    if(get_arm_v7m_is_handler_mode())
+        return;
+    bool insert_irq;
     for(int i=0; i<num_do_mmio_irqs ; i++)
     {
         insert_irq = insert_nvic_intc(do_mmio_irqs[i]);
         if(insert_irq)
-            simple_log(flog,false,"arm_exec_loop_bbl",do_mmio_irqs[i],0,0);
+            simple_log(flog,false,"insert idel irq",do_mmio_irqs[i],0,0);
     }
+}
+bool arm_exec_loop_bbl(hwaddr pc,uint32_t id)
+{
+    insert_idel_irq();
     return false;
 }
+
 
 void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
 {
     bool insert_irq;
     int irq = (int)(uint64_t)data;
-    if(!get_arm_v7m_is_handler_mode())
-    {
-        if(mem_access_trigger_irq_times_count[irq] > mem_access_trigger_irq_times[irq])
-        {
-            insert_irq = insert_nvic_intc(irq);
-            mem_access_trigger_irq_times_count[irq] = 0;
-            if(insert_irq)
-                simple_log(flog,false,"nostop_watchpoint_exec_mem",irq,vaddr,0);
-            
-        }
-        else
-        {
-             mem_access_trigger_irq_times_count[irq] ++;
-        }
 
+    if(get_arm_v7m_is_handler_mode() == irq)
+        return;
+    
+    
+
+    if(mem_access_trigger_irq_times_count[irq] > mem_access_trigger_irq_times[irq])
+    {
+        insert_irq = insert_nvic_intc(irq);
+        mem_access_trigger_irq_times_count[irq] = 0;
+        if(insert_irq)
+            simple_log(flog,false,"insert mem irq",irq,vaddr,0);
+        
+    }
+    else
+    {
+            mem_access_trigger_irq_times_count[irq] ++;
     }
 }
 void nostop_watchpoint_exec_func(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
@@ -487,6 +494,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     bool pc_changed;
     prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0);
     pc_changed = exit_with_code_start();
+    crash_log(f_crash_log,"arm_cpu_do_interrupt_hook",exec_index,0,0);
     return false;
 }
 
@@ -509,9 +517,14 @@ void post_thread_exec(int exec_ret)
     bool pc_changed;
 
     simple_log(flog,false,"post_thread_exec",exec_ret,0,0);
-
-    prepare_exit(EXIT_TIMEOUT,0,get_arm_pc(),num_mmio,0);
-    pc_changed = exit_with_code_start();
+    if(exec_ret == EXCP_HLT || exec_ret == EXCP_HALTED)
+        insert_idel_irq();
+    else
+    {
+        prepare_exit(EXIT_TIMEOUT,0,get_arm_pc(),num_mmio,0);
+        pc_changed = exit_with_code_start();
+    }
+    
 
 }
 
@@ -706,6 +719,7 @@ int run_config()
         add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->mmios[i].start);
     }
     reset_arm_reg();
+
     org_snap = arm_take_snapshot();
     register_exec_bbl_hook(exec_bbl_snapshot);
     model_irq(ARMV7M_EXCP_SYSTICK);

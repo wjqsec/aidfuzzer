@@ -7,15 +7,15 @@ def is_infinite_loop(project,initial_state,addr,isthumb):
     bbl_addr = None
     simgr = project.factory.simgr(initial_state)
     simgr.step(thumb=isthumb)
-    if len(simgr.active) != 1:
+    if len(simgr.active) != 1 or simgr.active[0].regs.pc.symbolic:
             return False,bbl_addr
     init_state = simgr.active[0]
 
     bbl_addr = init_state.solver.eval_one(init_state.regs.pc) & 0xfffffffe
 
-    for i in range(5):
+    for i in range(3):
         simgr.step(thumb=isthumb)
-        if len(simgr.active + simgr.deadended + simgr.unconstrained) > 1 or len(simgr.active) != 1:
+        if len(simgr.active) != 1:
             return False,bbl_addr
         
         active_state = simgr.active[0]

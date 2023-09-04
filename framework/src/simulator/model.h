@@ -139,7 +139,7 @@ void model_all_infinite_loop()
     }
 }
 
-inline bool find_value(uint32_t *data, int len, uint32_t val)
+inline bool find_value_32(uint32_t *data, int len, uint32_t val)
 {
     for(int i = 0; i < len; i ++)
     {
@@ -148,7 +148,15 @@ inline bool find_value(uint32_t *data, int len, uint32_t val)
     }
     return false;
 }
-
+inline bool find_value_16(uint16_t *data, int len, uint16_t val)
+{
+    for(int i = 0; i < len; i ++)
+    {
+        if(data[i] == val)
+            return true;
+    }
+    return false;
+}
 void model_irq(int irq)
 {
     char state_filename[PATH_MAX];
@@ -179,7 +187,7 @@ void model_irq(int irq)
     f = fopen(model_filename,"r");
     if(!f)
     {
-        printf("model file %s\n not found,exit\n",model_filename);
+        printf("model file %s not found,exit\n",model_filename);
         exit(0);
     }
     bool start = false;
@@ -240,7 +248,7 @@ void model_irq(int irq)
             continue;
         if(type == STOPWATCH_TYPE_MEM)
         {
-            if(find_value(irq_models[irq].mem,mem_index,addr))
+            if(find_value_32(irq_models[irq].mem,mem_index,addr))
                 continue;
             insert_nostop_watchpoint(addr,len,QEMU_PLUGIN_MEM_R_ ,nostop_watchpoint_exec_mem,(void*)(uint64_t)irq);
             mem_access_trigger_irq_times[irq]++;
@@ -250,7 +258,7 @@ void model_irq(int irq)
         }
         else if(type == STOPWATCH_TYPE_MMIO)
         {
-            // if(find_value(irq_models[irq].mmio,mmio_index,addr))
+            // if(find_value_32(irq_models[irq].mmio,mmio_index,addr))
             //     continue;
             
 
@@ -258,7 +266,7 @@ void model_irq(int irq)
         }
         else if(type == STOPWATCH_TYPE_FUNC_POINTER)
         {
-            if(find_value(irq_models[irq].func,func_index,addr))
+            if(find_value_32(irq_models[irq].func,func_index,addr))
                 continue;
             insert_nostop_watchpoint(addr,len,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_func,(void*)(uint64_t)irq);
             irq_models[irq].func[func_index++] = addr;
@@ -268,7 +276,13 @@ void model_irq(int irq)
     }
     puts("model done");
     if(do_mmio_irq)
-        do_mmio_irqs[num_do_mmio_irqs++] = irq;
+    {
+        if(!find_value_16(do_mmio_irqs,num_do_mmio_irqs,irq))
+        {
+            do_mmio_irqs[num_do_mmio_irqs++] = irq;
+        }
+    }
+        
     fclose(f);
 }
 #endif

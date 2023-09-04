@@ -46,6 +46,8 @@ def from_state_file(statefile, global_cfg,irq,symbolize_all_register):
                 val = int(reg_regex.match(line).group(1), 16)
                 name = translate_reg_name_to_vex_internal_name(name)
                 regs[name] = val
+                if name == "sp":
+                    regs[name] = 0x70000000
 
             line = ""
             while line == "":
@@ -74,7 +76,7 @@ def from_state_file(statefile, global_cfg,irq,symbolize_all_register):
                 continue
             if name == "pc":
                 continue
-            ast = claripy.BVS(f"initstate_{name}", 32)
+            ast = claripy.BVS(f"initstate_{name}", 32)  
             if not symbolize_all_register:
                 bitvecval = claripy.BVV(val, 32)
                 constraint = ast == bitvecval

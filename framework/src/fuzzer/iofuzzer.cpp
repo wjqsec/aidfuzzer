@@ -100,7 +100,7 @@ void fuzzer_terminate()
 void fuzzer_init(FuzzState *state, u32 max_edge, u32 share_size) 
 {
     char shm_str[PATH_MAX];
-    state->map_size = max_edge * sizeof(u16);
+    state->map_size = max_edge;
     state->share_size = share_size;
     state->virgin_bits = (u8*)malloc(state->map_size);
     memset(state->virgin_bits, 0xff, state->map_size);
@@ -140,15 +140,6 @@ void fuzzer_init(FuzzState *state, u32 max_edge, u32 share_size)
 
 }
 
-// void add_new_stream_for_all_queue(FuzzState *state,u32 id)
-// {
-//   vector<queue_entry*> *entries = state->entries;
-//   for(queue_entry* entry : *entries)
-//   {
-//     input_stream *new_stream = allocate_enough_space_stream(state,id, DEFAULT_STREAM_LEN);
-//     insert_stream(state,entry,new_stream);
-//   }
-// }
 
 void allocate_new_simulator(FuzzState *state)
 {
@@ -252,7 +243,7 @@ void allocate_new_simulator(FuzzState *state)
   }
   printf("pid:%d fork server is up\n",simulator->pid);
   simulator_classify_count(simulator);
-  has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   sync_models(state,simulator);
   
   start_fd += 2;
@@ -325,10 +316,13 @@ void sync_state(FuzzState *state)
       fuzz_start(simulator);
       fuzz_exit(simulator,&exit_info);
       simulator_classify_count(simulator);
-      has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+      has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
     }
   }
-  
+  if(state->entries->size() == 0)
+  {
+    fuzzer_terminate();
+  }
   
   show_stat(state);
   printf("**********************sync state done**********************\n");
@@ -419,7 +413,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   if(exit_info.exit_code == EXIT_NOTENOUGHT_STREAM)
   {
     outofseed_stream = (*fuzz_entry->streams)[exit_info.exit_stream_id];
-    new_stream = increase_stream(state,outofseed_stream);
+    new_stream = extend_stream(state,outofseed_stream,DEFAULT_STREAM_LEN);
     replace_stream(state,fuzz_entry,outofseed_stream, new_stream);
     fuzz_continue_stream_outof(simulator,new_stream);
 
@@ -427,14 +421,14 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     
   }
   simulator_classify_count(simulator);
-  int r = has_new_bits_update_virgin_2(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
 
   if(unlikely(r))
   {
     if(unlikely(r == 2))
       save_coverage(state);
     fuzz_entry->depth++;
-    fuzz_entry->edges = count_words(simulator->trace_bits, simulator->map_size);
+    fuzz_entry->edges = count_bytes(simulator->trace_bits, simulator->map_size);
     fuzz_entry->cksum = hash32(simulator->trace_bits,simulator->map_size);
     
     fuzz_entry->priority = fuzz_entry->edges + 1;
@@ -457,11 +451,11 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 
 inline void fuzz_queue(FuzzState *state,queue_entry* entry)
 {
+  bool should_continue = false;
   s32 i;
   Simulator *simulator = NULL;
   input_stream *fuzz_stream;
   queue_entry* fuzz_entry;
-
 
   for(auto it = entry->streams->begin() ; it != entry->streams->end() ; it++)
   {
@@ -474,7 +468,7 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
       fuzz_entry = copy_queue(state,entry);
       simulator->fuzz_entry = fuzz_entry;
       fuzz_stream = havoc(state,it->second);
-
+      fuzz_stream->priority ++;
       replace_stream(state,fuzz_entry,it->second, fuzz_stream);
       fuzz_start(simulator);
       

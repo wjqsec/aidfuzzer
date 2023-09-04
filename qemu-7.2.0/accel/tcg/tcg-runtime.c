@@ -57,7 +57,9 @@ void  HELPER(xx_bbl)(uint64_t pc,uint32_t id)
     {
 	    cpu_loop_exit(xx_cs);
     }
-	//qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+    bbl_counts++;
+    if ((bbl_counts & 0x3f) == 0)
+	    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
 }
 void  HELPER(xx_specific_bbls)(uint64_t pc,uint32_t id,void *ptr)
 {
@@ -86,17 +88,19 @@ void  HELPER(xx_func)(uint64_t pc,uint32_t id,void *ptr)
 __attribute__((noinline)) void xx_nostop_watchpoint_(uint32_t addr,uint32_t val, uint32_t flag,uint32_t id)
 {
     int i;
+    int index = 0;
     struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
     for(i = 0; i < mem_has_watchpoints[id];)
     {
-        if(likely(ptr[i]))
+        if(likely(ptr[index]))
         {   
-            if(ptr[i]->addr == addr && (ptr[i]->flag & flag))
+            if(ptr[index]->addr == addr && (ptr[index]->flag & flag))
             {
-                ptr[i]->cb(ptr[i]->addr,ptr[i]->len,val,ptr[i]->data);
+                ptr[index]->cb(ptr[index]->addr,ptr[index]->len,val,ptr[index]->data);
             }
             i++;
         }
+        index++;
     }
 }
 void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)

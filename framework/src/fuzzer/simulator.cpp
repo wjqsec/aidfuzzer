@@ -33,7 +33,7 @@ void fuzz_start(Simulator *simulator)
   write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
   simulator->status = STATUS_RUNNING;
 
-  
+
 }
 void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream)
 {
@@ -62,6 +62,7 @@ void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream)
   cmd_info.updated_stream_index = idx;
   write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
   simulator->status = STATUS_RUNNING;
+
 }
 void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info)
 {
@@ -167,5 +168,5 @@ void simulator_classify_count(Simulator * simulator)
 }
 void simulator_env_init(void)
 {
-  init_count_class16_2();
+  init_count_class16();
 }

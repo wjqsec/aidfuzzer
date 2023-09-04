@@ -88,7 +88,8 @@ def is_stack_address(state,addr):
     stack_end = state.regs.sp - stack_size
     stack_base = state.solver.eval_one(state.regs.sp)
     stack_top = state.solver.eval_one(stack_end)
-    return addr >= stack_top and addr <= stack_base
+    ret = addr >= stack_top and addr <= stack_base
+    return ret
 
 def is_ast_stack_address(state,ast):
     try:
@@ -186,7 +187,7 @@ def mem_read_after(state):
     if is_ast_mmio_address(state, address):
         state.inspect.mem_read_expr.is_mmio_access = True
 
-def call_after(state):
+def call_before(state):
     if state.inspect.function_address.get_bytes(0,4) in symbolic_mem_data_addr_mapping:
         func_pointer_init_mem.add(symbolic_mem_data_addr_mapping[state.inspect.function_address.get_bytes(0,4)])
 
@@ -213,13 +214,17 @@ def get_memory_access(states,initial_state,accessses,irq):
         has_mmio_read_op = True
     for state in states:
         for action in state.history.actions:
+            print(action.type,action.ins_addr)
             if not is_memory_action(action):
                 continue
+            
             if is_ast_stack_address(initial_state,action.addr):
                 continue
+            
             if is_ast_addr_readonly(state,action.addr):
                 continue
-            # print(action)
+
+            print(action)
             if is_ast_mmio_address(state,action.addr) and is_memory_read_action(action):
                 has_mmio_read_op = True
             
@@ -257,6 +262,7 @@ def main():
     
 
     project, initial_state = from_state_file(args.state,config,args.irq,args.mode == "loop")
+    initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     if args.mode == "loop":
         loop_addrs = find_all_infinite_loop(project, initial_state,config)
         with open(args.output,"w") as f:
@@ -269,17 +275,18 @@ def main():
     if int(args.irq,16) in models:
         model = models[int(args.irq,16)]
     accessses = []
-    initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
-    initial_state.inspect.b("call",when=angr.BP_AFTER, action=call_after)
+    
+    initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
     has_mmio_read_op = False
     simgr = project.factory.simgr(initial_state)
-    simgr.use_technique(exploration_techniques.Timeout(2*60))
+    simgr.use_technique(exploration_techniques.Timeout(30))
     for i in range(100):
         simgr.step(thumb=True)
+        get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
         if len(simgr.active) <= 1 and i >= 10:
             break
         
-        get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
+        
     # if not has_mmio_read_op:
     #     print("clear cear clear lear")
     #     accessses = []
