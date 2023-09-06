@@ -410,6 +410,7 @@ static void arm_cpu_reset(DeviceState *dev)
 
         env->v7m.vecbase[M_REG_S] = cpu->init_svtor & 0xffffffff;
         env->v7m.vecbase[M_REG_NS] = cpu->init_nsvtor & 0xffffffff;
+
         /* Load the initial SP and PC from offset 0 and 4 in the vector table */
         vecbase = env->v7m.vecbase[env->v7m.secure];
 

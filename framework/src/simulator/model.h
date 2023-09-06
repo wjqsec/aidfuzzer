@@ -4,16 +4,97 @@
 #define STOPWATCH_TYPE_MMIO 0
 #define STOPWATCH_TYPE_MEM 1
 #define STOPWATCH_TYPE_FUNC_POINTER 2
+#define STOPWATCH_TYPE_DEPENDENCY 3
 
 
-#define MAX_IRQ_MODEL_MEMORY_NUM 0x100
+#define MAX_IRQ_MODEL_MEMORY_NUM 0x30
 struct IRQ_MODEL
 {
     uint32_t mem[MAX_IRQ_MODEL_MEMORY_NUM];
     uint32_t mmio[MAX_IRQ_MODEL_MEMORY_NUM];
+
     uint32_t func[MAX_IRQ_MODEL_MEMORY_NUM];
     uint32_t func_vals[MAX_IRQ_MODEL_MEMORY_NUM];
+
+    int num_dependency_pointer;
+    uint32_t dependency_pointer[MAX_IRQ_MODEL_MEMORY_NUM];
+
+    int num_sovled_dependency_pointer;
+    uint32_t sovled_dependency_pointer[MAX_IRQ_MODEL_MEMORY_NUM];
+
+    uint8_t mem_access_trigger_irq_times_count;
+    uint8_t mem_access_trigger_irq_times;
 }irq_models[NVIC_MAX_VECTORS];
+
+
+
+
+uint16_t do_mmio_irqs[NVIC_MAX_VECTORS];
+int num_do_mmio_irqs;
+
+void model_irq(int irq);
+
+
+inline bool find_value_32(uint32_t *data, int len, uint32_t val)
+{
+    for(int i = 0; i < len; i ++)
+    {
+        if(data[i] == val)
+            return true;
+    }
+    return false;
+}
+inline bool find_value_16(uint16_t *data, int len, uint16_t val)
+{
+    for(int i = 0; i < len; i ++)
+    {
+        if(data[i] == val)
+            return true;
+    }
+    return false;
+}
+
+
+inline void reset_irq_models(void)
+{
+    for(int i = 0; i < NVIC_MAX_VECTORS ; i++)
+    {
+        irq_models[i].num_sovled_dependency_pointer = 0;
+        irq_models[i].mem_access_trigger_irq_times_count = 0;
+    }   
+}
+inline void solve_irq_dependency(int irq, uint32_t ptr)
+{
+    if (!find_value_32(irq_models[irq].sovled_dependency_pointer,irq_models[irq].num_sovled_dependency_pointer,ptr))
+    {
+        irq_models[irq].sovled_dependency_pointer[irq_models[irq].num_sovled_dependency_pointer ++] = ptr;
+    }
+}
+
+inline bool is_irq_avaliable(int irq)
+{
+    return irq_models[irq].num_dependency_pointer == irq_models[irq].num_sovled_dependency_pointer;
+}
+inline void model_irq_after_nullfuncptr_init(int irq,uint32_t ptr)
+{
+    int func_val_index = 0;
+
+    uint32_t *func_val_arrays = irq_models[irq].func_vals;
+
+
+    while(func_val_arrays[func_val_index]!= 0 )
+    {
+
+        if(func_val_arrays[func_val_index] == ptr)
+        {
+            return;
+        }
+        func_val_index++;
+    }
+    func_val_arrays[func_val_index] = ptr;
+
+    model_irq(irq);
+}
 
 FILE *state_file;
 void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
@@ -134,29 +215,12 @@ void model_all_infinite_loop()
     }
     else
     {
-        printf("model file %s\n not found,exit\n",model_filename);
+        printf("model file %s not found,exit\n",model_filename);
         exit(0);
     }
 }
 
-inline bool find_value_32(uint32_t *data, int len, uint32_t val)
-{
-    for(int i = 0; i < len; i ++)
-    {
-        if(data[i] == val)
-            return true;
-    }
-    return false;
-}
-inline bool find_value_16(uint16_t *data, int len, uint16_t val)
-{
-    for(int i = 0; i < len; i ++)
-    {
-        if(data[i] == val)
-            return true;
-    }
-    return false;
-}
+
 void model_irq(int irq)
 {
     char state_filename[PATH_MAX];
@@ -240,7 +304,11 @@ void model_irq(int irq)
             type = STOPWATCH_TYPE_FUNC_POINTER;
             addr_size_ptr = line + strlen("func:");
         }
-
+        else if(strstr(line,"dependency:"))
+        {
+            type = STOPWATCH_TYPE_DEPENDENCY;
+            addr_size_ptr = line + strlen("dependency:");
+        }
             
         uint32_t addr = strtol(addr_size_ptr, 0, 16);
         uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
@@ -251,15 +319,13 @@ void model_irq(int irq)
             if(find_value_32(irq_models[irq].mem,mem_index,addr))
                 continue;
             insert_nostop_watchpoint(addr,len,QEMU_PLUGIN_MEM_R_ ,nostop_watchpoint_exec_mem,(void*)(uint64_t)irq);
-            mem_access_trigger_irq_times[irq]++;
+            irq_models[irq].mem_access_trigger_irq_times++;
             do_mmio_irq = true;
             irq_models[irq].mem[mem_index++] = addr;
             printf("insert_nostop_watchpoint mem irq:%d addr:%x\n",irq,addr);
         }
         else if(type == STOPWATCH_TYPE_MMIO)
         {
-            // if(find_value_32(irq_models[irq].mmio,mmio_index,addr))
-            //     continue;
             
 
                 
@@ -271,6 +337,14 @@ void model_irq(int irq)
             insert_nostop_watchpoint(addr,len,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_func,(void*)(uint64_t)irq);
             irq_models[irq].func[func_index++] = addr;
             printf("insert_nostop_watchpoint func irq:%d addr:%x\n",irq,addr);
+        }
+        else if(type == STOPWATCH_TYPE_DEPENDENCY)
+        {
+            if(find_value_32(irq_models[irq].dependency_pointer,irq_models[irq].num_dependency_pointer,addr))
+                continue;
+            insert_nostop_watchpoint(addr,len,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_denpendency,(void*)(uint64_t)irq);
+            irq_models[irq].dependency_pointer[irq_models[irq].num_dependency_pointer++] = addr;
+            printf("insert_nostop_watchpoint dependency irq:%d addr:%x\n",irq,addr);
         }
         
     }

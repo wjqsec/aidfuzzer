@@ -127,7 +127,7 @@ hwaddr xx_get_arm_precise_pc(void);
 hwaddr xx_get_arm_pc(void);
 void xx_register_exec_nvic_hook(exec_nvic_cb cb);
 void xx_register_enable_nvic_hook(enable_nvic_cb cb);
-bool xx_get_arm_v7m_is_handler_mode(void);
+int xx_get_arm_v7m_is_handler_mode(void);
 
 
 #define get_arm_cpu_state xx_get_arm_cpu_state

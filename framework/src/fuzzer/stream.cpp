@@ -127,7 +127,7 @@ input_stream *extend_stream(FuzzState *state,input_stream *stream,u32 ext_len)
 {
   input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,stream->ptr->len + ext_len);
   memcpy(ret->ptr->data,stream->ptr->data,stream->ptr->len);
-  ret->priority = stream->priority;
+  ret->priority = DEFAULT_STREAM_PRIORITY;
 
   return ret;
 }
@@ -143,7 +143,7 @@ input_stream *decrease_stream(FuzzState *state,input_stream *stream,u32 new_len)
     fatal("decrease stream should at lease remove some elements\n");
   }
   input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,new_len);
-  ret->priority = stream->priority;
+  ret->priority = DEFAULT_STREAM_PRIORITY;
   memcpy(ret->ptr->data,stream->ptr->data,new_len);
   return ret;
 }

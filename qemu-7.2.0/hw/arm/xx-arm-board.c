@@ -57,9 +57,9 @@ bool xx_insert_nvic_intc(int irq)
     }   
     return false;
 }
-bool xx_get_arm_v7m_is_handler_mode(void)
+int xx_get_arm_v7m_is_handler_mode(void)
 {
-    return xx_env->v7m.exception != 0;
+    return xx_env->v7m.exception;
 }
 uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs)
 {

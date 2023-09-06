@@ -65,7 +65,11 @@ def write_model_to_file(models,modelfilename):
 
 symbolic_mem_data = set()
 symbolic_mem_data_addr_mapping = dict()
-func_pointer_init_mem = set()
+
+zero_symbolic_mem_data = set()
+
+nullptr_func_check_mem = set()
+nullptr_data_access_check_mem = set()
 
 def is_mmio_address(state, addr):
     for mem in config.mems:
@@ -166,36 +170,36 @@ def mem_read_before(state):
     value = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
     if value.symbolic:
         return
-    if (is_ast_value_pointer(state,value) and not is_ast_addr_zero(state,value)) or is_ast_mmio_address(state, value):
+    if is_ast_value_pointer(state,value) or is_ast_mmio_address(state, value):
         return
     if address in symbolic_mem_data:
         return
-    symbolic_mem_data.add(address)
     tmp = claripy.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
+    if is_ast_addr_zero(state,value):
+        # constrain = tmp == claripy.BVV(0, state.inspect.mem_read_length * 8)
+        # state.add_constraints(constrain)
+        zero_symbolic_mem_data.add(tmp)
+    symbolic_mem_data.add(address)
     state.memory.store(address,tmp,disable_actions=True,inspect=False,endness='Iend_LE')
     symbolic_mem_data_addr_mapping[tmp] = address
 
 
 def mem_read_after(state):
-    if not state.inspect.mem_read_expr.symbolic:
-        return
-    state.inspect.mem_read_expr.is_mmio_access = False
-    try:
-        address = state.solver.eval_one(state.inspect.mem_read_address)
-    except Exception as e:
-        return
-    if is_ast_mmio_address(state, address):
-        state.inspect.mem_read_expr.is_mmio_access = True
+    if state.inspect.mem_read_address in zero_symbolic_mem_data and state.inspect.mem_read_condition.is_true():
+        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[state.inspect.mem_read_address])
+def mem_write_after(state):
+    if state.inspect.mem_write_address in zero_symbolic_mem_data and state.inspect.mem_write_condition.is_true():
+        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[state.inspect.mem_write_address])
+
 
 def call_before(state):
-    if state.inspect.function_address.get_bytes(0,4) in symbolic_mem_data_addr_mapping:
-        func_pointer_init_mem.add(symbolic_mem_data_addr_mapping[state.inspect.function_address.get_bytes(0,4)])
+    if state.inspect.function_address.get_bytes(0,4) in zero_symbolic_mem_data:
+        nullptr_func_check_mem.add(symbolic_mem_data_addr_mapping[state.inspect.function_address.get_bytes(0,4)])
 
 
 def mem_write_before(state):
     pass
-def mem_write_after(state):
-    pass
+
 
 
 def is_memory_action(action):
@@ -214,7 +218,7 @@ def get_memory_access(states,initial_state,accessses,irq):
         has_mmio_read_op = True
     for state in states:
         for action in state.history.actions:
-            print(action.type,action.ins_addr)
+            # print(action.type,action.ins_addr)
             if not is_memory_action(action):
                 continue
             
@@ -224,7 +228,7 @@ def get_memory_access(states,initial_state,accessses,irq):
             if is_ast_addr_readonly(state,action.addr):
                 continue
 
-            print(action)
+            # print(action)
             if is_ast_mmio_address(state,action.addr) and is_memory_read_action(action):
                 has_mmio_read_op = True
             
@@ -275,11 +279,11 @@ def main():
     if int(args.irq,16) in models:
         model = models[int(args.irq,16)]
     accessses = []
-    
+    initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
     has_mmio_read_op = False
     simgr = project.factory.simgr(initial_state)
-    simgr.use_technique(exploration_techniques.Timeout(30))
+    simgr.use_technique(exploration_techniques.Timeout(300))
     for i in range(100):
         simgr.step(thumb=True)
         get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
@@ -290,15 +294,26 @@ def main():
     # if not has_mmio_read_op:
     #     print("clear cear clear lear")
     #     accessses = []
-    for func in func_pointer_init_mem:
+    for ptr in nullptr_func_check_mem:
         for ac in accessses:
-            if ac.addr == func:
+            if ac.addr == ptr:
                 accessses.remove(ac)
         access = ACCESS_INFO()
         access.ins_addr = 0
-        access.addr = func
+        access.addr = ptr
         access.size = 4
         access.type = "func"
+        accessses.append(access)
+
+    for ptr in nullptr_data_access_check_mem:
+        for ac in accessses:
+            if ac.addr == ptr:
+                accessses.remove(ac)
+        access = ACCESS_INFO()
+        access.ins_addr = 0
+        access.addr = ptr
+        access.size = 4
+        access.type = "dependency"
         accessses.append(access)
     for ac in accessses:
             model.accesses.add(ac)

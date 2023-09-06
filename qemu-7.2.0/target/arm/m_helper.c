@@ -715,9 +715,9 @@ static bool arm_v7m_load_vector(ARMCPU *cpu, int exc, bool targets_secure,
             goto load_fail;
         }
     }
-
     vector_entry = address_space_ldl(arm_addressspace(cs, attrs), addr,
                                      attrs, &result);
+
     if (result != MEMTX_OK) {
         /*
          * Underlying exception is BusFault: its target security state

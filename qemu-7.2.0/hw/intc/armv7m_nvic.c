@@ -554,6 +554,7 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
      * Here we handle the prioritization logic which the pseudocode puts
      * in the DerivedLateArrival() function.
      */
+
     NVICState *s = (NVICState *)opaque;
     bool banked = exc_is_banked(irq);
     VecInfo *vec;
@@ -1616,6 +1617,7 @@ static void nvic_writel(NVICState *s, uint32_t offset, uint32_t value,
         }
         break;
     case 0xd08: /* Vector Table Offset.  */
+        // printf("cpu->env.v7m.vecbase[attrs.secure]  %x %x\n",get_arm_precise_pc(),value);
         cpu->env.v7m.vecbase[attrs.secure] = value & 0xffffff80;
         break;
     case 0xd0c: /* Application Interrupt/Reset Control (AIRCR) */
@@ -2673,6 +2675,7 @@ static void armv7m_nvic_reset(DeviceState *dev)
 
 static void nvic_systick_trigger(void *opaque, int n, int level)
 {
+    return;
     NVICState *s = opaque;
 
     if (level) {

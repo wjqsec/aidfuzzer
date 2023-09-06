@@ -63,4 +63,59 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
 
 static struct ARMM_SNAPSHOT *org_snap,*new_snap;
 
+
+hwaddr snapshot_point = 0;
+struct ARM_CPU_STATE state111;
+uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
+{
+    static bool found = false;
+    if(!found)
+    {
+        struct ARM_CPU_STATE state;
+        get_arm_cpu_state(&state);
+        snapshot_point = state.regs[15];
+        found = true;
+    }
+    return 0;
+    
+}
+void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
+
+
+bool exec_bbl_snapshot(hwaddr pc,uint32_t id)
+{
+    int i;
+    static bool returned = false;
+    bool pc_changed;
+    if(snapshot_point == pc)
+    {
+        
+        register_post_thread_exec_hook(post_thread_exec);
+        register_exec_bbl_hook(arm_exec_bbl);
+        register_enable_nvic_hook(enable_nvic_hook);
+        for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
+        {
+            if(config->mmios[i].size == 0)
+                break;
+            add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)config->mmios[i].start);
+        }
+        new_snap = arm_take_snapshot();
+
+        prepare_exit(EXIT_FORKSRV_UP,0,0,0,0);
+        pc_changed = exit_with_code_start();
+
+        return pc_changed;
+    }
+    else if(snapshot_point && !returned)
+    {
+       
+        arm_restore_snapshot(org_snap);
+        returned = true;
+        return true;
+    }
+    simple_log(flog,false,"snapshot bbl",0,0,0);
+
+    __afl_area_ptr[id] ++;
+    return false;
+}
 #endif

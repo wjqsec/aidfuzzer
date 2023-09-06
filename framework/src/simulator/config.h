@@ -72,8 +72,9 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
     while(fgets(line, PATH_MAX, fp))
     {
         ptr = line;
-        if(strstr(line,"bss:") || strstr(line,"noinit:") || strstr(line,"ram:") || strstr(line,".stack:") || strstr(line,"dynamically_added_crash_region") || strstr(line,".ram5:") 
-            || strstr(line,".ram4:")
+        if(strstr(line,"symbols:"))
+            break;
+        if(strstr(line,"bss") || strstr(line,"noinit") || strstr(line,"ram") || strstr(line,"stack") || strstr(line,"dynamically_added_crash_region")
         )
         {
             while(*ptr == ' ')
@@ -97,7 +98,7 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
             ram_index++;
             
         }
-        if(strstr(line,"mmio:"))
+        if(strstr(line,"mmio"))
         {
             while(*ptr == ' ')
                 ptr++;
@@ -116,7 +117,7 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
             mmio_index++;
 
         }
-        if(strstr(line,"text:"))
+        if(strstr(line,"text"))
         {
             while(*ptr == ' ')
                 ptr++;

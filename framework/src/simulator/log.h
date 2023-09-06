@@ -10,10 +10,11 @@ static inline void full_log(FILE *f,const char *msg,uint32_t append0,uint32_t ap
     read_ram(state.regs[13],4, &sp0);
     read_ram(state.regs[13] + 4,4, &sp1);
     read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(f,"%d->%s pc:%x  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x [sp]=%x, [sp+4]=%x [sp+8]=%x append0:%x append1:%x append2:%x\n",
+    fprintf(f,"%d->%s pc:%x xpsr:%x  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x [sp]=%x, [sp+4]=%x [sp+8]=%x append0:%x append1:%x append2:%x\n",
     run_index,
     msg,
     state.regs[15], 
+    state.xpsr,
     state.regs[0],
     state.regs[1],
     state.regs[2],
@@ -47,10 +48,11 @@ static inline void crash_log(FILE *f,const char *msg,uint32_t append0,uint32_t a
     read_ram(state.regs[13],4, &sp0);
     read_ram(state.regs[13] + 4,4, &sp1);
     read_ram(state.regs[13] + 8,4, &sp2);
-    fprintf(f,"%d->%s pc:%x  r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x [sp]=%x, [sp+4]=%x [sp+8]=%x append0:%x append1:%x append2:%x\n",
+    fprintf(f,"%d->%s pc:%x xpsr:%x r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x r6:%x r7:%x r8:%x r9:%x r10:%x r11:%x ip:%x sp:%x lr:%x [sp]=%x, [sp+4]=%x [sp+8]=%x append0:%x append1:%x append2:%x\n",
     run_index,
     msg,
     state.regs[15], 
+    state.xpsr,
     state.regs[0],
     state.regs[1],
     state.regs[2],

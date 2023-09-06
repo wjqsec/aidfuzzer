@@ -30,6 +30,7 @@ struct queue_entry
     u32 cksum;
 #define DEFAULT_QUEUE_PRIORITY 1
     s32 priority;
+    u64 fuzztimes;
     u8 offset_to_save[0];
 
     map<u32,input_stream *> *streams;
@@ -71,10 +72,15 @@ struct Simulator
 #define STATUS_RUNNING 0
 #define STATUS_FREE 1
 #define STATUS_EXIT 2
+#define STATUS_KILLED 3
     int status;
 
+    queue_entry* base_entry;
     queue_entry* fuzz_entry;
+    u32 fuzz_stream_id;
     map<u32,int> *id_queue_idx_mapping;
+
+
     FuzzState *state;
 
 };
@@ -113,6 +119,6 @@ struct FuzzState
 
 
 
-bool fuzz_one_post(FuzzState *state,Simulator *simulator);
+void fuzz_one_post(FuzzState *state,Simulator *simulator);
 void show_stat(FuzzState *state);
 #endif

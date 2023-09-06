@@ -7,6 +7,7 @@ queue_entry* copy_queue(FuzzState *state,queue_entry* q)
     entry->depth = 1;
     entry->priority = DEFAULT_QUEUE_PRIORITY;
     entry->streams = new map<u32,input_stream*>();
+    entry->fuzztimes = 0;
     if(q)
     {
 

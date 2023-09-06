@@ -7,7 +7,12 @@
 #include "mis_utl.h"
 
 
-
+void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, u32 fuzz_stream_id )
+{
+  simulator->fuzz_entry = fuzz_entry;
+  simulator->base_entry = base_entry;
+  simulator->fuzz_stream_id = fuzz_stream_id;
+}
 void copy_fuzz_data(Simulator *simulator)
 {
   int i = 0;
@@ -40,15 +45,19 @@ void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream
   CMD_INFO cmd_info;
   cmd_info.cmd = CMD_CONTINUE_ADD_STREAM;
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
+
   cmd_info.added_stream_index = queue->num_streams;
   queue->streams[queue->num_streams].offset_to_stream_area = new_stream->offset_to_stream_area;
+
   queue->streams[queue->num_streams].used = 0;
+
   (*simulator->id_queue_idx_mapping)[new_stream->ptr->stream_id] = queue->num_streams;
+
   queue->num_streams++;
 
+  
   write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
   simulator->status = STATUS_RUNNING;
-
 }
 void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream)
 {
@@ -70,11 +79,7 @@ void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info)
   
   simulator->status = STATUS_FREE;
   simulator->state->total_exec++;
-
-
   simulator->state->exit_reason[exit_info->exit_code]++;
-
-
   simulator->status = STATUS_FREE;
 
 
@@ -102,8 +107,11 @@ void fuzz_terminate(Simulator *simulator)
 {
   CMD_INFO cmd_info;
   cmd_info.cmd = CMD_TERMINATE;
-  write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
+
+  int ret = write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
   simulator->status = STATUS_EXIT;
+
+
 }
 void wait_forkserver_terminate(Simulator * simulator)
 {
@@ -149,13 +157,7 @@ Simulator* get_avaliable_simulator(FuzzState *state)
   {
     if (state->fds[i].revents & POLLIN) 
     {
-      do 
-      {
-
-        should_continue = fuzz_one_post(state,(*state->simulators)[i]);
-
-      } while(should_continue);
-
+      fuzz_one_post(state,(*state->simulators)[i]);
       return (*state->simulators)[i];
     }
   }

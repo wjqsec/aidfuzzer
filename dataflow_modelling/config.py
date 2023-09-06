@@ -30,9 +30,9 @@ class Configs:
         with open(config_file,"r") as f:
             while True:
                 line = f.readline()
-                if line == "":
+                if line == "" or "symbols:" in line:
                     break
-                if "mmio:" in line:
+                if "mmio" in line:
                     base_addr_str = f.readline()
                     permission_str = f.readline()
                     size_str = f.readline()
@@ -49,7 +49,7 @@ class Configs:
                         memseg.isreadonly = True
                     memseg.name = line.split(":")[0].strip()
                     self.mems.append(memseg)
-                elif "ram:" in line:
+                elif "ram" in line or "bss" in line or "noinit" in line or "stack" in line or "dynamically_added_crash_region" in line:
                     base_addr_str = f.readline()
                     permission_str = f.readline()
                     size_str = f.readline()
@@ -66,7 +66,7 @@ class Configs:
                         memseg.isreadonly = True
                     memseg.name = line.split(":")[0].strip()
                     self.mems.append(memseg)
-                elif "text:" in line:
+                elif "text" in line:
                     base_addr_str = f.readline()
                     file_str = f.readline()
                     ivt_offset_str = f.readline()

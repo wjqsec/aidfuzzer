@@ -65,34 +65,48 @@ char  coverage_file[PATH_MAX];
 
 char *seed_file;
 
+bool fresh_run;
 
 
-
-
-void fuzzer_terminate() 
+void kill_simulator(Simulator * simulator)
 {
   int status;
-  
+  kill(simulator->pid,SIGKILL);
+  waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
+  printf("simualtor pid:%d terminate\n",simulator->pid);
+  simulator->status = STATUS_KILLED;
+}
+
+void cleanup_simulator(int pid)
+{
+  int status;
   for(Simulator * simulator : *global_state.simulators)
   {
-    if(simulator->status != STATUS_RUNNING)
+    if(simulator->pid != pid)
       continue;
-    fuzz_terminate(simulator);
-    wait_forkserver_terminate(simulator);
-      
-    kill(simulator->pid,SIGKILL);
-    printf("%d terminate\n",simulator->pid);
-    waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
+    kill_simulator(simulator);
     clean_simualtor_shm(simulator);
-
   }
+
+}
+void clean_fuzzer()
+{
   show_stat(&global_state);
   save_pool(&global_state,queue_dir);
   save_queues(&global_state,queue_dir);
   save_freed_streams(&global_state,queue_dir);
   clean_fuzzer_shm(&global_state);
-
-  exit(EXIT_FAILURE);
+}
+void fuzzer_terminate() 
+{
+  for(Simulator * simulator : *global_state.simulators)
+  {
+    fuzz_terminate(simulator);
+    wait_forkserver_terminate(simulator);
+    cleanup_simulator(simulator->pid);
+  }
+  clean_fuzzer();
+  exit(0);
 }
 
 
@@ -234,12 +248,9 @@ void allocate_new_simulator(FuzzState *state)
 
   if(exit_info.exit_code != EXIT_FORKSRV_UP)
   {
-    kill(simulator->pid,SIGKILL);
-    printf("%d terminate\n",simulator->pid);
-    waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
-    clean_simualtor_shm(simulator);
+    cleanup_simulator(pid);
     clean_fuzzer_shm(state);
-    exit(EXIT_FAILURE);
+    exit(0);
   }
   printf("pid:%d fork server is up\n",simulator->pid);
   simulator_classify_count(simulator);
@@ -291,34 +302,34 @@ void sync_state(FuzzState *state)
   Simulator *simulator;
   EXIT_INFO exit_info;
   u32 cksum;
-  load_pool(state,queue_dir);
-  load_queues(state,queue_dir);
-  load_freed_streams(state,queue_dir);
+  if(!fresh_run)
+  {
+    load_pool(state,queue_dir);
+    load_queues(state,queue_dir);
+    load_freed_streams(state,queue_dir);
+  }
+  
 
   if(state->entries->size() == 0)
   {
     simulator = get_avaliable_simulator(state);
     queue_entry *q = copy_queue(state,nullptr);
-    simulator->fuzz_entry = q;
+    simulator_task(simulator,q,0, 0);
     fuzz_start(simulator);
-    do 
-    {
-      should_continue = fuzz_one_post(state,simulator);
-
-    } while(should_continue);
+    fuzz_one_post(state,simulator);
   }
-  else
-  {
-    for(queue_entry *q : *state->entries)
-    {
-      simulator = get_avaliable_simulator(state);
-      simulator->fuzz_entry = q;
-      fuzz_start(simulator);
-      fuzz_exit(simulator,&exit_info);
-      simulator_classify_count(simulator);
-      has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-    }
-  }
+  // else
+  // {
+  //   for(queue_entry *q : *state->entries)
+  //   {
+  //     simulator = get_avaliable_simulator(state);
+  //     simulator->fuzz_entry = q;
+  //     fuzz_start(simulator);
+  //     fuzz_exit(simulator,&exit_info);
+  //     simulator_classify_count(simulator);
+  //     has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  //   }
+  // }
   if(state->entries->size() == 0)
   {
     fuzzer_terminate();
@@ -362,71 +373,109 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 
 }
 
-
-bool fuzz_one_post(FuzzState *state,Simulator *simulator)
+int get_fuzz_priority_increament(u64 fuzz_times)
 {
+  int ret = 0;
+
+  if(fuzz_times < 100)
+    ret = 5;
+  else if(fuzz_times < 1000)
+    ret = 10;
+  else if(fuzz_times < 10000)
+    ret = 20;
+  else if(fuzz_times < 100000)
+    ret = 100;
+  else
+    ret = 5000;
+  return ret;
+}
+void fuzz_one_post(FuzzState *state,Simulator *simulator)
+{
+  queue_entry* base_entry;
   queue_entry* fuzz_entry;
+  input_stream *fuzz_stream = nullptr;
+
   input_stream *outofseed_stream;
   input_stream *new_stream;
-  EXIT_INFO exit_info;
   
-  fuzz_exit(simulator,&exit_info);
+  EXIT_INFO exit_info;
 
   fuzz_entry = simulator->fuzz_entry;
-
-  
-  // stack overflow crash may taint our virgin bits so we don't save it to the queue or count their bits.
-
-  if(exit_info.exit_code & EXIT_CRASH)
+  while(1)
   {
-    simulator_classify_count(simulator);
-    u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
-    if(state->crash_ids->find(cksum) != state->crash_ids->end())
+    fuzz_exit(simulator,&exit_info);
+    if(exit_info.exit_code == EXIT_CRASH)
     {
-      free_queue(state,fuzz_entry);
-      return false;
+      simulator_classify_count(simulator);
+      u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
+      if(state->crash_ids->find(cksum) != state->crash_ids->end())
+      {
+        free_queue(state,fuzz_entry);
+        return;
+      }
+
+      state->crash_ids->insert(cksum);
+      fuzz_entry->cksum = cksum;
+      save_crash(fuzz_entry,crash_dir);
+
+      return;
     }
 
-    state->crash_ids->insert(cksum);
-    fuzz_entry->cksum = cksum;
-    save_crash(fuzz_entry,crash_dir);
+    if(exit_info.exit_code == EXIT_STREAM_NOTFOUND)
+    {
 
-    return false;
+      if(exit_info.stream_dumped == 0)
+      {
+
+        run_modelling(state,simulator);
+
+        sync_models(state,simulator);
+        // add_new_stream_for_all_queue(state,exit_info.exit_stream_id);
+      }
+
+      new_stream = allocate_enough_space_stream(state,exit_info.exit_stream_id, DEFAULT_STREAM_LEN);
+
+      insert_stream(state,fuzz_entry,new_stream);
+
+      fuzz_continue_stream_notfound(simulator,new_stream);
+
+      continue;
+    }
+    if(exit_info.exit_code == EXIT_NOTENOUGHT_STREAM)
+    {
+      outofseed_stream = (*fuzz_entry->streams)[exit_info.exit_stream_id];
+      new_stream = extend_stream(state,outofseed_stream,DEFAULT_STREAM_LEN);
+      replace_stream(state,fuzz_entry,outofseed_stream, new_stream);
+      fuzz_continue_stream_outof(simulator,new_stream);
+      continue;
+    }
+    if(exit_info.exit_code == EXIT_TERMINATE)
+    {
+      cleanup_simulator(simulator->pid);
+      clean_fuzzer();
+      exit(0);
+      return;
+    }
+    break;
   }
   
-  if(exit_info.exit_code == EXIT_STREAM_NOTFOUND)
-  {
-    if(exit_info.stream_dumped == 0)
-    {
-      run_modelling(state,simulator);
-      sync_models(state,simulator);
-      // add_new_stream_for_all_queue(state,exit_info.exit_stream_id);
-    }
-    new_stream = allocate_enough_space_stream(state,exit_info.exit_stream_id, DEFAULT_STREAM_LEN);
-
-    insert_stream(state,fuzz_entry,new_stream);
-
-    fuzz_continue_stream_notfound(simulator,new_stream);
-
-    return true;
-  }
-  if(exit_info.exit_code == EXIT_NOTENOUGHT_STREAM)
-  {
-    outofseed_stream = (*fuzz_entry->streams)[exit_info.exit_stream_id];
-    new_stream = extend_stream(state,outofseed_stream,DEFAULT_STREAM_LEN);
-    replace_stream(state,fuzz_entry,outofseed_stream, new_stream);
-    fuzz_continue_stream_outof(simulator,new_stream);
-
-    return true;
-    
-  }
+  
   simulator_classify_count(simulator);
   int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-
+  base_entry = simulator->base_entry;
+  if(base_entry)
+  {
+    base_entry->fuzztimes++;
+    fuzz_stream = (*base_entry->streams)[simulator->fuzz_stream_id];
+  }
+    
+  
   if(unlikely(r))
   {
     if(unlikely(r == 2))
       save_coverage(state);
+    if(fuzz_stream)
+      fuzz_stream->priority += get_fuzz_priority_increament(base_entry->fuzztimes);
     fuzz_entry->depth++;
     fuzz_entry->edges = count_bytes(simulator->trace_bits, simulator->map_size);
     fuzz_entry->cksum = hash32(simulator->trace_bits,simulator->map_size);
@@ -440,8 +489,12 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   else
   {
     free_queue(state,fuzz_entry);
+    if(fuzz_stream && fuzz_stream->priority > 1)
+    {
+      fuzz_stream->priority-- ;
+    }
   }
-  return false;
+
   
 }
 
@@ -456,24 +509,32 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   Simulator *simulator = NULL;
   input_stream *fuzz_stream;
   queue_entry* fuzz_entry;
+  s32 priority;
 
   for(auto it = entry->streams->begin() ; it != entry->streams->end() ; it++)
   {
     if(it->second->ptr->mode == MODEL_CONSTANT || it->second->ptr->mode == MODEL_PASSTHROUGH || it->second->ptr->len == 0)
       continue;
 
-    for(i = 0 ; i < it->second->priority ; i++)
+    priority = it->second->priority;
+    
+    for(i = 0 ; i < priority ; i++)
     {
       simulator = get_avaliable_simulator(state);  
       fuzz_entry = copy_queue(state,entry);
-      simulator->fuzz_entry = fuzz_entry;
       fuzz_stream = havoc(state,it->second);
-      fuzz_stream->priority ++;
       replace_stream(state,fuzz_entry,it->second, fuzz_stream);
+      simulator_task(simulator,fuzz_entry,entry, it->second->ptr->stream_id);
       fuzz_start(simulator);
+
+      if(terminate_next)
+          fuzzer_terminate();
       
     } 
+    show_stat(state);
   }
+  if(terminate_next)
+          fuzzer_terminate();
   
 
 }
@@ -506,11 +567,9 @@ void fuzz_loop(FuzzState *state)
     {
         entry = select_entry(state);
         fuzz_queue(state,entry);
-        if(terminate_next)
-          fuzzer_terminate();
+        
         round++;
-        if((round & 0xf) == 0)
-            show_stat(state);
+            
     }
 }
 
@@ -558,6 +617,7 @@ void prepare_terminate(int signal)
 {
   terminate_next = true;
 }
+
 void init_signal_handler(void)
 {
   if (signal(SIGINT, prepare_terminate) == SIG_ERR) 
@@ -581,7 +641,7 @@ int main(int argc, char **argv)
   int cores;
   init_signal_handler();
   simulator_env_init();
-  while ((opt = getopt(argc, argv, "m:i:o:c:e:s:")) != -1) 
+  while ((opt = getopt(argc, argv, "m:i:o:c:e:s:f")) != -1) 
   {
       switch (opt) {
       case 'm':
@@ -605,6 +665,9 @@ int main(int argc, char **argv)
       case 's':
           seed_file = optarg;
           break;
+      case 'f':
+          fresh_run = true;
+          break;
       default: /* '?' */
           printf("Usage error\n");
           exit(0);
@@ -622,7 +685,8 @@ int main(int argc, char **argv)
           "simulator_bin:%s\n"
           "cores:%d\n"
           "mode:%d\n"
-          "config:%s\n",
+          "config:%s\n"
+          "fresh_run:%d\n",
           queue_dir,
           crash_dir,
           log_dir,
@@ -631,7 +695,8 @@ int main(int argc, char **argv)
           simulator_bin,
           cores,
           mode,
-          config);
+          config,
+          fresh_run);
 
   
   fuzzer_init(&global_state,FUZZ_COVERAGE_SIZE, SHARE_FUZZDATA_SIZE);
@@ -649,7 +714,7 @@ int main(int argc, char **argv)
     load_pool(&global_state,queue_dir);
     queue_entry *q = load_queue(&global_state,seed_file);
     simulator = get_avaliable_simulator(&global_state);
-    simulator->fuzz_entry = q;
+    simulator_task(simulator,q,0, 0);
     for(int i = 0; i < 10;i++)
     {
       fuzz_start(simulator);
