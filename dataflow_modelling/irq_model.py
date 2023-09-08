@@ -213,9 +213,6 @@ def is_memory_write_action(action):
 
 
 def get_memory_access(states,initial_state,accessses,irq):
-    has_mmio_read_op = False
-    if int(irq,16) == 0xf:
-        has_mmio_read_op = True
     for state in states:
         for action in state.history.actions:
             # print(action.type,action.ins_addr)
@@ -230,7 +227,7 @@ def get_memory_access(states,initial_state,accessses,irq):
 
             # print(action)
             if is_ast_mmio_address(state,action.addr) and is_memory_read_action(action):
-                has_mmio_read_op = True
+                pass
             
             if is_ast_mmio_address(state,action.addr):
                 info = ACCESS_INFO()
@@ -248,7 +245,7 @@ def get_memory_access(states,initial_state,accessses,irq):
                 info.type = "mem"
                 accessses.append(info)
                 
-    return has_mmio_read_op
+
     
 
     
@@ -281,9 +278,9 @@ def main():
     accessses = []
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
-    has_mmio_read_op = False
+
     simgr = project.factory.simgr(initial_state)
-    simgr.use_technique(exploration_techniques.Timeout(300))
+    simgr.use_technique(exploration_techniques.Timeout(30))
     for i in range(100):
         simgr.step(thumb=True)
         get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
@@ -291,9 +288,7 @@ def main():
             break
         
         
-    # if not has_mmio_read_op:
-    #     print("clear cear clear lear")
-    #     accessses = []
+
     for ptr in nullptr_func_check_mem:
         for ac in accessses:
             if ac.addr == ptr:

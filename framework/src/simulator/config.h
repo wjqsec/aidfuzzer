@@ -3,65 +3,70 @@
 #define CONFIG_INCLUDED
 #include <libgen.h>
 #include "xx.h"
-struct RAM
+
+
+#define MEMSEG_START "  "
+#define OPTION_START "    "
+
+enum SEG_TYPE 
 {
+    SEG_INVALID = -1,
+    SEG_RAM = 1,
+    SEG_ROM = 2,
+    SEG_MMIO = 3
+};
+struct MEM_CONTENT
+{
+    char *file;
+    int file_offset;
+    int file_size;
+    int mem_offset;
+};
+struct SEG
+{
+    enum SEG_TYPE type;
     char *name;
     hwaddr start;
     hwaddr size;
     bool readonly;
-    char *file;
-    int file_offset;
-    int file_size;
+    
+    int num_content;
+    struct MEM_CONTENT content[20];
 };
-struct ROM
-{
-    char *name;
-    hwaddr start;
-    hwaddr size;
-    char *file;
-    int file_offset;
-    int file_size;
-};
-struct MMIO
-{
-    char *name;
-    hwaddr start;
-    hwaddr size;
-};
+
 struct SIMULATOR_CONFIG
 {
     hwaddr vecbase;
-    struct RAM rams[MAX_NUM_MEM_REGION];
-    struct ROM roms[MAX_NUM_MEM_REGION];
-    struct MMIO mmios[MAX_NUM_MEM_REGION];
+    struct SEG segs[MAX_NUM_MEM_REGION];
 };
 int run_config();
 void init(int argc, char **argv);
 
 
 
+static bool is_option_start(char *line)
+{
+    return !memcmp(line,OPTION_START,strlen(OPTION_START));
+}
+static bool is_seg_start(char *line)
+{
+    return !memcmp(line,MEMSEG_START,strlen(MEMSEG_START)) && !is_option_start(line);
+}
+
+
 static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
 {
-    int ram_index = 0;
-    int rom_index = 0;
-    int mmio_index = 0;
+    int index = -1;
     char line[PATH_MAX];
     char *ptr;
+    enum SEG_TYPE type = SEG_INVALID;
+    static char file_buf[PATH_MAX];
 
-    char base_addr_buf[PATH_MAX];
-    char file_buf[PATH_MAX];
-    char ivt_offset_buf[PATH_MAX];
-    char permissions_buf[PATH_MAX];
-    char size_buf[PATH_MAX];
+    bool start = false;
 
-    char final_file[PATH_MAX];
-    
-    hwaddr base_addr;
-    bool readonly;
-    hwaddr ivt_offset;
-    hwaddr size;
-
+    char *dir_base = dirname(strdup(fuzzware_config_filename));
     struct SIMULATOR_CONFIG *config = (struct SIMULATOR_CONFIG *)malloc(sizeof(struct SIMULATOR_CONFIG));
+    memset(config, 0, sizeof(struct SIMULATOR_CONFIG));
     FILE *fp = fopen(fuzzware_config_filename , "r");
     if(fp == NULL) 
     {
@@ -69,89 +74,107 @@ static struct SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filenam
         free(config);
         return NULL;
     }
-    while(fgets(line, PATH_MAX, fp))
+
+    while(1)
     {
-        ptr = line;
-        if(strstr(line,"symbols:"))
+        if(!fgets(line, PATH_MAX, fp))
             break;
-        if(strstr(line,"bss") || strstr(line,"noinit") || strstr(line,"ram") || strstr(line,"stack") || strstr(line,"dynamically_added_crash_region")
-        )
+        if(strstr(line,"symbols:"))
         {
-            while(*ptr == ' ')
-                ptr++;
-            *strstr(ptr,":") = 0;
-            fgets(base_addr_buf, PATH_MAX, fp);
-            fgets(permissions_buf, PATH_MAX, fp);
-            fgets(size_buf, PATH_MAX, fp);
-            base_addr = strtol(strstr(base_addr_buf,"base_addr: ") + strlen("base_addr: "), 0, 16);
-            if(strstr(permissions_buf,"w"))
-                readonly = false;
+            start = false;
+            continue;
+        }
+        else if(strstr(line,"memory_map:"))
+        {
+            start = true;
+            continue;
+        }
+        if(!start)
+            continue;
+        ptr = line;
+
+        if(is_seg_start(line))
+        {
+            index++;
+            if(strstr(line,MEMSEG_START"mmio"))
+            {
+                type = SEG_MMIO;
+            }
+            else if(strstr(line,MEMSEG_START"irq_ret") || strstr(line,MEMSEG_START"nvic"))
+            {
+                type = SEG_INVALID;
+            }
             else
-                readonly = true;
-            size = strtol(strstr(size_buf,"size: ") + strlen("size: "), 0, 16);
-            config->rams[ram_index].name = strdup(ptr);
-            config->rams[ram_index].start = base_addr;
-            config->rams[ram_index].size = size;
-            config->rams[ram_index].readonly = readonly;
-            config->rams[ram_index].file = 0;
+            {
+                type = SEG_RAM;
+            }
+            config->segs[index].type = type;
+            while(*ptr == ' ')
+                ptr++;
+            *strstr(ptr,":") = 0;
+            config->segs[index].name = strdup(ptr);
+            config->segs[index].num_content = -1;
+        }
+        else if (is_option_start(line))
+        {
+            if(strstr(line,OPTION_START"base_addr:"))
+            {
+                config->segs[index].start = strtol(strstr(line,"base_addr: ") + strlen("base_addr: "), 0, 16);
+            }
+            else if(strstr(line,OPTION_START"permissions:"))
+            {
+                if(strstr(line,"w"))
+                {
+                    config->segs[index].readonly = false;
+                }
+                else
+                {
+                    config->segs[index].readonly = true;
+                }
+                config->segs[index].readonly = false;  // we need this for memory content writing
+            }
+            else if(strstr(line,OPTION_START"size:"))
+            {
+                config->segs[index].size = strtol(strstr(line,"size: ") + strlen("size: "), 0, 16);
+                
+                
+            }
+            else if(strstr(line,OPTION_START"file:"))
+            {
+                
+                config->segs[index].num_content++;
+                line[strcspn(line, "\n")] = 0;
+                strcpy(file_buf,dir_base);
+                strcat(file_buf,"/");
+                strcat(file_buf, strstr(line,"file: ") + strlen("file: "));
+                config->segs[index].content[config->segs[index].num_content].file = strdup(file_buf);
+                
+                
+            }
+            else if(strstr(line,OPTION_START"file_size:"))
+            {
+                config->segs[index].content[config->segs[index].num_content].file_size = strtol(strstr(line,"file_size: ") + strlen("file_size: "), 0, 16);
+            }
+            else if(strstr(line,OPTION_START"file_offset:"))
+            {
 
-            ram_index++;
+                config->segs[index].content[config->segs[index].num_content].file_offset = strtol(strstr(line,"file_offset: ") + strlen("file_offset: "), 0, 16);
+
+            }
+            else if(strstr(line,OPTION_START"mem_offset:"))
+            {
+                config->segs[index].content[config->segs[index].num_content].mem_offset = strtol(strstr(line,"mem_offset: ") + strlen("mem_offset: "), 0, 16);
             
-        }
-        if(strstr(line,"mmio"))
-        {
-            while(*ptr == ' ')
-                ptr++;
-            *strstr(ptr,":") = 0;
-            fgets(base_addr_buf, PATH_MAX, fp);
-            fgets(permissions_buf, PATH_MAX, fp);
-            fgets(size_buf, PATH_MAX, fp);
-            base_addr = strtol(strstr(base_addr_buf,"base_addr: ") + strlen("base_addr: "), 0, 16);
-            size = strtol(strstr(size_buf,"size: ") + strlen("size: "), 0, 16);
-
-            config->mmios[mmio_index].name = strdup(ptr);
-            config->mmios[mmio_index].start = base_addr;
-            config->mmios[mmio_index].size = size;
-
-
-            mmio_index++;
+            }
+            else if(strstr(line,OPTION_START"ivt_offset:"))
+            {
+                config->vecbase = strtol(strstr(line,"ivt_offset: ") + strlen("ivt_offset: "), 0, 16) + config->segs[index].start;
+            }
 
         }
-        if(strstr(line,"text"))
-        {
-            while(*ptr == ' ')
-                ptr++;
-            *strstr(ptr,":") = 0;
-            fgets(base_addr_buf, PATH_MAX, fp);
-            fgets(file_buf, PATH_MAX, fp);
-            fgets(ivt_offset_buf, PATH_MAX, fp);
-            fgets(permissions_buf, PATH_MAX, fp);
-            fgets(size_buf, PATH_MAX, fp);
-            file_buf[strcspn(file_buf, "\n")] = 0;
 
-            base_addr = strtol(strstr(base_addr_buf,"base_addr: ") + strlen("base_addr: "), 0, 16);
-            ivt_offset = strtol(strstr(ivt_offset_buf,"ivt_offset: ") + strlen("ivt_offset: "), 0, 16);
-            size = strtol(strstr(size_buf,"size: ") + strlen("size: "), 0, 16);
-
-            config->rams[ram_index].name = strdup(ptr);
-            config->rams[ram_index].start = base_addr;
-            config->rams[ram_index].size = size;
-            config->rams[ram_index].readonly = false;
-            strcpy(final_file,dirname(fuzzware_config_filename));
-            strcat(final_file,"/");
-            strcat(final_file, strstr(file_buf,"file: ") + strlen("file: "));
-            config->rams[ram_index].file = strdup(final_file);
-            config->rams[ram_index].file_offset = 0; 
-            config->rams[ram_index].file_size = size; 
-
-            config->vecbase = base_addr + ivt_offset;
-
-            ram_index++;  
-        }
     }
-    config->rams[ram_index].size = 0;
-    config->roms[rom_index].size = 0;
-    config->mmios[mmio_index].size = 0;
+    fclose(fp);
     return config;
 }
 #endif

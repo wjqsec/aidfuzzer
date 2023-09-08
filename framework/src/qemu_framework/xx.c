@@ -30,7 +30,7 @@ void xx_register_post_thread_exec_hook(post_thread_exec_cb cb)
     post_thread_exec_func = cb;
 }
 
-void load_file_ram(char *filename,hwaddr addr, int file_offset, int size)
+void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int mem_offset, int file_size)
 {
     FILE *fptr = fopen(filename,"rb");
     if(!fptr)
@@ -41,30 +41,43 @@ void load_file_ram(char *filename,hwaddr addr, int file_offset, int size)
     fseek(fptr, 0, SEEK_END);
     long remainder_size = ftell(fptr) - file_offset;
     fseek(fptr, file_offset, SEEK_SET);
-    size = size < remainder_size ? size : remainder_size;
-    char *tmp = (char *)malloc(size);
-    fread(tmp,size,1,fptr);
-    write_ram(addr,size,tmp);
+    if(file_size == 0)
+    {
+        file_size = remainder_size;
+    }
+    else
+        file_size = file_size < remainder_size ? file_size : remainder_size;
+    char *tmp = (char *)malloc(file_size);
+    fread(tmp,file_size,1,fptr);
+    write_ram(addr + mem_offset,file_size,tmp);
     free(tmp);
     fclose(fptr);
 }
-void load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
+void xx_zero_ram(hwaddr addr,hwaddr size)
 {
-    FILE *fptr = fopen(filename,"rb");
-    if(!fptr)
-    {
-        printf("error opening %s\n",filename);
-        exit(0);
-    }
-    fseek(fptr, 0, SEEK_END);
-    long remainder_size = ftell(fptr) - file_offset;
-    fseek(fptr, file_offset, SEEK_SET);
-    size = size < remainder_size ? size : remainder_size;
     char *tmp = (char *)malloc(size);
-    fread(tmp,size,1,fptr);
-    xx_rom_write(addr,tmp,size);
+    memset(tmp,0,size);
+    write_ram(addr,size,tmp);
     free(tmp);
-    fclose(fptr);
+}
+void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
+{
+    printf("load_file_rom not support yes\n");
+    // FILE *fptr = fopen(filename,"rb");
+    // if(!fptr)
+    // {
+    //     printf("error opening %s\n",filename);
+    //     exit(0);
+    // }
+    // fseek(fptr, 0, SEEK_END);
+    // long remainder_size = ftell(fptr) - file_offset;
+    // fseek(fptr, file_offset, SEEK_SET);
+    // size = size < remainder_size ? size : remainder_size;
+    // char *tmp = (char *)malloc(size);
+    // fread(tmp,size,1,fptr);
+    // xx_rom_write(addr,tmp,size);
+    // free(tmp);
+    // fclose(fptr);
 }
 void exec_simulator(struct XXSimulator *s)
 {

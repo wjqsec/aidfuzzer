@@ -28,7 +28,7 @@ inline void add_stream(int index_to_shared_queue)
     if(metadata->magic_number != STREAM_MAGIC)
     {
         printf("stream magic overwritten\n");
-        exit(0);
+        terminate();
     }
     #endif
 
@@ -37,7 +37,7 @@ inline void add_stream(int index_to_shared_queue)
     if(stream->avaliable)
     {
         printf("stream index colission id:%x  %x\n",metadata->stream_id,stream->metadata->stream_id);
-        exit(0);
+        terminate();
     }
     stream->avaliable = true;
     stream->used = &queue->streams[index_to_shared_queue].used;
@@ -74,6 +74,15 @@ void collect_streams()
     {
         add_stream(i);
     }   
+}
+void init_streams()
+{
+    for(int i = 0; i < NUM_QUEUE_STREAMS ;i ++)
+    {
+        streams[i] = (struct SHARED_STREAM *)malloc(sizeof(struct SHARED_STREAM));
+        streams[i]->avaliable = false;
+        streams[i]->dumped = false;
+    }
 }
 inline int get_stream_status(struct SHARED_STREAM * stream)
 {
@@ -135,7 +144,7 @@ void get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         default:
         {
             printf("wrong stream type:%d\n",stream->metadata->mode);
-            exit(0);
+            terminate();
             break;
         }
     } 

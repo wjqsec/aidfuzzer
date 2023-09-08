@@ -95,7 +95,10 @@ inline void model_irq_after_nullfuncptr_init(int irq,uint32_t ptr)
 
     model_irq(irq);
 }
-
+void init_irq_model()
+{
+    memset(irq_models,0,sizeof(struct IRQ_MODEL) * NVIC_MAX_VECTORS);
+}
 FILE *state_file;
 void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
 {
@@ -153,26 +156,17 @@ void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char
     ihex_init(&ihex);
     for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
-        if(config->rams[i].size == 0)
-            break;
-        buf = (uint8_t *)malloc(config->rams[i].size);
-        read_ram(config->rams[i].start,config->rams[i].size,buf);
-        ihex_write_at_address(&ihex, config->rams[i].start);
-        ihex_write_bytes(&ihex, buf, config->rams[i].size);
-
-        free(buf);
+        if(config->segs[i].size && config->segs[i].type == SEG_RAM)
+        {
+            buf = (uint8_t *)malloc(config->segs[i].size);
+            read_ram(config->segs[i].start,config->segs[i].size,buf);
+            ihex_write_at_address(&ihex, config->segs[i].start);
+            ihex_write_bytes(&ihex, buf, config->segs[i].size);
+            free(buf);
+        }
+        
     }
-    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
-    {
-        if(config->roms[i].size == 0)
-            break;
-        buf = (uint8_t *)malloc(config->roms[i].size);
-        read_ram(config->roms[i].start,config->roms[i].size,buf);
-        ihex_write_at_address(&ihex, config->roms[i].start);
-        ihex_write_bytes(&ihex, buf, config->roms[i].size);
 
-        free(buf);
-    }
     ihex_end_write(&ihex);
 
     fclose(state_file);
@@ -216,7 +210,7 @@ void model_all_infinite_loop()
     else
     {
         printf("model file %s not found,exit\n",model_filename);
-        exit(0);
+        terminate();
     }
 }
 
@@ -252,7 +246,7 @@ void model_irq(int irq)
     if(!f)
     {
         printf("model file %s not found,exit\n",model_filename);
-        exit(0);
+        terminate();
     }
     bool start = false;
     bool do_mmio_irq = false;

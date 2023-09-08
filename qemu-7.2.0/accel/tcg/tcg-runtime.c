@@ -40,7 +40,7 @@ extern int64_t bbl_counts;
 
 extern exec_bbl_cb exec_bbl_func;
 extern bool enable_nostop_watchpoint_flag;
-extern exec_ins_icmp_cb exec_ins_icmp_func;
+extern mem_access_cb mem_access_log_func;
 
 extern struct NOSTOP_WATCHPOINT **nostop_watchpoints;
 extern uint8_t *mem_has_watchpoints;
@@ -115,15 +115,11 @@ void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)
     
 }
 
-void HELPER(xx_icmp32_ins)(uint32_t val1,uint32_t val2)
+void HELPER(xx_mem_access_log)(uint32_t addr,uint32_t val, uint32_t flag)
 {
-    //exec_ins_icmp_func(val1,val2,32);
+    if(mem_access_log_func)
+        mem_access_log_func(addr,val,flag);
 }
-void HELPER(xx_icmp64_ins)(uint64_t val1,uint64_t val2)
-{
-    //exec_ins_icmp_func(val1,val2,64);
-}
-
 
 int32_t HELPER(div_i32)(int32_t arg1, int32_t arg2)
 {

@@ -285,12 +285,13 @@ DEF_HELPER_FLAGS_4(gvec_leu32, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
 DEF_HELPER_FLAGS_4(gvec_leu64, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
 
 DEF_HELPER_FLAGS_5(gvec_bitsel, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, ptr, i32)
+
+
 DEF_HELPER_2(xx_bbl, void,i64,i32)
 DEF_HELPER_3(xx_specific_bbls, void,i64,i32,ptr)
 DEF_HELPER_3(xx_func, void,i64,i32,ptr)
 DEF_HELPER_3(xx_nostop_watchpoint, void,i32,i32,i32)
+DEF_HELPER_3(xx_mem_access_log, void,i32,i32,i32)
 
-DEF_HELPER_2(xx_icmp32_ins, void,i32,i32)
-DEF_HELPER_2(xx_icmp64_ins, void,i64,i64)
 
 

@@ -10,6 +10,7 @@ struct SNAPSHOT_MEM_SEG
 };
 struct ARMM_SNAPSHOT
 {
+    int num_segs;
     struct SNAPSHOT_MEM_SEG mems[MAX_NUM_MEM_REGION];
     void *arm_ctx;
 };
@@ -18,17 +19,18 @@ struct ARMM_SNAPSHOT
 static struct ARMM_SNAPSHOT* arm_take_snapshot()
 {
     struct ARMM_SNAPSHOT *snap = (struct ARMM_SNAPSHOT*)malloc(sizeof(struct ARMM_SNAPSHOT));
+    snap->num_segs = 0;
     snap->arm_ctx = save_arm_ctx_state();
 
     for(int i = 0; i < MAX_NUM_MEM_REGION ; i ++)
     {
-        snap->mems[i].len = 0;
-        if(config->rams[i].size && !config->rams[i].readonly)
+        if(config->segs[i].size && !config->segs[i].readonly && config->segs[i].type == SEG_RAM)
         {
-            snap->mems[i].len = config->rams[i].size;
-            snap->mems[i].start = config->rams[i].start;
-            snap->mems[i].data = (uint8_t*)malloc(snap->mems[i].len);
-            read_ram(snap->mems[i].start,snap->mems[i].len,snap->mems[i].data);
+            snap->mems[snap->num_segs].len = config->segs[i].size;
+            snap->mems[snap->num_segs].start = config->segs[i].start;
+            snap->mems[snap->num_segs].data = (uint8_t*)malloc(snap->mems[snap->num_segs].len);
+            read_ram(snap->mems[snap->num_segs].start,snap->mems[snap->num_segs].len,snap->mems[snap->num_segs].data);
+            snap->num_segs++;
         }
     }
 
@@ -41,19 +43,17 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
     int page_size = target_pagesize();
-    for(int num_mem = 0; num_mem < MAX_NUM_MEM_REGION; num_mem++)
+    for(int num_seg = 0; num_seg < snap->num_segs; num_seg++)
     {
-        if(snap->mems[num_mem].len ==0)
-            break;
-        int num_pages = snap->mems[num_mem].len / page_size;
+        int num_pages = snap->mems[num_seg].len / page_size;
         
-        get_dirty_pages(snap->mems[num_mem].start, snap->mems[num_mem].len, (unsigned long*)dirty_bits);
+        get_dirty_pages(snap->mems[num_seg].start, snap->mems[num_seg].len, (unsigned long*)dirty_bits);
         for(int i = 0 ; i < num_pages ; i++)
         {
             if(1 & (dirty_bits[i / 8] >> (i & 7)))
             {
                 uint32_t offset = page_size * i;
-                write_ram(snap->mems[num_mem].start + offset ,page_size, snap->mems[num_mem].data + offset);
+                write_ram(snap->mems[num_seg].start + offset ,page_size, snap->mems[num_seg].data + offset);
             }
             
         }  
@@ -95,9 +95,11 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id)
         register_enable_nvic_hook(enable_nvic_hook);
         for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
         {
-            if(config->mmios[i].size == 0)
+            if(config->segs[i].size == 0)
                 break;
-            add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_common, mmio_write_common,(void*)config->mmios[i].start);
+            if(config->segs[i].type != SEG_MMIO)
+                continue;
+            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_common, mmio_write_common,(void*)config->segs[i].start);
         }
         new_snap = arm_take_snapshot();
 

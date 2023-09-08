@@ -4,12 +4,16 @@
 
 // #define PRECISE_PC_EACH_INS
 #define MEMORY_ACCESS_CALLBACK
+#define MEMORY_ACCESS_LOG
+
 
 #include <stdint.h>
 #include <glib.h>
 #include <stdbool.h>
 typedef uint64_t hwaddr;
 typedef uint32_t MemTxResult;
+
+
 
 enum XX_CPU_TYPE 
 {
@@ -161,10 +165,11 @@ typedef void (*pre_thread_exec_cb)(void);
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id);
 typedef void (*exec_func_cb)(uint64_t pc,uint64_t *return_val);
 
-typedef void (*exec_ins_icmp_cb)(uint64_t pc,uint64_t val1,uint64_t val2, int used_bits, int immediate_index); 
+
 typedef void (*post_thread_exec_cb)(int exec_ret);
 typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,uint32_t val,void *data);
- 
+typedef void (*mem_access_cb)(hwaddr vaddr,uint32_t val,uint32_t flag);
+
 struct BBL_Hook
 {
     hwaddr addr;
@@ -187,33 +192,34 @@ struct NOSTOP_WATCHPOINT
 struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg);     
 void init_simulator(struct XXSimulator * s);
 void exec_simulator(struct XXSimulator *s);
-void check_nostop_watchpoint(hwaddr addr,enum qemu_plugin_mem_rw_ rw);
-
 enum XX_CPU_TYPE get_xx_cpu_type(void);
 void set_xx_cpu_type(enum XX_CPU_TYPE type);
 int xx_thread_loop(bool debug);
+
 void xx_register_pre_thread_exec_hook(pre_thread_exec_cb cb);
 void xx_register_exec_bbl_hook(exec_bbl_cb cb);
 void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb);
 void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb);
-
-void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb);
+void xx_register_mem_access_log_hook(mem_access_cb cb);
 void xx_register_post_thread_exec_hook(post_thread_exec_cb cb);
+
+
 MemTxResult xx_write_ram(hwaddr addr, hwaddr size, void *buf);  //will make the page dirty
 MemTxResult xx_read_ram(hwaddr addr, hwaddr size, void *buf);
 MemTxResult xx_rom_write(hwaddr addr,void *buf, hwaddr len);
 void xx_add_ram_region(char *name,hwaddr start, hwaddr size, bool readonly);
 void xx_add_rom_region(char *name,hwaddr start, hwaddr size);
 void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
-void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int size);
+void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int mem_offset, int file_size);
+void xx_zero_ram(hwaddr addr,hwaddr size);
 void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size);
+void zero_ram(hwaddr addr,hwaddr size);
 int xx_target_pagesize(void);
 void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[]);
 struct NOSTOP_WATCHPOINT* xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data);
 void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint);
-void xx_enable_nostop_watchpoint(void);
-void xx_disable_nostop_watchpoint(void);
-void xx_mmio_exit_cpu_loop(void);
+
+
 
 
 #define thread_loop xx_thread_loop
@@ -223,21 +229,22 @@ void xx_mmio_exit_cpu_loop(void);
 #define register_exec_func_hook xx_register_exec_func_hook
 #define register_exec_ins_icmp_hook xx_register_exec_ins_icmp_hook
 #define register_post_thread_exec_hook xx_register_post_thread_exec_hook
+#define register_mem_access_log_hook xx_register_mem_access_log_hook
 #define write_ram xx_write_ram
 #define read_ram xx_read_ram
 #define add_ram_region xx_add_ram_region
 #define add_rom_region xx_add_rom_region
 #define add_mmio_region xx_add_mmio_region
 #define load_file_ram xx_load_file_ram
+#define zero_ram xx_zero_ram
 #define load_file_rom xx_load_file_rom
 #define target_pagesize xx_target_pagesize
-#define mmio_exit_cpu_loop xx_mmio_exit_cpu_loop
+
 
 #define get_dirty_pages xx_get_dirty_pages
 #define insert_nostop_watchpoint xx_insert_nostop_watchpoint
 #define delete_nostop_watchpoint xx_delete_nostop_watchpoint
-#define enable_nostop_watchpoint xx_enable_nostop_watchpoint
-#define disable_nostop_watchpoint xx_disable_nostop_watchpoint
+
 
 #endif
 

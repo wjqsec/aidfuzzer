@@ -31,7 +31,7 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
 
     
     memseg = global_cfg.get_memseg_by_name("text")
-    
+
     ins_size = 4
     for i in range(0,memseg.size,ins_size):
         disassembly_block = project.factory.block(memseg.start + i, size=ins_size)

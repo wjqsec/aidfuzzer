@@ -41,21 +41,21 @@
 
 
 bool enabled_gdb_debug = false;
-bool enable_nostop_watchpoint_flag;
+
 struct NOSTOP_WATCHPOINT **nostop_watchpoints;
 uint8_t *mem_has_watchpoints;
-enum XX_CPU_TYPE xx_cpu_type;
+mem_access_cb mem_access_log_func;
 
-bool mmio_exit = false;
 
 exec_bbl_cb exec_bbl_func;
-exec_ins_icmp_cb exec_ins_icmp_func;
 GArray* specific_bbl_hooks;
 GArray* func_hooks;
 
 int64_t bbl_counts;
 #define MILISECONS_PER_BBL 10000
 
+
+enum XX_CPU_TYPE xx_cpu_type;
 struct DirtyBitmapSnapshot {
     ram_addr_t start;
     ram_addr_t end;
@@ -265,10 +265,6 @@ void xx_add_mmio_region(char *name, hwaddr start, hwaddr size, mmio_read_cb read
     printf("add mmio %lx-%lx %s\n",start, start+size,name);
 }
 
-void xx_mmio_exit_cpu_loop(void)
-{
-    mmio_exit = true;
-}
 
 int xx_target_pagesize(void)
 {
@@ -288,7 +284,10 @@ void xx_get_dirty_pages(hwaddr addr,hwaddr size, unsigned long dirty[])
 
 }
 
-
+void xx_register_mem_access_log_hook(mem_access_cb cb)
+{
+    mem_access_log_func = cb;
+}
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
@@ -314,12 +313,7 @@ void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb)
 
 }
 
-void xx_register_exec_ins_icmp_hook(exec_ins_icmp_cb cb)
-{
-    exec_ins_icmp_func = cb;
-    CPUState *cpu = qemu_get_cpu(0);
-    tlb_flush(cpu);
-}
+
 struct NOSTOP_WATCHPOINT* xx_insert_nostop_watchpoint(hwaddr addr, hwaddr len, int flag, nostop_watchpoint_cb cb,void *data)
 {
     int i;
@@ -359,14 +353,6 @@ void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint)
             break;
         }
     }
-}
-void xx_enable_nostop_watchpoint(void)
-{
-    enable_nostop_watchpoint_flag = true;
-}
-void xx_disable_nostop_watchpoint(void)
-{
-    enable_nostop_watchpoint_flag = false;
 }
 
 int xx_thread_loop(bool debug)

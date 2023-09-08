@@ -6,7 +6,7 @@
 #include <linux/limits.h>
 #include <string.h>
 
-extern char  *out_dir;
+extern char  out_dir[PATH_MAX];
 extern char  dump_backup_dir[PATH_MAX];
 void run_modelling(FuzzState *state,Simulator *simulator)
 {
@@ -34,6 +34,7 @@ void run_modelling(FuzzState *state,Simulator *simulator)
         dir_entry->d_name,
         simulator->cpu,
         MMIO_MODEL_FILENAME);
+        puts(cmd);
         system(cmd);
         printf("model file done:%s\n",dir_entry->d_name);
       }

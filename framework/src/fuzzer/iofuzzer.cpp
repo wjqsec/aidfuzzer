@@ -45,17 +45,16 @@ FuzzState global_state;
 bool terminate_next = false;
 
 
-char  *in_dir;
-char  *out_dir;
-
-char *simulator_bin;
+char *project_dir;
+char  in_dir[PATH_MAX];
+char  out_dir[PATH_MAX];
 
 char  queue_dir[PATH_MAX];
 char  crash_dir[PATH_MAX];
 
 char  log_dir[PATH_MAX];
 
-char *config;
+char  config[PATH_MAX];
 
 char  dump_dir[PATH_MAX];
 char  dump_backup_dir[PATH_MAX];
@@ -65,6 +64,7 @@ char  coverage_file[PATH_MAX];
 
 char *seed_file;
 
+char *simulator_bin;
 bool fresh_run;
 
 
@@ -248,6 +248,7 @@ void allocate_new_simulator(FuzzState *state)
 
   if(exit_info.exit_code != EXIT_FORKSRV_UP)
   {
+    printf("fork server is not up\n");
     cleanup_simulator(pid);
     clean_fuzzer_shm(state);
     exit(0);
@@ -332,6 +333,7 @@ void sync_state(FuzzState *state)
   // }
   if(state->entries->size() == 0)
   {
+    printf("fuzz entry not found\n");
     fuzzer_terminate();
   }
   
@@ -404,22 +406,6 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   while(1)
   {
     fuzz_exit(simulator,&exit_info);
-    if(exit_info.exit_code == EXIT_CRASH)
-    {
-      simulator_classify_count(simulator);
-      u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
-      if(state->crash_ids->find(cksum) != state->crash_ids->end())
-      {
-        free_queue(state,fuzz_entry);
-        return;
-      }
-
-      state->crash_ids->insert(cksum);
-      fuzz_entry->cksum = cksum;
-      save_crash(fuzz_entry,crash_dir);
-
-      return;
-    }
 
     if(exit_info.exit_code == EXIT_STREAM_NOTFOUND)
     {
@@ -459,6 +445,23 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
     break;
   }
   
+  if(exit_info.exit_code == EXIT_CRASH)
+  {
+    simulator_classify_count(simulator);
+    u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
+    if(state->crash_ids->find(cksum) != state->crash_ids->end())
+    {
+      free_queue(state,fuzz_entry);
+      return;
+    }
+
+    state->crash_ids->insert(cksum);
+    fuzz_entry->cksum = cksum;
+    save_crash(fuzz_entry,crash_dir);
+    fuzz_entry->priority = 1;
+    insert_queue(state,fuzz_entry);
+    return;
+  }
   
   simulator_classify_count(simulator);
   int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
@@ -577,8 +580,11 @@ void fuzz_loop(FuzzState *state)
 
 void init_dir(void)
 {
+  sprintf(in_dir,"%s/in",project_dir);
+  sprintf(out_dir,"%s/out",project_dir);
+  sprintf(config,"%s/config.yml",project_dir);
 
-  sprintf(queue_dir,"%s",in_dir);
+  sprintf(queue_dir,"%s/in",in_dir);
   sprintf(crash_dir,"%s/crash/",out_dir);
   sprintf(log_dir,"%s/log/",out_dir);
   sprintf(dump_dir,"%s/dump/",out_dir);
@@ -641,7 +647,7 @@ int main(int argc, char **argv)
   int cores;
   init_signal_handler();
   simulator_env_init();
-  while ((opt = getopt(argc, argv, "m:i:o:c:e:s:f")) != -1) 
+  while ((opt = getopt(argc, argv, "m:p:e:s:f")) != -1) 
   {
       switch (opt) {
       case 'm':
@@ -650,18 +656,11 @@ int main(int argc, char **argv)
           if(strcmp(optarg, "debug") == 0)
             mode = MODE_DEBUG;
           break;
-      case 'i':
-          in_dir = optarg;
-          break;
-      case 'o':
-          out_dir = optarg;
-          break;
       case 'e':
           cores = atoi(optarg);
           break;
-      case 'c':
-          config = optarg;
-          break;
+      case 'p':
+          project_dir = optarg;
       case 's':
           seed_file = optarg;
           break;

@@ -27,65 +27,45 @@ class Configs:
                 return mem
         return None
     def from_fuzzware_config_file(self,config_file):
+        memseg = None
+        start = False
         with open(config_file,"r") as f:
             while True:
                 line = f.readline()
-                if line == "" or "symbols:" in line:
+                if len(line) == 0:
                     break
-                if "mmio" in line:
-                    base_addr_str = f.readline()
-                    permission_str = f.readline()
-                    size_str = f.readline()
-                    base_addr = int(base_addr_str.split("base_addr: ")[1].strip(),16)
-                    permission = permission_str.split("permissions: ")[1].strip()
-                    size = int(size_str.split("size: ")[1].strip(),16)
+                if line == "" or "symbols:" in line:
+                    start = False
+                    continue
+                if "memory_map:" in line:
+                    start = True
+                    continue
+                if not start:
+                    continue
+                if line.startswith("  ") and not line.startswith("    "):
+                    if memseg != None:
+                        self.mems.append(memseg)
                     memseg = MemSeg()
-                    memseg.ismmio = True
-                    memseg.start = base_addr
-                    memseg.size = size
-                    if "w" in permission:
-                        memseg.isreadonly = False
+                    if "mmio" in line:
+                        memseg.ismmio = True
+                    elif "irq_ret" in line or "nvic" in line:
+                        memseg = None
                     else:
-                        memseg.isreadonly = True
-                    memseg.name = line.split(":")[0].strip()
-                    self.mems.append(memseg)
-                elif "ram" in line or "bss" in line or "noinit" in line or "stack" in line or "dynamically_added_crash_region" in line:
-                    base_addr_str = f.readline()
-                    permission_str = f.readline()
-                    size_str = f.readline()
-                    base_addr = int(base_addr_str.split("base_addr: ")[1].strip(),16)
-                    permission = permission_str.split("permissions: ")[1].strip()
-                    size = int(size_str.split("size: ")[1].strip(),16)
-                    memseg = MemSeg()
-                    memseg.ismmio = False
-                    memseg.start = base_addr
-                    memseg.size = size
-                    if "w" in permission:
-                        memseg.isreadonly = False
-                    else:
-                        memseg.isreadonly = True
-                    memseg.name = line.split(":")[0].strip()
-                    self.mems.append(memseg)
-                elif "text" in line:
-                    base_addr_str = f.readline()
-                    file_str = f.readline()
-                    ivt_offset_str = f.readline()
-                    permission_str = f.readline()
-                    size_str = f.readline()
-                    base_addr = int(base_addr_str.split("base_addr: ")[1].strip(),16)
-                    file = file_str.split("file: ")[1].strip()
-                    ivt_offset = int(ivt_offset_str.split("ivt_offset: ")[1].strip(),16)
-                    permission = permission_str.split("permissions: ")[1].strip()
-                    size = int(size_str.split("size: ")[1].strip(),16)
-                    memseg = MemSeg()
-                    memseg.ismmio = False
-                    memseg.start = base_addr
-                    memseg.size = size
-                    if "w" in permission:
-                        memseg.isreadonly = False
-                    else:
-                        memseg.isreadonly = True
-                    memseg.name = line.split(":")[0].strip()
-                    self.vecbase = base_addr + ivt_offset
-                    self.mems.append(memseg)
+                        memseg.ismmio = False
+                    if memseg != None :
+                        memseg.name = line.split(":")[0].strip()
+                elif line.startswith("    ")and memseg != None:
+                    if "base_addr:" in line:
+                        memseg.start = int(line.split("base_addr: ")[1].strip(),16)
+                    elif "size:" in line:
+                        memseg.size = int(line.split("size: ")[1].strip(),16)
+                    elif "permissions:" in line:
+                        memseg.isreadonly = not ("w" in line.split("permissions: ")[1].strip())
+                    elif "ivt_offset:" in line:
+                        self.vecbase = memseg.start + int(line.split("ivt_offset: ")[1].strip(),16)
+                        
+                else:
+                    pass 
 
+        if memseg != None:
+            self.mems.append(memseg)

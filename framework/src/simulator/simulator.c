@@ -72,20 +72,20 @@ bool exit_with_code_start()
     int bytes_received;
     struct CMD_INFO cmd_info;
 
-    
     simple_log(flog,false,"may continue",exit_info.exit_code,0,0);
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
     do
     {
+
         bytes_received  = read(fd_from_fuzzer,&cmd_info,sizeof(struct CMD_INFO)); 
+
     } while (bytes_received != sizeof(struct CMD_INFO));
     
-     
-    
 
+    
+    
     if(unlikely(cmd_info.cmd == CMD_TERMINATE))
     {
-        printf("receive terminate cmd\n");
         terminate();
         pc_changed = true;
     }   
@@ -244,6 +244,12 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
     #endif
 
 
+
+    uint32_t value = 0xdeadbeef;
+    read_ram(0x2000026c,4,&value);
+    simple_log(flog,false,"thethethethethe value is",value,0,0);
+
+
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
     
@@ -270,15 +276,11 @@ void insert_idel_irq()
             simple_log(flog,false,"insert idel irq",do_mmio_irqs[i],0,0);
     }
 }
-bool arm_exec_loop_bbl(hwaddr pc,uint32_t id)
-{
-    insert_idel_irq();
-    return false;
-}
 
 
 void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
 {
+
     bool insert_irq;
     int irq = (int)(uint64_t)data;
 
@@ -320,19 +322,29 @@ void nostop_watchpoint_exec_denpendency(hwaddr vaddr,hwaddr len,uint32_t val,voi
     simple_log(flog,false,"solve dependency",irq,vaddr,0);
 }
 
+
+bool arm_exec_loop_bbl(hwaddr pc,uint32_t id)
+{
+    insert_idel_irq();
+    return false;
+}
+
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
+    
     full_log(flog,"arm_cpu_do_interrupt_hook",exec_index,0,0);
     if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP)
     {
         return true;
     }
+    uint32_t val;
+    read_ram(0x20000eb0,4,&val);
+    crash_log(f_crash_log,"arm_cpu_do_interrupt_hook",exec_index,val,0);
     
 
-    bool pc_changed;
     prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0);
-    pc_changed = exit_with_code_start();
-    crash_log(f_crash_log,"arm_cpu_do_interrupt_hook",exec_index,0,0);
+    exit_with_code_start();
+    
     return false;
 }
 
@@ -362,9 +374,13 @@ void post_thread_exec(int exec_ret)
         prepare_exit(EXIT_TIMEOUT,0,get_arm_pc(),num_mmio,0);
         pc_changed = exit_with_code_start();
     }
-    
 
 }
+void mem_access_cb_func(hwaddr vaddr,uint32_t val,uint32_t flag)
+{
+    simple_log(flog,true,"memory access",vaddr,val,flag);
+}
+
 
 
 void __afl_map_shm(void) {
@@ -393,7 +409,14 @@ void __afl_map_shm(void) {
     queue = (struct fuzz_queue *)__afl_share_fuzz_queue_data;
 }
 
+void print_stacktrace()
+{
+#define MAX_STACK_LEVELS 50
+  void *buffer[MAX_STACK_LEVELS];
+  int levels = backtrace(buffer, MAX_STACK_LEVELS);
 
+  backtrace_symbols_fd(buffer + 1, levels - 1, 2);
+}
 void cleanup()
 {
     shmdt(__afl_area_ptr);
@@ -402,7 +425,6 @@ void cleanup()
 }
 void terminate()
 {
-
     cleanup();
     prepare_exit(EXIT_TERMINATE,0,0,0,0);
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
@@ -416,14 +438,7 @@ void terminate()
 
 
 
-void print_stacktrace()
-{
-#define MAX_STACK_LEVELS 50
-  void *buffer[MAX_STACK_LEVELS];
-  int levels = backtrace(buffer, MAX_STACK_LEVELS);
 
-  backtrace_symbols_fd(buffer + 1, levels - 1, 2);
-}
 
 static void segv_exit(int signal)
 {
@@ -451,6 +466,17 @@ void init_signal_handler(void)
   
 }
 
+void init_log()
+{
+    char path_buffer[PATH_MAX];
+    sprintf(path_buffer,"%s/simulator_log.txt",log_dir);
+    flog = fopen(path_buffer,"w");
+    sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
+    f_crash_log = fopen(path_buffer,"w");
+
+    setbuf(flog,0);
+    setbuf(f_crash_log,0);
+}
 void init(int argc, char **argv)
 {
     int opt;
@@ -483,24 +509,16 @@ void init(int argc, char **argv)
         }
     }
     if(!config)
-        exit(0);
-    char path_buffer[PATH_MAX];
-    sprintf(path_buffer,"%s/simulator_log.txt",log_dir);
-    flog = fopen(path_buffer,"w");
-    sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
-    f_crash_log = fopen(path_buffer,"w");
-
-    setbuf(flog,0);
-    setbuf(f_crash_log,0);
-
-    init_signal_handler();
-    for(int i = 0; i < NUM_QUEUE_STREAMS ;i ++)
     {
-        streams[i] = (struct SHARED_STREAM *)malloc(sizeof(struct SHARED_STREAM));
-        streams[i]->avaliable = false;
-        streams[i]->dumped = false;
+        printf("generate config error\n");
+        exit(0);
     }
-    memset(irq_models,0,sizeof(struct IRQ_MODEL) * NVIC_MAX_VECTORS);
+        
+    
+    init_log();
+    init_signal_handler();
+    init_streams();
+    init_irq_model();
     __afl_map_shm();
 
 }
@@ -508,7 +526,6 @@ void init(int argc, char **argv)
 int run_config()
 {
     int i = 0;
-
     struct XXSimulator *simulator;
     simulator = create_simulator(ARM_CORTEX_M,false);
     init_simulator(simulator);
@@ -521,47 +538,49 @@ int run_config()
 
     for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
     {
-        if(config->rams[i].size == 0)
+        if(config->segs[i].size == 0)
             break;
-        add_ram_region(config->rams[i].name,config->rams[i].start, config->rams[i].size,config->rams[i].readonly);
-        if(config->rams[i].file)
+        
+        if(config->segs[i].type == SEG_RAM)
         {
-            load_file_ram(config->rams[i].file,config->rams[i].start,config->rams[i].file_offset,config->rams[i].file_size);
+            add_ram_region(config->segs[i].name,
+            config->segs[i].start, 
+            config->segs[i].size,
+            config->segs[i].readonly);
+            zero_ram(config->segs[i].start,config->segs[i].size);
+            for(int j = 0 ; j <= config->segs[i].num_content ; j++)
+            {
+                load_file_ram(config->segs[i].content[j].file,
+                config->segs[i].start, 
+                config->segs[i].content[j].file_offset, 
+                config->segs[i].content[j].mem_offset, 
+                config->segs[i].content[j].file_size);
+            }
         }
-        else
+        else if(config->segs[i].type == SEG_MMIO)
         {
-            uint8_t *buf = (uint8_t *)malloc(config->rams[i].size);
-            memset(buf,0,config->rams[i].size);
-            write_ram(config->rams[i].start,config->rams[i].size,buf);
-            free(buf);
+            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->segs[i].start);
         }
     }
-    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
-    {
-        if(config->roms[i].size == 0)
-            break;
-        add_rom_region(config->roms[i].name,config->roms[i].start, config->roms[i].size);
-        if(config->roms[i].file)
-        {
-            load_file_rom(config->roms[i].file,config->roms[i].start,config->roms[i].file_offset,config->roms[i].file_size);
-        }
-            
-    }
-    
-    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
-    {
-        if(config->mmios[i].size == 0)
-            break;
-        add_mmio_region(config->mmios[i].name,config->mmios[i].start, config->mmios[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->mmios[i].start);
-    }
+
     reset_arm_reg();
 
     org_snap = arm_take_snapshot();
+
     register_exec_bbl_hook(exec_bbl_snapshot);
     register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
+    register_mem_access_log_hook(mem_access_cb_func);
+
+    
+
+
+
     model_irq(ARMV7M_EXCP_SYSTICK);
     model_all_infinite_loop();
-    enable_nostop_watchpoint();
+
+    
+    
+
     exec_simulator(simulator);
     return 1;
 }
