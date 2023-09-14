@@ -117,6 +117,7 @@ bool exit_with_code_start()
         num_mmio = 0;
         nommio_executed_bbls = 0;
         run_index++;
+        max_stream_size = 0;
         reset_irq_models();
         arm_restore_snapshot(new_snap);
         collect_streams();
@@ -186,13 +187,8 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     }
     else if(stream_status == STREAM_STATUS_NOTENOUGH)
     {
-        do
-        {
-            prepare_exit(EXIT_NOTENOUGHT_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
-            pc_changed = exit_with_code_start();
-            stream_status = get_stream_status(stream);
-            /* code */
-        } while (stream_status != STREAM_STATUS_OK);
+        prepare_exit(EXIT_NOTENOUGHT_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
+        exit_with_code_start();
         get_fuzz_data(stream, &ret);  
        
     }
@@ -244,27 +240,21 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
     #endif
 
 
-
-    uint32_t value = 0xdeadbeef;
-    read_ram(0x2000026c,4,&value);
-    simple_log(flog,false,"thethethethethe value is",value,0,0);
-
-
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
     
     __afl_area_ptr[id] ++;
     nommio_executed_bbls++;
-    simple_log(flog,false,"bbl",0,0,0);
-    
+    full_log(flog,"bbl",0,0,0);
     return pc_changed;
 }
 
 void insert_idel_irq()
 {
 
-    if(get_arm_v7m_is_handler_mode())
-        return;
+    // if(get_arm_v7m_is_handler_mode())
+    //     return;
+
     bool insert_irq;
     for(int i=0; i<num_do_mmio_irqs ; i++)
     {
@@ -283,26 +273,29 @@ void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data
 
     bool insert_irq;
     int irq = (int)(uint64_t)data;
-
-    if(get_arm_v7m_is_handler_mode())
-        return;
+    simple_log(flog,false,"is_irq_avaliable",irq,irq_models[irq].num_dependency_pointer,irq_models[irq].num_sovled_dependency_pointer);
     if(!is_irq_avaliable(irq))
         return;
-    
 
+    simple_log(flog,false,"get_arm_v7m_is_handler_mode",irq,get_arm_v7m_is_handler_mode(),0);    
+    if(get_arm_v7m_is_handler_mode())
+        return;
+    
+    
+    simple_log(flog,false,"mem_access_trigger_irq_times_count",irq,irq_models[irq].mem_access_trigger_irq_times_count,irq_models[irq].mem_access_trigger_irq_times);
     if(irq_models[irq].mem_access_trigger_irq_times_count > irq_models[irq].mem_access_trigger_irq_times)
     {
-        simple_log(flog,false,"try insert mem irq",irq,vaddr,0);
+        simple_log(flog,false,"try insert mem irq",irq_models[irq].mem_access_trigger_irq_times_count,irq_models[irq].mem_access_trigger_irq_times,0);
         insert_irq = insert_nvic_intc(irq);
         irq_models[irq].mem_access_trigger_irq_times_count = 0;
         if(insert_irq)
-            simple_log(flog,false,"insert mem irq",irq,vaddr,0);
+            simple_log(flog,false,"insert mem irq",irq,0,0);
         
     }
     else
     {
-        irq_models[irq].mem_access_trigger_irq_times++;
-        simple_log(flog,false,"add mem irq count",irq,vaddr,0);
+        irq_models[irq].mem_access_trigger_irq_times_count++;
+        simple_log(flog,false,"add mem irq count",irq,irq_models[irq].mem_access_trigger_irq_times_count,0);
     }
 }
 void nostop_watchpoint_exec_func(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
@@ -318,8 +311,8 @@ void nostop_watchpoint_exec_denpendency(hwaddr vaddr,hwaddr len,uint32_t val,voi
     if(val == 0)
         return;
     int irq = (int)(uint64_t)data;
-    solve_irq_dependency(irq, (uint32_t)vaddr);
-    simple_log(flog,false,"solve dependency",irq,vaddr,0);
+    if (solve_irq_dependency(irq, (uint32_t)vaddr))
+        simple_log(flog,false,"solve dependency",irq,vaddr,0);
 }
 
 
@@ -333,15 +326,12 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
     
     full_log(flog,"arm_cpu_do_interrupt_hook",exec_index,0,0);
-    if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP)
+    if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP && exec_index != EXCP_BKPT)
     {
         return true;
     }
-    uint32_t val;
-    read_ram(0x20000eb0,4,&val);
-    crash_log(f_crash_log,"arm_cpu_do_interrupt_hook",exec_index,val,0);
     
-
+    crash_log(f_crash_log,"crash",exec_index,0,0);
     prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0);
     exit_with_code_start();
     
@@ -474,8 +464,8 @@ void init_log()
     sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
     f_crash_log = fopen(path_buffer,"w");
 
-    setbuf(flog,0);
-    setbuf(f_crash_log,0);
+    // setbuf(flog,0);
+    // setbuf(f_crash_log,0);
 }
 void init(int argc, char **argv)
 {
@@ -514,7 +504,7 @@ void init(int argc, char **argv)
         exit(0);
     }
         
-    
+    clean_irq_model_file();
     init_log();
     init_signal_handler();
     init_streams();
@@ -573,10 +563,10 @@ int run_config()
 
     
 
-
+    model_all_infinite_loop();
 
     model_irq(ARMV7M_EXCP_SYSTICK);
-    model_all_infinite_loop();
+    
 
     
     

@@ -184,12 +184,32 @@ def mem_read_before(state):
     symbolic_mem_data_addr_mapping[tmp] = address
 
 
+def is_accessing_nullptr(state,addr):
+    if is_ast_value_pointer(state,addr) or is_ast_mmio_address(state, addr):
+        return None
+    if isinstance(addr, claripy.ast.Base):
+        for ist in addr.leaf_asts():
+            if ist in zero_symbolic_mem_data:
+                return ist
+
+    return None
+    
+
 def mem_read_after(state):
-    if state.inspect.mem_read_address in zero_symbolic_mem_data and state.inspect.mem_read_condition.is_true():
-        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[state.inspect.mem_read_address])
+    ist = is_accessing_nullptr(state, state.inspect.mem_read_address)
+    if ist == None:
+        return
+    
+    if state.inspect.mem_read_condition.is_true():
+        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[ist])
+
+        
 def mem_write_after(state):
-    if state.inspect.mem_write_address in zero_symbolic_mem_data and state.inspect.mem_write_condition.is_true():
-        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[state.inspect.mem_write_address])
+    ist = is_accessing_nullptr(state, state.inspect.mem_write_address)
+    if ist == None:
+        return
+    if state.inspect.mem_write_condition.is_true():
+        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[ist])
 
 
 def call_before(state):
@@ -281,11 +301,14 @@ def main():
 
     simgr = project.factory.simgr(initial_state)
     simgr.use_technique(exploration_techniques.Timeout(30))
-    for i in range(100):
-        simgr.step(thumb=True)
-        get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
-        if len(simgr.active) <= 1 and i >= 10:
-            break
+    try:
+        for i in range(50):
+            simgr.step(thumb=True)
+            get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
+            if len(simgr.active) <= 1 and i >= 10:
+                break
+    except :
+        pass
         
         
 

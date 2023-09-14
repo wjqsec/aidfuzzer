@@ -3,7 +3,7 @@
 struct SHARED_STREAM
 {
     struct stream_metadata *metadata;
-    u32 *used;
+    s32 *used;
     bool avaliable;
     bool dumped;
 };
@@ -11,6 +11,7 @@ struct SHARED_STREAM * streams[NUM_QUEUE_STREAMS];
 
 int num_stream_indexs;
 u32 stream_indexs[NUM_QUEUE_STREAMS];
+s32 max_stream_size;
 
 struct fuzz_queue *queue;
 
@@ -45,6 +46,10 @@ inline void add_stream(int index_to_shared_queue)
     stream_indexs[num_stream_indexs] = index_to_streams;
     num_stream_indexs++;
 
+    if(metadata->len > max_stream_size)
+            max_stream_size = metadata->len;
+    
+
 }
 inline void update_stream(int index_to_shared_queue)
 {
@@ -55,6 +60,7 @@ inline void update_stream(int index_to_shared_queue)
     index_to_streams = metadata->stream_id % NUM_QUEUE_STREAMS;
     stream = streams[index_to_streams];
     stream->metadata = metadata;
+
 }
 inline void clear_streams()
 {
@@ -73,6 +79,7 @@ void collect_streams()
     for(i = 0; i < queue->num_streams ; i++)
     {
         add_stream(i);
+        
     }   
 }
 void init_streams()
@@ -89,7 +96,7 @@ inline int get_stream_status(struct SHARED_STREAM * stream)
     int status = STREAM_STATUS_OK;
     if( stream->metadata->len < stream->metadata->element_size + *stream->used)
     {
-        if(stream->metadata->len > DEFAULT_MAX_STREAM_INCREASE_LEN)
+        if(stream->metadata->len >= max_stream_size)
         {
             status = STREAM_STATUS_OUTOF;
         }

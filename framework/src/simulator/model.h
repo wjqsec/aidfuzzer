@@ -63,12 +63,14 @@ inline void reset_irq_models(void)
         irq_models[i].mem_access_trigger_irq_times_count = 0;
     }   
 }
-inline void solve_irq_dependency(int irq, uint32_t ptr)
+inline bool solve_irq_dependency(int irq, uint32_t ptr)
 {
     if (!find_value_32(irq_models[irq].sovled_dependency_pointer,irq_models[irq].num_sovled_dependency_pointer,ptr))
     {
         irq_models[irq].sovled_dependency_pointer[irq_models[irq].num_sovled_dependency_pointer ++] = ptr;
+        return true;
     }
+    return false;
 }
 
 inline bool is_irq_avaliable(int irq)
@@ -104,6 +106,12 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
 {
     *eptr = '\0';
     fputs(buffer,state_file);
+}
+void clean_irq_model_file()
+{
+    char cmd[PATH_MAX];
+    sprintf(cmd,"rm %s/%s",model_dir,IRQ_MODEL_FILENAME);
+    system(cmd);
 }
 void dump_state(uint32_t mmio_id, bool use_precise_pc, const char * prefix, char *dir)
 {

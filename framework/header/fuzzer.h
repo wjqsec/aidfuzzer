@@ -48,13 +48,13 @@ enum EXIT_REASON
 #define STREAM_STATUS_OUTOF 2
 
 #define DEFAULT_STREAM_LEN 0x10
-#define DEFAULT_MAX_STREAM_INCREASE_LEN 0x1000
+
+#define DEFAULT_INCREASE_NOTENOUGH_STREAM_SIZE 0x50
+
 
 #define MAX_BBL_EXEC 1500000
 
 #define DEFAULT_ELEMENT_SIZE 4
-
-
 
 
 
@@ -67,7 +67,6 @@ enum EXIT_REASON
 #define MODEL_PASSTHROUGH 3
 #define MODEL_NONE 4
 
-#define DEFAULT_PASSTHROUGH_CONSTANT_LEN 0x2000
 
 
 #define NVIC_MAX_VECTORS 512
@@ -141,7 +140,7 @@ struct stream_metadata
 struct fuzz_queue_stream
 {
     u32 offset_to_stream_area;
-    u32 used;
+    s32 used;
 } __attribute__((packed));
 
 struct fuzz_queue

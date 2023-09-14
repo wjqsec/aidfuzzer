@@ -7,7 +7,7 @@
 #include "mis_utl.h"
 
 
-void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, u32 fuzz_stream_id )
+void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, u32 fuzz_stream_id)
 {
   simulator->fuzz_entry = fuzz_entry;
   simulator->base_entry = base_entry;
@@ -21,6 +21,8 @@ void copy_fuzz_data(Simulator *simulator)
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
   streams = simulator->fuzz_entry->streams;
   queue->num_streams = streams->size();
+
+
   for(auto it = streams->begin(); it != streams->end(); it++)
   {
     queue->streams[i].offset_to_stream_area = it->second->offset_to_stream_area;
@@ -28,6 +30,7 @@ void copy_fuzz_data(Simulator *simulator)
     (*simulator->id_queue_idx_mapping)[it->first] = i;
     i++;
   }
+
 }
 void fuzz_start(Simulator *simulator)
 {

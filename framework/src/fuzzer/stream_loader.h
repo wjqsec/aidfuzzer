@@ -25,4 +25,5 @@ void save_queues(FuzzState *state,char *queue_dir);
 void load_queues(FuzzState *state,char *queue_dir);
 void save_freed_streams(FuzzState *state,char *queue_dir);
 void load_freed_streams(FuzzState *state,char *queue_dir);
+void clean_queues(FuzzState *state,char *queue_dir);
 #endif

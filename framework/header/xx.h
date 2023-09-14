@@ -4,7 +4,7 @@
 
 // #define PRECISE_PC_EACH_INS
 #define MEMORY_ACCESS_CALLBACK
-#define MEMORY_ACCESS_LOG
+// #define MEMORY_ACCESS_LOG
 
 
 #include <stdint.h>

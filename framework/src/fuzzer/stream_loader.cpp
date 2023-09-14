@@ -55,7 +55,7 @@ queue_entry *load_queue(FuzzState *state,char *seedfile)
     if(!fread(stream,offsetof(input_stream,offset_to_save),1,f_queue))
       break;
     stream->ptr = (stream_metadata*) (state->shared_stream_data + stream->offset_to_stream_area);
-    (*q->streams)[stream->ptr->stream_id] = stream;
+    insert_stream(state,q,stream,true);
   }
   delete stream;
   fclose(f_queue);
@@ -95,6 +95,12 @@ void load_queues(FuzzState *state,char *queue_dir)
     }
   }
   closedir(dir);
+}
+void clean_queues(FuzzState *state,char *queue_dir)
+{
+  char cmd[PATH_MAX];
+  sprintf(cmd,"rm -rf %s/*",queue_dir);
+  system(cmd);
 }
 void save_freed_streams(FuzzState *state,char *queue_dir)
 {

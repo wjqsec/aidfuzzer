@@ -11,16 +11,17 @@ using namespace std;
 
 #define MODE_FUZZ 1
 #define MODE_DEBUG 2
+#define MODE_RUN 3
 
 
 struct input_stream
 {
-#define DEFAULT_STREAM_PRIORITY 1
-    s32 priority;
+
     u32 offset_to_stream_area;
-    u8 offset_to_save[0];
     s32 ref_count;
+    u8 offset_to_save[0];
     stream_metadata *ptr;
+
 }__attribute__((packed));
 
 struct queue_entry
@@ -32,8 +33,10 @@ struct queue_entry
     s32 priority;
     u64 fuzztimes;
     u8 offset_to_save[0];
-
+    
+#define DEFAULT_STREAM_PRIORITY 1
     map<u32,input_stream *> *streams;
+    map<u32,s32> *streams_priority;
     
 }__attribute__((packed));
 
@@ -78,6 +81,7 @@ struct Simulator
     queue_entry* base_entry;
     queue_entry* fuzz_entry;
     u32 fuzz_stream_id;
+    bool onlyrun;
     map<u32,int> *id_queue_idx_mapping;
 
 
