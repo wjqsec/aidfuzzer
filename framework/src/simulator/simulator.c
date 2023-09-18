@@ -270,7 +270,6 @@ void insert_idel_irq()
 
 void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
 {
-
     bool insert_irq;
     int irq = (int)(uint64_t)data;
     simple_log(flog,false,"is_irq_avaliable",irq,irq_models[irq].num_dependency_pointer,irq_models[irq].num_sovled_dependency_pointer);
@@ -330,7 +329,15 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     {
         return true;
     }
-    
+    if(exec_index == EXCP_BKPT)
+    {
+        struct ARM_CPU_STATE state;
+        get_arm_cpu_state(&state);
+        state.regs[15] += 2;
+        set_arm_cpu_state(&state);
+        return false;
+    }
+
     crash_log(f_crash_log,"crash",exec_index,0,0);
     prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0);
     exit_with_code_start();
@@ -446,12 +453,12 @@ void init_signal_handler(void)
   if (signal(SIGSEGV, segv_exit) == SIG_ERR) 
   {
     printf("Error setting signal handler");
-    exit(0);
+    terminate();
   }
   if (signal(SIGABRT, segv_exit) == SIG_ERR) 
   {
     printf("Error setting signal handler");
-    exit(0);
+    terminate();
   }
   
 }
@@ -464,8 +471,8 @@ void init_log()
     sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
     f_crash_log = fopen(path_buffer,"w");
 
-    // setbuf(flog,0);
-    // setbuf(f_crash_log,0);
+    setbuf(flog,0);
+    setbuf(f_crash_log,0);
 }
 void init(int argc, char **argv)
 {
@@ -495,13 +502,13 @@ void init(int argc, char **argv)
             break;
         default: /* '?' */
             printf("Usage error\n");
-            exit(0);
+            terminate();
         }
     }
     if(!config)
     {
         printf("generate config error\n");
-        exit(0);
+        terminate();
     }
         
     clean_irq_model_file();

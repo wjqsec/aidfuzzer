@@ -46,7 +46,7 @@ inline void add_stream(int index_to_shared_queue)
     stream_indexs[num_stream_indexs] = index_to_streams;
     num_stream_indexs++;
 
-    if(metadata->len > max_stream_size)
+    if(metadata->len > max_stream_size && metadata->mode == MODEL_CONSTANT && metadata->mode == MODEL_PASSTHROUGH)
             max_stream_size = metadata->len;
     
 
@@ -128,6 +128,7 @@ void get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         }
         
         case MODEL_BIT_EXTRACT:
+        case MODEL_NONE:
         {
 
             memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
@@ -141,12 +142,12 @@ void get_fuzz_data(struct SHARED_STREAM * stream, uint64_t *out)
         }
        
 
-        case MODEL_NONE:
-        {
+        // case MODEL_NONE:
+        // {
 
-            memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
-            break;
-        }
+        //     memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
+        //     break;
+        // }
         
         default:
         {

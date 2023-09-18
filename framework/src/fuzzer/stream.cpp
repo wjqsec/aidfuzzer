@@ -95,15 +95,22 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
       }
       if(stream->ptr->mode == MODEL_CONSTANT)
       {
+        stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
         *(u32*)stream->ptr->data = it->second->constant_val;
       }
       if(stream->ptr->mode == MODEL_PASSTHROUGH)
       {
+        stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
       }
       if(stream->ptr->mode == MODEL_BIT_EXTRACT)
       {
         stream->ptr->left_shift = it->second->left_shift;
         stream->ptr->element_size = it->second->size;
+      }
+      if(stream->ptr->mode == MODEL_NONE)
+      {
+        stream->ptr->left_shift = 0;
+        stream->ptr->element_size = it->second->access_size;
       }
     }
   }

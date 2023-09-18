@@ -9,9 +9,12 @@
 #include "afl_utl.h"
 #include "mis_utl.h"
 #include <sys/stat.h>
-void save_pool(FuzzState *state,char *queue_dir);
+void save_default_pool(FuzzState *state,char *queue_dir);
 
-void load_pool(FuzzState *state,char *queue_dir);
+void load_default_pool(FuzzState *state,char *queue_dir);
+void save_crash_pool(FuzzState *state,char *crash_dir, u32 id);
+void load_crash_pool(FuzzState *state,char *filename);
+
 
 void save_queue(queue_entry *q,char *dir);
 

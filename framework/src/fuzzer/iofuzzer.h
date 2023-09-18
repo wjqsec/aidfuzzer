@@ -105,7 +105,9 @@ struct FuzzState
     vector<queue_entry*> *entries;
     map<u32,vector<input_stream*>*> *freed_streams;
     set<u32> *crash_ids;
-    
+    vector<queue_entry*> *crashes;
+
+
     map<u32,input_model*> *models;
     map<u32,u32> *streamid_mmioaddr_mapping;
 

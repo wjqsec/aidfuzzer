@@ -5,4 +5,5 @@
 queue_entry* copy_queue(FuzzState *state,queue_entry* q);
 void free_queue(FuzzState *state,queue_entry* q);
 void insert_queue(FuzzState *state,queue_entry* q);
+void insert_crash(FuzzState *state,queue_entry* q);
 #endif

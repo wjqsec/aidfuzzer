@@ -35,4 +35,8 @@ void insert_queue(FuzzState *state,queue_entry* q)
   state->entries->push_back(q);
   state->total_priority += q->priority;
 }
+void insert_crash(FuzzState *state,queue_entry* q)
+{
+    state->crashes->push_back(q);
+}
 

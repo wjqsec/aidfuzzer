@@ -10,7 +10,7 @@
 #define HAVOC_BLK_XL        128
 #define HAVOC_BLK_XXL        512
 
-#define MAX_FILE            (5 * 1024)
+#define MAX_FILE            (100 * 1024)
 #ifndef MIN
 #  define MIN(_a,_b) ((_a) > (_b) ? (_b) : (_a))
 #  define MAX(_a,_b) ((_a) > (_b) ? (_a) : (_b))
@@ -137,18 +137,18 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   u32 max_num_element;
   s32 i;
   
-  if(stream->ptr->mode == MODEL_CONSTANT || stream->ptr->mode == MODEL_PASSTHROUGH )
-  {
-    return extend_stream(state,stream,(UR(5) + 1) * HAVOC_BLK_LARGE);
-  }
+  // if(stream->ptr->mode == MODEL_CONSTANT || stream->ptr->mode == MODEL_PASSTHROUGH )
+  // {
+  //   return extend_stream(state,stream,(UR(5) + 1) * HAVOC_BLK_LARGE);
+  // }
 
-
-  
   ret = clone_stream(state,stream);
 
-  max_num_element = stream->ptr->len / stream->ptr->element_size;
+  
+
+  max_num_element = ret->ptr->len / ret->ptr->element_size;
     
-  use_stacking = (1 << (1 + UR(7)));
+  use_stacking = (1 << (1 + UR(8)));
   
   use_stacking = use_stacking < max_num_element ? use_stacking : max_num_element;
 

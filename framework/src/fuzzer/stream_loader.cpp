@@ -1,19 +1,15 @@
 #include "stream_loader.h"
-void save_pool(FuzzState *state,char *queue_dir)
+
+
+void save_pool_file(FuzzState *state,char *filename)
 {
-  if(state->shared_stream_used == 0)
-    return;
-  char filename[PATH_MAX];
-  sprintf(filename,"%s/%s",queue_dir,STREAM_POOL_FILENAME);
   FILE *f_pool = fopen(filename,"wb");
   fwrite(state->shared_stream_data,state->shared_stream_used,1,f_pool);
   fclose(f_pool);
 }
-void load_pool(FuzzState *state,char *queue_dir)
+void load_pool_file(FuzzState *state,char *filename)
 {
-  char filename[PATH_MAX];
   struct stat st;
-  sprintf(filename,"%s/%s",queue_dir,STREAM_POOL_FILENAME);
   FILE *f_pool = fopen(filename,"rb");
   if(!f_pool)
     return;
@@ -23,7 +19,33 @@ void load_pool(FuzzState *state,char *queue_dir)
   fclose(f_pool);
   update_stream_ptr(state, size);
 }
+void save_default_pool(FuzzState *state,char *queue_dir)
+{
+  if(state->shared_stream_used == 0)
+    return;
+  char filename[PATH_MAX];
+  sprintf(filename,"%s/%s",queue_dir,STREAM_POOL_FILENAME);
+  save_pool_file(state,filename);
+  
+}
+void load_default_pool(FuzzState *state,char *queue_dir)
+{
+  char filename[PATH_MAX];
+  
+  sprintf(filename,"%s/%s",queue_dir,STREAM_POOL_FILENAME);
+  load_pool_file(state,filename);
+}
 
+void save_crash_pool(FuzzState *state,char *crash_dir, u32 id)
+{
+  char filename[PATH_MAX];
+  sprintf(filename,"%s/pool_%x.bin",crash_dir,id);
+  save_pool_file(state,filename);
+}
+void load_crash_pool(FuzzState *state,char *filename)
+{
+  load_pool_file(state,filename);
+}
 void save_queue(queue_entry *q,char *dir)
 {
   char filename[PATH_MAX];
