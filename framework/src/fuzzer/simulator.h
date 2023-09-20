@@ -14,5 +14,5 @@ void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream
 void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream);
 void simulator_env_init(void);
 void simulator_classify_count(Simulator * simulator);
-void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, u32 fuzz_stream_id);
+void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, input_stream *fuzz_stream);
 #endif

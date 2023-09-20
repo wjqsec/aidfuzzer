@@ -19,6 +19,8 @@ struct input_stream
 
     u32 offset_to_stream_area;
     s32 ref_count;
+#define DEFAULT_STREAM_PRIORITY 1
+    u32 priority;
     u8 offset_to_save[0];
     stream_metadata *ptr;
 
@@ -31,12 +33,13 @@ struct queue_entry
     u32 cksum;
 #define DEFAULT_QUEUE_PRIORITY 1
     s32 priority;
+    u32 exit_reason;
     u64 fuzztimes;
+    u64 total_stream_len;
     u8 offset_to_save[0];
     
 #define DEFAULT_STREAM_PRIORITY 1
     map<u32,input_stream *> *streams;
-    map<u32,s32> *streams_priority;
     
 }__attribute__((packed));
 
@@ -80,6 +83,7 @@ struct Simulator
 
     queue_entry* base_entry;
     queue_entry* fuzz_entry;
+    input_stream* fuzz_stream;
     u32 fuzz_stream_id;
     bool onlyrun;
     map<u32,int> *id_queue_idx_mapping;
@@ -125,6 +129,6 @@ struct FuzzState
 
 
 
-void fuzz_one_post(FuzzState *state,Simulator *simulator);
+bool fuzz_one_post(FuzzState *state,Simulator *simulator);
 void show_stat(FuzzState *state);
 #endif

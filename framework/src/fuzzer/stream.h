@@ -11,8 +11,9 @@ u32 get_stream_used(FuzzState *state);
 void update_stream_ptr(FuzzState *state, u32 used);
 input_stream *clone_stream(FuzzState *state,input_stream *stream);
 input_stream *extend_stream(FuzzState *state,input_stream *stream,u32 ext_len);
-void remove_stream(FuzzState *state,queue_entry* q,input_stream *stream);
-void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream, bool first_insert);
-void replace_stream(FuzzState *state,queue_entry* q,input_stream *old_tream, input_stream *new_tream);
+void remove_stream(FuzzState *state,queue_entry* q,u32 id);
+void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream);
+void replace_stream(FuzzState *state,queue_entry* q,u32 id, input_stream *new_tream);
+bool stream_shouldnot_mutate(input_stream *stream);
 input_stream *decrease_stream(FuzzState *state,input_stream *stream,u32 new_len);
 #endif

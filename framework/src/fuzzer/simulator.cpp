@@ -7,11 +7,11 @@
 #include "mis_utl.h"
 
 
-void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, u32 fuzz_stream_id)
+void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, input_stream *fuzz_stream)
 {
   simulator->fuzz_entry = fuzz_entry;
   simulator->base_entry = base_entry;
-  simulator->fuzz_stream_id = fuzz_stream_id;
+  simulator->fuzz_stream = fuzz_stream;
 }
 void copy_fuzz_data(Simulator *simulator)
 {
@@ -83,7 +83,6 @@ void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info)
   simulator->status = STATUS_FREE;
   simulator->state->total_exec++;
   simulator->state->exit_reason[exit_info->exit_code]++;
-  simulator->status = STATUS_FREE;
 
 
 }
@@ -160,7 +159,6 @@ Simulator* get_avaliable_simulator(FuzzState *state)
   {
     if (state->fds[i].revents & POLLIN) 
     {
-      fuzz_one_post(state,(*state->simulators)[i]);
       return (*state->simulators)[i];
     }
   }

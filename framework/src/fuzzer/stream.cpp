@@ -53,7 +53,7 @@ input_stream * allocate_freed_enough_space_stream(FuzzState *state,u32 id, s32 l
     return ret;
   freed_streams->erase(need_remove);
   ret->ptr->len = len;
-  
+  ret->priority = DEFAULT_STREAM_PRIORITY;
   return ret;
 }
 
@@ -64,6 +64,7 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
   u32 i;
   input_stream *stream = new input_stream();
 
+  stream->priority = DEFAULT_STREAM_PRIORITY;
   stream->offset_to_stream_area = get_stream_used(state);
   stream->ptr = (stream_metadata*)(state->shared_stream_data + stream->offset_to_stream_area);
   
@@ -151,21 +152,24 @@ input_stream *decrease_stream(FuzzState *state,input_stream *stream,u32 new_len)
   return ret;
 }
 
-void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream, bool first_insert)
+void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream)
 {
-  if(first_insert)
-    (*q->streams_priority)[stream->ptr->stream_id] = 1;
   stream->ref_count++;
   (*q->streams)[stream->ptr->stream_id] = stream;
 }
-void remove_stream(FuzzState *state,queue_entry* q,input_stream *stream)
+void remove_stream(FuzzState *state,queue_entry* q,u32 id)
 {
-  q->streams->erase(stream->ptr->stream_id);
-  free_stream(state,stream);
+  free_stream(state,(*q->streams)[id]);
+  q->streams->erase(id);
+  
 }
-void replace_stream(FuzzState *state,queue_entry* q,input_stream *old_tream, input_stream *new_tream)
+void replace_stream(FuzzState *state,queue_entry* q,u32 id, input_stream *new_tream)
 {
-  remove_stream(state,q,old_tream);
-  insert_stream(state,q,new_tream,false);
+  remove_stream(state,q,id);
+  insert_stream(state,q,new_tream);
+}
+bool stream_shouldnot_mutate(input_stream *stream)
+{
+  return (stream->ptr->mode == MODEL_CONSTANT || stream->ptr->mode == MODEL_PASSTHROUGH  || stream->ptr->len == 0);
 }
 

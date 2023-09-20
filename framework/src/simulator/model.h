@@ -31,6 +31,7 @@ struct IRQ_MODEL
 
 uint16_t do_mmio_irqs[NVIC_MAX_VECTORS];
 int num_do_mmio_irqs;
+bool model_systick = false;
 
 void model_irq(int irq);
 

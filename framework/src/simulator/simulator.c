@@ -117,7 +117,6 @@ bool exit_with_code_start()
         num_mmio = 0;
         nommio_executed_bbls = 0;
         run_index++;
-        max_stream_size = 0;
         reset_irq_models();
         arm_restore_snapshot(new_snap);
         collect_streams();
@@ -185,13 +184,6 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     {
         get_fuzz_data(stream, &ret);  
     }
-    else if(stream_status == STREAM_STATUS_NOTENOUGH)
-    {
-        prepare_exit(EXIT_NOTENOUGHT_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
-        exit_with_code_start();
-        get_fuzz_data(stream, &ret);  
-       
-    }
     else if(stream_status == STREAM_STATUS_OUTOF)
     {
         prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
@@ -223,9 +215,9 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
         pc_changed = exit_with_code_start();
         return pc_changed;
     }
+
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
-
         prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio,0);
         pc_changed = exit_with_code_start();
         return pc_changed;
@@ -270,6 +262,7 @@ void insert_idel_irq()
 
 void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
 {
+
     bool insert_irq;
     int irq = (int)(uint64_t)data;
     simple_log(flog,false,"is_irq_avaliable",irq,irq_models[irq].num_dependency_pointer,irq_models[irq].num_sovled_dependency_pointer);
@@ -331,10 +324,8 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     }
     if(exec_index == EXCP_BKPT)
     {
-        struct ARM_CPU_STATE state;
-        get_arm_cpu_state(&state);
-        state.regs[15] += 2;
-        set_arm_cpu_state(&state);
+        prepare_exit(EXIT_BKP,0,get_arm_pc(),num_mmio,0);
+        exit_with_code_start();
         return false;
     }
 
@@ -368,7 +359,7 @@ void post_thread_exec(int exec_ret)
         insert_idel_irq();
     else
     {
-        prepare_exit(EXIT_TIMEOUT,0,get_arm_pc(),num_mmio,0);
+        prepare_exit(EXIT_UNKNOWN,0,get_arm_pc(),num_mmio,0);
         pc_changed = exit_with_code_start();
     }
 
@@ -477,7 +468,7 @@ void init_log()
 void init(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:")) != -1) 
+    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:s")) != -1) 
     {
         switch (opt) {
         case 'd':
@@ -498,7 +489,9 @@ void init(int argc, char **argv)
         case 'c':
             fuzzware_config_filename = strdup(optarg);
             config = generate_xx_config(optarg);
-            
+            break;
+        case 's':
+            model_systick = true;
             break;
         default: /* '?' */
             printf("Usage error\n");
@@ -571,8 +564,11 @@ int run_config()
     
 
     model_all_infinite_loop();
-
-    model_irq(ARMV7M_EXCP_SYSTICK);
+    if(model_systick)
+    {
+        model_irq(ARMV7M_EXCP_SYSTICK);
+    }
+        
     
 
     

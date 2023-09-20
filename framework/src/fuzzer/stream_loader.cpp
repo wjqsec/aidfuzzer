@@ -49,7 +49,7 @@ void load_crash_pool(FuzzState *state,char *filename)
 void save_queue(queue_entry *q,char *dir)
 {
   char filename[PATH_MAX];
-  sprintf(filename,"%s/queue_%08x",dir,q->cksum);
+  sprintf(filename,"%s/queue_%08x_%d_%d_%d",dir,q->cksum,q->depth,q->edges,q->exit_reason);
   FILE *f_queue = fopen(filename,"wb");
   fwrite(q,offsetof(queue_entry,offset_to_save),1,f_queue);
   for(auto it = q->streams->begin(); it != q->streams->end();it++)
@@ -77,7 +77,7 @@ queue_entry *load_queue(FuzzState *state,char *seedfile)
     if(!fread(stream,offsetof(input_stream,offset_to_save),1,f_queue))
       break;
     stream->ptr = (stream_metadata*) (state->shared_stream_data + stream->offset_to_stream_area);
-    insert_stream(state,q,stream,true);
+    insert_stream(state,q,stream);
   }
   delete stream;
   fclose(f_queue);

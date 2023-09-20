@@ -66,6 +66,7 @@ char *seed_file;
 char *pool_file;
 char *simulator_bin;
 bool fresh_run;
+bool model_systick = false;
 int mode = -1;
 
 void kill_simulator(Simulator * simulator)
@@ -234,6 +235,9 @@ void allocate_new_simulator(FuzzState *state)
   child_arg[i++] = alloc_printf("%d",start_fd + 1);
   child_arg[i++] = (char*)"-c";
   child_arg[i++] =  config;
+  if(model_systick)
+    child_arg[i++] = (char*)"-s";
+
   child_arg[i++] = NULL;
 
   pid = fork();
@@ -280,16 +284,17 @@ void show_stat(FuzzState *state)
   char output[PATH_MAX];
 
   u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
-  sprintf(output,"[%lu] total exec %d edges:%d paths:%lu used pool:%x none:%lu timeout:%lu outofseed:%lu crash:%lu\n",
+  sprintf(output,"[%lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu bkp:%lu unknown:%lu\n",
   get_cur_time() / 1000,
   state->total_exec,
   edges,
   state->entries->size(),
   state->shared_stream_used,
-  state->exit_reason[EXIT_STREAM_NOTFOUND],
   state->exit_reason[EXIT_TIMEOUT],
   state->exit_reason[EXIT_OUTOF_STREAM],
-  state->exit_reason[EXIT_CRASH]
+  state->exit_reason[EXIT_CRASH],
+  state->exit_reason[EXIT_BKP],
+  state->exit_reason[EXIT_UNKNOWN]
   );
   
   fputs(output,stdout);
@@ -308,6 +313,7 @@ void save_coverage(FuzzState *state)
 void sync_state(FuzzState *state)
 {
   bool should_continue = false;
+  bool found_new = false;
   Simulator *simulator;
   EXIT_INFO exit_info;
   u32 cksum;
@@ -323,7 +329,7 @@ void sync_state(FuzzState *state)
   {
     simulator = get_avaliable_simulator(state);
     queue_entry *q = copy_queue(state,nullptr);
-    simulator_task(simulator,q,0, 0);
+    simulator_task(simulator,q,0,0);
     fuzz_start(simulator);
     fuzz_one_post(state,simulator);
   }
@@ -332,7 +338,7 @@ void sync_state(FuzzState *state)
     for(queue_entry *q : *state->entries)
     {
       simulator = get_avaliable_simulator(state);
-      simulator_task(simulator,q,0, 0);
+      simulator_task(simulator,q,0,0);
       fuzz_start(simulator);
       fuzz_exit(simulator,&exit_info);
       simulator_classify_count(simulator);
@@ -372,13 +378,18 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
   {
     stream = (stream_metadata*)(queue->streams[i].offset_to_stream_area + state->shared_stream_data);
     old_stream = (*entry->streams)[stream->stream_id];
-    if(old_stream->ptr->mode == MODEL_CONSTANT || old_stream->ptr->mode == MODEL_PASSTHROUGH)
+    if(stream_shouldnot_mutate(old_stream))
       continue;
 
-    if(old_stream->ptr->len > queue->streams[i].used)
+    if(queue->streams[i].used == 0)
+    {
+      remove_stream(state,entry,stream->stream_id);
+    }
+    else if(old_stream->ptr->len > queue->streams[i].used)
     {
       new_stream = decrease_stream(state,old_stream,queue->streams[i].used);
-      replace_stream(state,entry,old_stream, new_stream);
+      replace_stream(state,entry,old_stream->ptr->stream_id, new_stream);
+      
     }
   }
 
@@ -404,7 +415,7 @@ int get_fuzz_priority_increment(u64 fuzz_times)
     ret = 50000;
   return ret;
 }
-void fuzz_one_post(FuzzState *state,Simulator *simulator)
+bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 {
   queue_entry* base_entry;
   queue_entry* fuzz_entry;
@@ -414,6 +425,8 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
   input_stream *new_stream;
   
   EXIT_INFO exit_info;
+  if(simulator->status == STATUS_FREE)
+    return false;
 
   fuzz_entry = simulator->fuzz_entry;
   while(1)
@@ -434,18 +447,10 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
 
       new_stream = allocate_enough_space_stream(state,exit_info.exit_stream_id, DEFAULT_STREAM_LEN);
 
-      insert_stream(state,fuzz_entry,new_stream,true);
+      insert_stream(state,fuzz_entry,new_stream);
 
       fuzz_continue_stream_notfound(simulator,new_stream);
 
-      continue;
-    }
-    if(exit_info.exit_code == EXIT_NOTENOUGHT_STREAM)
-    {
-      outofseed_stream = (*fuzz_entry->streams)[exit_info.exit_stream_id];
-      new_stream = extend_stream(state,outofseed_stream,DEFAULT_INCREASE_NOTENOUGH_STREAM_SIZE);
-      replace_stream(state,fuzz_entry,outofseed_stream, new_stream);
-      fuzz_continue_stream_outof(simulator,new_stream);
       continue;
     }
     if(exit_info.exit_code == EXIT_TERMINATE)
@@ -453,74 +458,69 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
       cleanup_simulator(simulator->pid);
       clean_fuzzer();
       exit(0);
-      return;
+      return false;
     }
     break;
   }
   
-  if(exit_info.exit_code == EXIT_CRASH)
-  {
-    simulator_classify_count(simulator);
-    u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
-    if(state->crash_ids->find(cksum) != state->crash_ids->end())
-    {
-      free_queue(state,fuzz_entry);
-      return;
-    }
-
-    state->crash_ids->insert(cksum);
-    fuzz_entry->cksum = cksum;
-    save_crash(fuzz_entry,crash_dir);
-    save_crash_pool(state,crash_dir,fuzz_entry->cksum);
-    free_queue(state,fuzz_entry);
-    // insert_crash(state,fuzz_entry);
-    return;
-  }
+  
   
   
   simulator_classify_count(simulator);
   int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-  
+
+  if(exit_info.exit_code == EXIT_CRASH)
+  {
+    u32 cksum = hash32(simulator->trace_bits,simulator->map_size);
+    if(state->crash_ids->find(cksum) == state->crash_ids->end())
+    {
+      state->crash_ids->insert(cksum);
+      fuzz_entry->edges = count_bytes(simulator->trace_bits, simulator->map_size);
+      fuzz_entry->cksum = hash32(simulator->trace_bits,simulator->map_size);
+      fuzz_entry->exit_reason = exit_info.exit_code;
+      save_crash(fuzz_entry,crash_dir);
+      save_crash_pool(state,crash_dir,fuzz_entry->cksum);
+
+    }
+
+  }
+
 
   base_entry = simulator->base_entry;
   if(base_entry)
-  {
     base_entry->fuzztimes++;
-  }
-  if(exit_info.exit_code == EXIT_OUTOF_STREAM && base_entry && (*base_entry->streams_priority)[exit_info.exit_stream_id] < 100)
-  {
-    (*base_entry->streams_priority)[exit_info.exit_stream_id] += 1;
-  }  
   
   if(unlikely(r))
   {
     if(unlikely(r == 2))
       save_coverage(state);
-    if(base_entry)
-    {
-      (*base_entry->streams_priority)[simulator->fuzz_stream_id] += get_fuzz_priority_increment(state->total_exec);
-    }
-
-    (*fuzz_entry->streams_priority)[simulator->fuzz_stream_id] += get_fuzz_priority_increment(state->total_exec);
-
-      
+    if(simulator->fuzz_stream)
+      simulator->fuzz_stream->priority ++ ;
     fuzz_entry->depth++;
     fuzz_entry->edges = count_bytes(simulator->trace_bits, simulator->map_size);
     fuzz_entry->cksum = hash32(simulator->trace_bits,simulator->map_size);
-    
+    fuzz_entry->exit_reason = exit_info.exit_code;
     fuzz_entry->priority = fuzz_entry->edges + 1;
     if(exit_info.exit_code == EXIT_TIMEOUT)
       fuzz_entry->priority = fuzz_entry->priority / 10 + 1;
+
     trim_queue(state,fuzz_entry,simulator);
+
+    for(auto it = fuzz_entry->streams->begin(); it != fuzz_entry->streams->end(); it++)
+    {
+      if(stream_shouldnot_mutate(it->second))
+        continue;
+      fuzz_entry->total_stream_len += it->second->ptr->len;
+    }
     insert_queue(state,fuzz_entry);
+    return true;
   }
   else
   {
+    if(simulator->fuzz_stream && simulator->fuzz_stream->priority > 1)
+      simulator->fuzz_stream->priority -- ;
     free_queue(state,fuzz_entry);
-    if(base_entry && (*base_entry->streams_priority)[simulator->fuzz_stream_id] > 1)
-    {
-      (*base_entry->streams_priority)[simulator->fuzz_stream_id]--;
-    }
+    return false;
   }
 
   
@@ -528,41 +528,97 @@ void fuzz_one_post(FuzzState *state,Simulator *simulator)
 
 
 
+inline input_stream* select_stream(queue_entry *q, bool use_extra_priority,  u64 total)
+{
+  s32 random_number =  UR(total);
+  s32 weight_sum = 0;
+  for(auto it = q->streams->begin() ; it != q->streams->end() ; it++)
+  {
+    if(stream_shouldnot_mutate(it->second))
+        continue;
+    if(use_extra_priority)
+      weight_sum += it->second->ptr->len * it->second->priority;
+    else
+      weight_sum += it->second->ptr->len;
+    if(random_number < weight_sum)
+    {
+      return it->second;
+    }
+  }
+  return nullptr;
+}
+inline set<input_stream*> select_streams(queue_entry *q)
+{
+  set<input_stream*> ret;
+  input_stream* tmp;
+  u32 use_stacking;
+  u64 total_with_extra_priority = 0;
+  int i;
+  
 
+  use_stacking = (1 << (1 + UR(5)));
+  // for(auto it = q->streams->begin() ; it != q->streams->end() ; it++)
+  // {
+  //   if(stream_shouldnot_mutate(it->second))
+  //     continue;
+  //   total_with_extra_priority += (it->second->ptr->len * it->second->priority);
+  // }
+
+
+  if(UR(10))
+  {
+    
+    for(i = 0; i < use_stacking; i++)
+    {
+      tmp = select_stream(q,false,q->total_stream_len);
+      if(tmp)
+        ret.insert(tmp);
+    }
+    
+    
+  }
+  else
+  {
+    for(auto it = q->streams->begin(); it!= q->streams->end(); it++)
+    {
+      if(it->second->ptr->len <= 0x20)
+        ret.insert(it->second);
+      
+    }
+  }
+  
+  return ret;
+}
 
 inline void fuzz_queue(FuzzState *state,queue_entry* entry)
 {
-  bool should_continue = false;
-  s32 i;
+  
   Simulator *simulator = NULL;
   input_stream *fuzz_stream;
+  set<input_stream*> selected_streams;
   queue_entry* fuzz_entry;
-  s32 priority;
 
-  for(auto it = entry->streams->begin() ; it != entry->streams->end() ; it++)
+
+  fuzz_entry = copy_queue(state,entry);
+  selected_streams = select_streams(entry);
+  
+  for(auto it = selected_streams.begin(); it != selected_streams.end(); it++) 
   {
+    
+    fuzz_stream = havoc(state,*it);
 
-    if(it->second->ptr->mode == MODEL_CONSTANT || it->second->ptr->mode == MODEL_PASSTHROUGH  || it->second->ptr->len == 0)
-      continue;
+    replace_stream(state,fuzz_entry,(*it)->ptr->stream_id,fuzz_stream);
 
-    priority = (*entry->streams_priority)[it->second->ptr->stream_id];
-    for(i = 0 ; i < priority ; i++)
-    {
-      simulator = get_avaliable_simulator(state);  
-      fuzz_entry = copy_queue(state,entry);
-      fuzz_stream = havoc(state,it->second);
-      replace_stream(state,fuzz_entry,it->second, fuzz_stream);
-      simulator_task(simulator,fuzz_entry,entry, it->second->ptr->stream_id);
-      fuzz_start(simulator);
-
-      if(terminate_next)
-          fuzzer_terminate();
-      
-    } 
     
   }
+  simulator = get_avaliable_simulator(state);  
+  fuzz_one_post(state,simulator);
+  simulator_task(simulator,fuzz_entry,entry,0);
+  
+  fuzz_start(simulator);
+  
   if(terminate_next)
-          fuzzer_terminate();
+      fuzzer_terminate();
   
 
 }
@@ -594,25 +650,28 @@ inline queue_entry* select_entry(FuzzState *state)
 
   return NULL;
 } 
+
+
 void fuzz_loop(FuzzState *state)
 { 
     queue_entry* entry;
     sync_state(state);
-    int round = 0;
+    int times = 0;
     while(1)
     {
         entry = select_entry(state);
         fuzz_queue(state,entry);
-
+        if((times & 0xff) == 0)
           show_stat(state);
         
-        round++;
+        times++;
             
     }
 }
 
 void fuzz_runonce(FuzzState *state)
 {
+  bool found_new = false;
   Simulator *simulator;
   EXIT_INFO exit_info;
   load_default_pool(state,queue_dir);
@@ -621,7 +680,7 @@ void fuzz_runonce(FuzzState *state)
   for(queue_entry *q : *state->entries)
   {
     simulator = get_avaliable_simulator(state);
-    simulator_task(simulator,q,0, 0);
+    simulator_task(simulator,q,0,0);
     fuzz_start(simulator);
     fuzz_exit(simulator,&exit_info);
     simulator_classify_count(simulator);
@@ -631,12 +690,13 @@ void fuzz_runonce(FuzzState *state)
 }
 void fuzz_run_oneseed(FuzzState *state, char *pool_file, char *seed_file)
 {
+  bool found_new = false;
   EXIT_INFO exit_info;
   Simulator *simulator;
   load_crash_pool(state,pool_file);
   queue_entry *q = load_queue(&global_state,seed_file);
   simulator = get_avaliable_simulator(&global_state);
-  simulator_task(simulator,q,0, 0);
+  simulator_task(simulator,q,0,0);
   fuzz_start(simulator);
   fuzz_exit(simulator,&exit_info);
 }
@@ -711,7 +771,7 @@ int main(int argc, char **argv)
   int cores;
   init_signal_handler();
   simulator_env_init();
-  while ((opt = getopt(argc, argv, "d:m:p:e:s:f")) != -1) 
+  while ((opt = getopt(argc, argv, "d:m:p:e:s:ft")) != -1) 
   {
       switch (opt) {
       case 'm':
@@ -737,6 +797,11 @@ int main(int argc, char **argv)
       case 'f':
           fresh_run = true;
           break;
+      case 't':
+          model_systick = true;
+          break;
+
+          
       default: /* '?' */
           printf("Usage error\n");
           exit(0);
@@ -760,6 +825,7 @@ int main(int argc, char **argv)
           "cores:%d\n"
           "mode:%d\n"
           "config:%s\n"
+          "model_systick:%d\n"
           "fresh_run:%d\n",
           queue_dir,
           crash_dir,
@@ -770,6 +836,7 @@ int main(int argc, char **argv)
           cores,
           mode,
           config,
+          model_systick,
           fresh_run);
 
   
