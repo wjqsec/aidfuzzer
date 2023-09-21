@@ -7,11 +7,11 @@
 #include "mis_utl.h"
 
 
-void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, input_stream *fuzz_stream)
+void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<input_stream*> *fuzz_streams)
 {
   simulator->fuzz_entry = fuzz_entry;
   simulator->base_entry = base_entry;
-  simulator->fuzz_stream = fuzz_stream;
+  simulator->fuzz_streams = fuzz_streams;
 }
 void copy_fuzz_data(Simulator *simulator)
 {

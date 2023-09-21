@@ -112,6 +112,7 @@ struct EXIT_INFO
     u32 exit_stream_id;
     u32 stream_dumped;
     u64 exit_pc;
+    u64 exit_lr;
     u32 num_mmio;
 } __attribute__((packed));
 

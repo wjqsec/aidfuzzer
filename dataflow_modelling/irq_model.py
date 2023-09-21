@@ -301,13 +301,16 @@ def main():
 
     simgr = project.factory.simgr(initial_state)
     simgr.use_technique(exploration_techniques.Timeout(30))
+    
     try:
-        for i in range(50):
+        for i in range(100):
             simgr.step(thumb=True)
+            print(simgr.active)
             get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
             if len(simgr.active) <= 1 and i >= 10:
                 break
     except :
+        print("error happends")
         pass
         
         

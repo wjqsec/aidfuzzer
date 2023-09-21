@@ -116,6 +116,8 @@ struct ARM_CPU_STATE
 typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
 typedef void (*exec_nvic_cb)(int irq);
 typedef void (*enable_nvic_cb)(int irq);
+
+
 void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state);
 void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state);
 void *xx_save_arm_ctx_state(void);
@@ -131,7 +133,9 @@ hwaddr xx_get_arm_precise_pc(void);
 hwaddr xx_get_arm_pc(void);
 void xx_register_exec_nvic_hook(exec_nvic_cb cb);
 void xx_register_enable_nvic_hook(enable_nvic_cb cb);
+
 int xx_get_arm_v7m_is_handler_mode(void);
+
 
 
 #define get_arm_cpu_state xx_get_arm_cpu_state
@@ -164,7 +168,7 @@ typedef void (*mmio_write_cb)(void *opaque,hwaddr addr_offset,uint64_t data,unsi
 typedef void (*pre_thread_exec_cb)(void); 
 typedef bool (*exec_bbl_cb)(uint64_t pc,uint32_t id);
 typedef void (*exec_func_cb)(uint64_t pc,uint64_t *return_val);
-
+typedef void (*translate_bbl_cb)(uint64_t pc,uint32_t id);
 
 typedef void (*post_thread_exec_cb)(int exec_ret);
 typedef void (*nostop_watchpoint_cb)(hwaddr vaddr,hwaddr len,uint32_t val,void *data);
@@ -202,7 +206,7 @@ void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb);
 void xx_register_exec_func_hook(hwaddr addr,exec_func_cb cb);
 void xx_register_mem_access_log_hook(mem_access_cb cb);
 void xx_register_post_thread_exec_hook(post_thread_exec_cb cb);
-
+void xx_register_translate_bbl_hook(translate_bbl_cb cb);
 
 MemTxResult xx_write_ram(hwaddr addr, hwaddr size, void *buf);  //will make the page dirty
 MemTxResult xx_read_ram(hwaddr addr, hwaddr size, void *buf);
@@ -239,7 +243,7 @@ void xx_delete_nostop_watchpoint(struct NOSTOP_WATCHPOINT *watchpoint);
 #define zero_ram xx_zero_ram
 #define load_file_rom xx_load_file_rom
 #define target_pagesize xx_target_pagesize
-
+#define register_translate_bbl_hook xx_register_translate_bbl_hook
 
 #define get_dirty_pages xx_get_dirty_pages
 #define insert_nostop_watchpoint xx_insert_nostop_watchpoint

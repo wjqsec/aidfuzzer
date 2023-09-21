@@ -125,7 +125,7 @@ bool exit_with_code_start()
      
 }
 
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio,u32 stream_dumped)
+void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio,u32 stream_dumped,uint64_t lr)
 {
     
     exit_info.exit_code = code;
@@ -133,6 +133,7 @@ void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio
     exit_info.stream_dumped = stream_dumped;
     exit_info.exit_pc = pc;
     exit_info.num_mmio = num_mmio;
+    exit_info.exit_lr = lr;
 }
 
 
@@ -167,7 +168,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
             
         }
 
-        prepare_exit(EXIT_STREAM_NOTFOUND,stream_id,precise_pc,num_mmio,stream_dumped);
+        prepare_exit(EXIT_STREAM_NOTFOUND,stream_id,precise_pc,num_mmio,stream_dumped,0);
 
         exit_with_code_start();
 
@@ -186,7 +187,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
     }
     else if(stream_status == STREAM_STATUS_OUTOF)
     {
-        prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio,stream_dumped);
+        prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio,stream_dumped,0);
         next_bbl_should_exit = true;
     }
     else
@@ -218,7 +219,7 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
 
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
-        prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio,0);
+        prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio,0,0);
         pc_changed = exit_with_code_start();
         return pc_changed;
     }
@@ -324,13 +325,14 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     }
     if(exec_index == EXCP_BKPT)
     {
-        prepare_exit(EXIT_BKP,0,get_arm_pc(),num_mmio,0);
+        prepare_exit(EXIT_BKP,0,get_arm_pc(),num_mmio,0,0);
         exit_with_code_start();
         return false;
     }
-
+    struct ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
     crash_log(f_crash_log,"crash",exec_index,0,0);
-    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0);
+    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0,state.regs[14]);
     exit_with_code_start();
     
     return false;
@@ -359,7 +361,7 @@ void post_thread_exec(int exec_ret)
         insert_idel_irq();
     else
     {
-        prepare_exit(EXIT_UNKNOWN,0,get_arm_pc(),num_mmio,0);
+        prepare_exit(EXIT_UNKNOWN,0,get_arm_pc(),num_mmio,0,0);
         pc_changed = exit_with_code_start();
     }
 
@@ -414,7 +416,7 @@ void cleanup()
 void terminate()
 {
     cleanup();
-    prepare_exit(EXIT_TERMINATE,0,0,0,0);
+    prepare_exit(EXIT_TERMINATE,0,0,0,0,0);
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
     while (1)
     {

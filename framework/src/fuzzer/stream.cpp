@@ -154,17 +154,22 @@ input_stream *decrease_stream(FuzzState *state,input_stream *stream,u32 new_len)
 
 void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream)
 {
+
   stream->ref_count++;
   (*q->streams)[stream->ptr->stream_id] = stream;
+  (*q->runtime_stream_priority)[stream->ptr->stream_id] = 1;
+
 }
 void remove_stream(FuzzState *state,queue_entry* q,u32 id)
 {
   free_stream(state,(*q->streams)[id]);
   q->streams->erase(id);
+  q->runtime_stream_priority->erase(id);
   
 }
 void replace_stream(FuzzState *state,queue_entry* q,u32 id, input_stream *new_tream)
 {
+
   remove_stream(state,q,id);
   insert_stream(state,q,new_tream);
 }

@@ -46,7 +46,7 @@ struct NOSTOP_WATCHPOINT **nostop_watchpoints;
 uint8_t *mem_has_watchpoints;
 mem_access_cb mem_access_log_func;
 
-
+translate_bbl_cb translate_bbl_func;
 exec_bbl_cb exec_bbl_func;
 GArray* specific_bbl_hooks;
 GArray* func_hooks;
@@ -291,6 +291,10 @@ void xx_register_mem_access_log_hook(mem_access_cb cb)
 void xx_register_exec_bbl_hook(exec_bbl_cb cb)
 {
     exec_bbl_func = cb;
+}
+void xx_register_translate_bbl_hook(translate_bbl_cb cb)
+{
+    translate_bbl_func = cb;
 }
 void xx_register_exec_specific_bbl_hook(hwaddr addr,exec_bbl_cb cb)
 {

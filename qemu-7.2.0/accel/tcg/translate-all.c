@@ -759,6 +759,7 @@ void page_collection_unlock(struct page_collection *set)
 extern exec_bbl_cb exec_bbl_func;
 extern GArray* specific_bbl_hooks;
 extern GArray* func_hooks;
+extern translate_bbl_cb translate_bbl_func;
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
@@ -774,7 +775,9 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
-
+    
+    if(translate_bbl_func)
+        translate_bbl_func(pc,id);
     for (int i = 0; i < func_hooks->len; ++i) 
     {
         struct Func_Hook *hook = g_array_index(func_hooks, struct Func_Hook *, i);

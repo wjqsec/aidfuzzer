@@ -5,5 +5,6 @@
 queue_entry* copy_queue(FuzzState *state,queue_entry* q);
 void free_queue(FuzzState *state,queue_entry* q);
 void insert_queue(FuzzState *state,queue_entry* q);
-void insert_crash(FuzzState *state,queue_entry* q);
+void insert_crash(FuzzState *state,crash_info info);
+bool find_crash(FuzzState *state, crash_info *info);
 #endif

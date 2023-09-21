@@ -40,9 +40,15 @@ struct queue_entry
     
 #define DEFAULT_STREAM_PRIORITY 1
     map<u32,input_stream *> *streams;
+    map<u32,s32> *runtime_stream_priority;
     
 }__attribute__((packed));
 
+struct crash_info
+{
+    u64 pc;
+    u64 lr;
+};
 struct input_model
 {
     int mode;
@@ -83,7 +89,7 @@ struct Simulator
 
     queue_entry* base_entry;
     queue_entry* fuzz_entry;
-    input_stream* fuzz_stream;
+    set<input_stream*> * fuzz_streams;
     u32 fuzz_stream_id;
     bool onlyrun;
     map<u32,int> *id_queue_idx_mapping;
@@ -109,7 +115,7 @@ struct FuzzState
     vector<queue_entry*> *entries;
     map<u32,vector<input_stream*>*> *freed_streams;
     set<u32> *crash_ids;
-    vector<queue_entry*> *crashes;
+    vector<crash_info> *crashes;
 
 
     map<u32,input_model*> *models;
@@ -131,4 +137,5 @@ struct FuzzState
 
 bool fuzz_one_post(FuzzState *state,Simulator *simulator);
 void show_stat(FuzzState *state);
+void save_coverage(FuzzState *state);
 #endif

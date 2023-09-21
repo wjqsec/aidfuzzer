@@ -6,9 +6,9 @@
 
 #define HAVOC_BLK_SMALL     16
 #define HAVOC_BLK_MEDIUM    32
-#define HAVOC_BLK_LARGE     128
-#define HAVOC_BLK_XL        1024
-#define HAVOC_BLK_XXL        2048
+#define HAVOC_BLK_LARGE     64
+#define HAVOC_BLK_XL        256
+#define HAVOC_BLK_XXL        1024
 
 #define MAX_FILE            (100 * 1024)
 #ifndef MIN
@@ -436,7 +436,6 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   
 
   ret = clone_stream(state,stream);
-
 
   use_stacking = (1 << (1 + UR(6)));
 
