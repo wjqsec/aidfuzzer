@@ -197,7 +197,7 @@ void irq_on_idel()
     bool insert_irq;
     for(int i=0; i<irq_model.num_enabled_irqs; i++)
     {
-        if(!is_irq_ready(irq_model.enabled_irqs[i]) || !is_irq_access_memory(irq_model.enabled_irqs[i]))
+        if(!is_irq_ready(irq_model.enabled_irqs[i]) || !is_irq_access_memory(irq_model.enabled_irqs[i]) ||  get_arm_v7m_is_handler_mode() == irq_model.enabled_irqs[i])
             continue;
         insert_irq = insert_nvic_intc(irq_model.enabled_irqs[i]);
         if(insert_irq)
