@@ -38,7 +38,8 @@
 #include "xx.h"
 do_arm_interrupt_cb do_arm_interrupt_func;
 exec_nvic_cb exec_nvic_func;
-
+enable_arm_interrupt_cb enable_arm_interrupt_func;
+disable_arm_interrupt_cb disable_arm_interrupt_func;
 void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
 {
     do_arm_interrupt_func = cb;
@@ -47,7 +48,14 @@ void xx_register_exec_nvic_hook(exec_nvic_cb cb)
 {
     exec_nvic_func = cb;
 }
-
+void xx_register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb)
+{
+    enable_arm_interrupt_func = cb;
+}
+void xx_register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb)
+{
+    disable_arm_interrupt_func = cb;
+}
 static void v7m_msr_xpsr(CPUARMState *env, uint32_t mask,
                          uint32_t reg, uint32_t val)
 {
@@ -2719,8 +2727,19 @@ void HELPER(v7m_msr)(CPUARMState *env, uint32_t maskreg, uint32_t val)
         env->v7m.psplim[env->v7m.secure] = val & ~7;
         break;
     case 16: /* PRIMASK */
-        env->v7m.primask[env->v7m.secure] = val & 1;
-        break;
+        {
+            if(val == 0 && enable_arm_interrupt_func)
+            {
+                enable_arm_interrupt_func();
+            }
+            else if(disable_arm_interrupt_func)
+            {
+                disable_arm_interrupt_func();
+            }
+            env->v7m.primask[env->v7m.secure] = val & 1;
+            break;
+        }
+        
     case 17: /* BASEPRI */
         if (!arm_feature(env, ARM_FEATURE_M_MAIN)) {
             goto bad_reg;

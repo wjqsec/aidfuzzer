@@ -116,6 +116,9 @@ struct ARM_CPU_STATE
 typedef bool (*do_arm_interrupt_cb)(int32_t exec_index);
 typedef void (*exec_nvic_cb)(int irq);
 typedef void (*enable_nvic_cb)(int irq);
+typedef void (*set_nvic_vecbase_cb)(uint32_t addr, int secure);
+typedef void (*enable_arm_interrupt_cb)(void);
+typedef void (*disable_arm_interrupt_cb)(void);
 
 
 void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state);
@@ -133,7 +136,10 @@ hwaddr xx_get_arm_precise_pc(void);
 hwaddr xx_get_arm_pc(void);
 void xx_register_exec_nvic_hook(exec_nvic_cb cb);
 void xx_register_enable_nvic_hook(enable_nvic_cb cb);
-
+void xx_register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb);
+void xx_register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb);
+void xx_register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb);
+uint32_t xx_get_nvic_vecbase(void);
 int xx_get_arm_v7m_is_handler_mode(void);
 
 
@@ -154,7 +160,10 @@ int xx_get_arm_v7m_is_handler_mode(void);
 #define register_exec_nvic_hook xx_register_exec_nvic_hook
 #define register_enable_nvic_hook xx_register_enable_nvic_hook
 #define get_arm_v7m_is_handler_mode xx_get_arm_v7m_is_handler_mode
-
+#define get_nvic_vecbase xx_get_nvic_vecbase
+#define register_set_nvic_vecbase_hook xx_register_set_nvic_vecbase_hook
+#define register_enable_arm_interrupt_hook xx_register_enable_arm_interrupt_hook
+#define register_disable_arm_interrupt_hook xx_register_disable_arm_interrupt_hook
 //===================common
 
 #define MAX_NUM_MEM_REGION 255

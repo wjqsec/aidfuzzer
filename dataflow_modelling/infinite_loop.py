@@ -1,6 +1,17 @@
 import angr
 import capstone
+import angr, monkeyhex
+from setup_env import from_state_file,from_elf_file
+import claripy
+import re
+import sys
+import time
+from pathlib import Path
+import argparse
+from config import *
+from angr import exploration_techniques
 
+config = Configs()
 
 def is_infinite_loop(project,initial_state,addr,isthumb):
     initial_state.regs.pc = addr
@@ -54,4 +65,16 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
                     all_loops.add(bbl_addr)
     return all_loops
 
-        
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="infinite loop modelling",
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-s", "--state", help="irq state binary file")
+    parser.add_argument("-o", "--output", help="output file name")
+    parser.add_argument("-c","--config",  help="fuzzware config file")
+    args = parser.parse_args()
+    config.from_fuzzware_config_file(args.config)  
+    project, initial_state = from_state_file(args.state)
+    loop_addrs = find_all_infinite_loop(project, initial_state,config)
+    with open(args.output,"w") as f:
+        for addr in loop_addrs:
+            f.write("%x\n"%(addr))

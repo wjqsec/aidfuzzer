@@ -7,11 +7,10 @@ import time
 from pathlib import Path
 import argparse
 from config import *
-from inifinite_loop_check import *
 from angr import exploration_techniques
 
 config = Configs()
-stack_size = 0x1000
+stack_size = 0x2000
 
 
 class ACCESS_INFO:
@@ -271,44 +270,48 @@ def get_memory_access(states,initial_state,accessses,irq):
     
 
 def main():
-    parser = argparse.ArgumentParser(description="dataflow modeling",
+    parser = argparse.ArgumentParser(description="irq dataflow modeling",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-s", "--state", help="irq state binary file")
     parser.add_argument("-i", "--irq",  help="irq number")
+    parser.add_argument("-v", "--vecbase",  help="vecbase")
     parser.add_argument("-o", "--output", help="output file name")
     parser.add_argument("-c","--config",  help="fuzzware config file")
-    parser.add_argument("-m","--mode",  help="irq/loop mode")
+
     args = parser.parse_args()
     config.from_fuzzware_config_file(args.config)
     
 
-    project, initial_state = from_state_file(args.state,config,args.irq,args.mode == "loop")
-    initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
-    if args.mode == "loop":
-        loop_addrs = find_all_infinite_loop(project, initial_state,config)
-        with open(args.output,"w") as f:
-            for addr in loop_addrs:
-                f.write("%x\n"%(addr))
-        return
+    project, initial_state = from_state_file(args.state)
+
+    start_addr = int(args.vecbase,16) + 4 * int(args.irq,10)
+    irq_val = initial_state.memory.load(start_addr, 4, endness='Iend_LE')
+    initial_state.regs.pc = irq_val
+    
+
     models = irq_model_from_file(args.output)
 
+    
+    cfg = project.analyses.CFGFast(normalize = True)
     model = IRQ_MODEL()
-    if int(args.irq,16) in models:
-        model = models[int(args.irq,16)]
+    # if int(args.irq,16) in models:
+    #     model = models[int(args.irq,16)]
     accessses = []
+    initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
 
     simgr = project.factory.simgr(initial_state)
-    simgr.use_technique(exploration_techniques.Timeout(30))
-    
+    # simgr.use_technique(exploration_techniques.Timeout(30))
+    simgr.use_technique(exploration_techniques.LoopSeer(cfg=cfg, bound=10))
+
     try:
-        for i in range(100):
+        for i in range(20):
             simgr.step(thumb=True)
             print(simgr.active)
             get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
             if len(simgr.active) <= 1 and i >= 10:
-                break
+                break   
     except :
         print("error happends")
         pass
@@ -338,7 +341,7 @@ def main():
         accessses.append(access)
     for ac in accessses:
             model.accesses.add(ac)
-    models[int(args.irq,16)] = model
+    models[int(args.irq,10)] = model
 
     write_model_to_file(models,args.output)
     

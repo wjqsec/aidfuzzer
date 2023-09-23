@@ -57,8 +57,9 @@ char *model_dir;
 char *log_dir;
 char *fuzzware_config_filename;
 
-
+#include "utl.h"
 #include "log.h"
+#include "irq.h"
 #include "model.h"
 #include "snapshot.h"
 #include "stream.h"
@@ -86,6 +87,7 @@ bool exit_with_code_start()
     
     if(unlikely(cmd_info.cmd == CMD_TERMINATE))
     {
+        printf("received terminate cmd from fuzzer\n");
         terminate();
         pc_changed = true;
     }   
@@ -117,7 +119,7 @@ bool exit_with_code_start()
         num_mmio = 0;
         nommio_executed_bbls = 0;
         run_index++;
-        reset_irq_models();
+        irq_on_new_run();
         arm_restore_snapshot(new_snap);
         collect_streams();
     }
@@ -163,7 +165,7 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
         if(!stream->dumped)
         {
             stream_dumped = 0;
-            dump_state(stream_id,true,MMIO_STATE_PREFIX,dump_dir);
+            dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir);
             stream->dumped = true;
             
         }
@@ -244,77 +246,52 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
 
 void insert_idel_irq()
 {
+    irq_on_idel();
 
-    // if(get_arm_v7m_is_handler_mode())
-    //     return;
-
-    bool insert_irq;
-    for(int i=0; i<num_do_mmio_irqs ; i++)
-    {
-        if(!is_irq_avaliable(do_mmio_irqs[i]))
-            continue;
-        simple_log(flog,false,"try insert idel irq",do_mmio_irqs[i],0,0);
-        insert_irq = insert_nvic_intc(do_mmio_irqs[i]);
-        if(insert_irq)
-            simple_log(flog,false,"insert idel irq",do_mmio_irqs[i],0,0);
-    }
+}
+void enable_arm_intc()
+{
+    irq_on_idel();
 }
 
-
+void nostop_watchpoint_exec_overwrite_vec(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
+{
+    int irq = (int)(uint64_t)data;
+    irq_on_set_nvic_vec_entry(irq);
+}
 void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
 {
-
-    bool insert_irq;
     int irq = (int)(uint64_t)data;
-    simple_log(flog,false,"is_irq_avaliable",irq,irq_models[irq].num_dependency_pointer,irq_models[irq].num_sovled_dependency_pointer);
-    if(!is_irq_avaliable(irq))
-        return;
-
-    simple_log(flog,false,"get_arm_v7m_is_handler_mode",irq,get_arm_v7m_is_handler_mode(),0);    
-    if(get_arm_v7m_is_handler_mode())
-        return;
-    
-    
-    simple_log(flog,false,"mem_access_trigger_irq_times_count",irq,irq_models[irq].mem_access_trigger_irq_times_count,irq_models[irq].mem_access_trigger_irq_times);
-    if(irq_models[irq].mem_access_trigger_irq_times_count > irq_models[irq].mem_access_trigger_irq_times)
-    {
-        simple_log(flog,false,"try insert mem irq",irq_models[irq].mem_access_trigger_irq_times_count,irq_models[irq].mem_access_trigger_irq_times,0);
-        insert_irq = insert_nvic_intc(irq);
-        irq_models[irq].mem_access_trigger_irq_times_count = 0;
-        if(insert_irq)
-            simple_log(flog,false,"insert mem irq",irq,0,0);
-        
-    }
-    else
-    {
-        irq_models[irq].mem_access_trigger_irq_times_count++;
-        simple_log(flog,false,"add mem irq count",irq,irq_models[irq].mem_access_trigger_irq_times_count,0);
-    }
+    irq_on_mem_access(irq,vaddr);
 }
-void nostop_watchpoint_exec_func(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
+void nostop_watchpoint_exec_unresolved_func_ptr(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
 {
-    if(val == 0)
-        return;
     int irq = (int)(uint64_t)data;
-    model_irq_after_nullfuncptr_init(irq,val);
-    simple_log(flog,false,"model nullptr func",irq,vaddr,0);
+    irq_on_unsolved_func_ptr_write(irq, vaddr, val);
+
 }
 void nostop_watchpoint_exec_denpendency(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
 {
-    if(val == 0)
-        return;
     int irq = (int)(uint64_t)data;
-    if (solve_irq_dependency(irq, (uint32_t)vaddr))
-        simple_log(flog,false,"solve dependency",irq,vaddr,0);
+   irq_on_dependency_ptr_write(irq, vaddr, val);
 }
 
+void on_set_nvic_vecbase(uint32_t addr, int secure)
+{
+    if(secure)
+        return;
+    irq_on_set_new_vecbase(addr);
+}
+void enable_nvic_hook(int irq)
+{
+    irq_on_enable_nvic_irq(irq);
+}
 
 bool arm_exec_loop_bbl(hwaddr pc,uint32_t id)
 {
     insert_idel_irq();
     return false;
 }
-
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
     
@@ -337,20 +314,6 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     
     return false;
 }
-
-
-void enable_nvic_hook(int irq)
-{
-    static bool dumped_irq[NVIC_MAX_VECTORS];
-    simple_log(flog,false,"enable_nvic_hook",irq,0,0);
-
-
-    if(!dumped_irq[irq] && irq > ARMV7M_EXCP_SYSTICK)
-    {
-        dumped_irq[irq] = true;
-        model_irq(irq);
-    }
-}
 void post_thread_exec(int exec_ret)
 {
     
@@ -366,13 +329,12 @@ void post_thread_exec(int exec_ret)
     }
 
 }
-void mem_access_cb_func(hwaddr vaddr,uint32_t val,uint32_t flag)
+void mem_access_log_func(hwaddr vaddr,uint32_t val,uint32_t flag)
 {
     simple_log(flog,true,"memory access",vaddr,val,flag);
 }
 
-
-
+//-----------------------------------------------------------
 void __afl_map_shm(void) {
 
     char *id_str = getenv(SHM_ENV_VAR);
@@ -506,11 +468,10 @@ void init(int argc, char **argv)
         terminate();
     }
         
-    clean_irq_model_file();
+    irq_on_init();
     init_log();
     init_signal_handler();
     init_streams();
-    init_irq_model();
     __afl_map_shm();
 
 }
@@ -521,10 +482,7 @@ int run_config()
     struct XXSimulator *simulator;
     simulator = create_simulator(ARM_CORTEX_M,false);
     init_simulator(simulator);
-    if(config->vecbase)
-    {
-        set_armv7_vecbase(config->vecbase);
-    }
+    set_armv7_vecbase(config->vecbase);
         
     
 
@@ -561,20 +519,18 @@ int run_config()
 
     register_exec_bbl_hook(exec_bbl_snapshot);
     register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
-    register_mem_access_log_hook(mem_access_cb_func);
-
-    
+    register_mem_access_log_hook(mem_access_log_func);
+    register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
+    register_enable_arm_interrupt_hook(enable_arm_intc);
 
     model_all_infinite_loop();
+
+    irq_on_new_run();
     if(model_systick)
     {
         model_irq(ARMV7M_EXCP_SYSTICK);
     }
         
-    
-
-    
-    
 
     exec_simulator(simulator);
     return 1;

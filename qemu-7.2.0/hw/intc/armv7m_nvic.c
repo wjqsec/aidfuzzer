@@ -28,10 +28,14 @@
 #include "fuzzer.h"
 #include "xx.h"
 enable_nvic_cb enable_nvic_func;
-
+set_nvic_vecbase_cb set_nvic_vecbase_func;
 void xx_register_enable_nvic_hook(enable_nvic_cb cb)
 {
     enable_nvic_func = cb;
+}
+void xx_register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb)
+{
+    set_nvic_vecbase_func = cb;
 }
 /* IRQ number counting:
  *
@@ -1617,8 +1621,9 @@ static void nvic_writel(NVICState *s, uint32_t offset, uint32_t value,
         }
         break;
     case 0xd08: /* Vector Table Offset.  */
-        // printf("cpu->env.v7m.vecbase[attrs.secure]  %x %x\n",get_arm_precise_pc(),value);
         cpu->env.v7m.vecbase[attrs.secure] = value & 0xffffff80;
+        if(set_nvic_vecbase_func)
+            set_nvic_vecbase_func(cpu->env.v7m.vecbase[attrs.secure],attrs.secure);
         break;
     case 0xd0c: /* Application Interrupt/Reset Control (AIRCR) */
         if ((value >> R_V7M_AIRCR_VECTKEY_SHIFT) == 0x05fa) {

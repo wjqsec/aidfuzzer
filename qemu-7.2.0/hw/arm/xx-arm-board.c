@@ -38,6 +38,9 @@ void xx_set_armv7_vecbase(uint64_t vecbase)
 {
     xx_cpu->init_svtor = vecbase;
     xx_cpu->init_nsvtor = vecbase;
+
+    xx_env->v7m.vecbase[0] = vecbase;
+    xx_env->v7m.vecbase[1] = vecbase;
 }
 uint64_t xx_get_arm_precise_pc(void)
 {
@@ -47,7 +50,10 @@ uint64_t xx_get_arm_pc(void)
 {
     return xx_env->regs[15];
 }
-
+uint32_t xx_get_nvic_vecbase()
+{
+    return xx_env->v7m.vecbase[M_REG_NS];
+}
 bool xx_insert_nvic_intc(int irq)
 {
     if(xx_nvic->vectors[irq].enabled && !xx_nvic->vectors[irq].pending)
