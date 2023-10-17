@@ -57,7 +57,7 @@ static TCGv_i32 cpu_R[16];
 TCGv_i32 cpu_CF, cpu_NF, cpu_VF, cpu_ZF;
 TCGv_i64 cpu_exclusive_addr;
 TCGv_i64 cpu_exclusive_val;
-extern uint32_t precise_pc;
+
 #include "exec/gen-icount.h"
 
 static const char * const regnames[] =

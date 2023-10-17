@@ -28,7 +28,7 @@ char* dump_state(uint32_t mmio_id, const char * prefix, char *dir)
     int i;
     uint8_t *buf;
     char state_filename[PATH_MAX];
-    struct ARM_CPU_STATE state;
+    ARM_CPU_STATE state;
     struct ihex_state ihex;
 
     
@@ -149,9 +149,10 @@ void model_irq(int irq)
 
     // if(access(model_filename,F_OK) != 0)
     // {
-
+        uint32_t irq_entry;
+        read_ram(get_nvic_vecbase() + 4 * irq, 4,&irq_entry);
         state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir);
-        printf("pc:%x  ",(uint32_t)get_arm_pc());
+        printf("pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),irq_entry);
         sprintf(cmd,"python3 ../../dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s > /dev/null 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
         puts(cmd);
         system(cmd);

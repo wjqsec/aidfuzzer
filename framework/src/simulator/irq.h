@@ -62,6 +62,9 @@ struct IRQ_MODEL
     struct IRQ_GLOBAL_STATE global_state[NVIC_MAX_VECTORS];
     struct IRQ_RUNTIME_STATE runtime_state[NVIC_MAX_VECTORS];
 
+    int idel_times;
+
+
 }irq_model;
 
 void model_irq(int irq);
@@ -99,7 +102,10 @@ void irq_on_set_nvic_vec_entry(int irq)
 
     addr = get_nvic_vecbase() + 4 * irq;
     read_ram(addr,sizeof(value),&value);
-    simple_log(flog,false,"set nvic_vec_entry",irq,addr,value);
+
+
+    if(value == 0)
+        return;
     if(!find_value_32(irq_model.irq_values[irq].addrs,  irq_model.irq_values[irq].num_addrs, value))
     {
         irq_model.irq_values[irq].addrs[irq_model.irq_values[irq].num_addrs++] = value;
@@ -117,7 +123,7 @@ void irq_on_set_nvic_vec_entry(int irq)
 
 void irq_on_set_new_vecbase(uint32_t addr)
 {
-    simple_log(flog,false,"set new vecbase",addr,0,0);
+
     if(find_value_32(irq_model.irq_vecbases,irq_model.num_irq_vecbases,addr))
         return;
     irq_model.irq_vecbases[irq_model.num_irq_vecbases++] = addr;
@@ -145,7 +151,11 @@ void irq_on_mem_access(int irq,uint32_t addr)
             insert_irq = insert_nvic_intc(irq);
             irq_model.runtime_state[irq].mem_access_trigger_irq_times_count = 0;
             if(insert_irq) 
-                simple_log(flog,false,"insert_irq",irq,addr,0);
+            {
+                #ifdef DBG
+                fprintf(flog,"%d->insert mem access irq %d\n",run_index,irq);
+                #endif
+            }
         }
         
     }
@@ -192,22 +202,40 @@ void irq_on_enable_nvic_irq(int irq)
 }
 void irq_on_idel()
 {
-    // if(get_arm_v7m_is_handler_mode())
-    //     return;
-    bool insert_irq;
-    for(int i=0; i<irq_model.num_enabled_irqs; i++)
+    
+    if(get_arm_v7m_is_handler_mode())
+        return;
+    
+    if(irq_model.num_enabled_irqs == 0)
+        return;
+    int try_irq;
+    bool found_valid_irq = false;
+    for(int i = 0; i < irq_model.num_enabled_irqs; i++)
     {
-        if(!is_irq_ready(irq_model.enabled_irqs[i]) || !is_irq_access_memory(irq_model.enabled_irqs[i]) ||  get_arm_v7m_is_handler_mode() == irq_model.enabled_irqs[i])
-            continue;
-        insert_irq = insert_nvic_intc(irq_model.enabled_irqs[i]);
-        if(insert_irq)
-            simple_log(flog,false,"insert idel irq",irq_model.enabled_irqs[i],0,0);
+        try_irq = irq_model.enabled_irqs[irq_model.idel_times % irq_model.num_enabled_irqs];
+        irq_model.idel_times++;
+        if(is_irq_ready(try_irq) && is_irq_access_memory(try_irq))
+        {
+            found_valid_irq = true;
+            break;
+        }
     }
+    if(!found_valid_irq)
+        return;
+    bool insert_irq = insert_nvic_intc(try_irq);
+    if(insert_irq)
+    {
+        #ifdef DBG
+        fprintf(flog,"%d->insert idel irq %d\n",run_index,try_irq);
+        #endif
+    }
+    
 }
 void irq_on_new_run()
 {
     irq_on_set_new_vecbase(get_nvic_vecbase());
     clear_enabled_irq_runtime_state();
+    irq_model.idel_times = 0;
 }
 void irq_on_init()
 {

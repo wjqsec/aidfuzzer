@@ -29,11 +29,11 @@
 #include "xx.h"
 enable_nvic_cb enable_nvic_func;
 set_nvic_vecbase_cb set_nvic_vecbase_func;
-void xx_register_enable_nvic_hook(enable_nvic_cb cb)
+void register_enable_nvic_hook(enable_nvic_cb cb)
 {
     enable_nvic_func = cb;
 }
-void xx_register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb)
+void register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb)
 {
     set_nvic_vecbase_func = cb;
 }

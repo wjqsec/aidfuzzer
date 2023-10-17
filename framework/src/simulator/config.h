@@ -26,8 +26,8 @@ struct SEG
 {
     enum SEG_TYPE type;
     char *name;
-    hwaddr start;
-    hwaddr size;
+    hw_addr start;
+    hw_addr size;
     bool readonly;
     
     int num_content;
@@ -36,7 +36,7 @@ struct SEG
 
 struct SIMULATOR_CONFIG
 {
-    hwaddr vecbase;
+    hw_addr vecbase;
     struct SEG segs[MAX_NUM_MEM_REGION];
 };
 int run_config();

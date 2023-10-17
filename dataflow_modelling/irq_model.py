@@ -198,7 +198,8 @@ def mem_read_after(state):
     ist = is_accessing_nullptr(state, state.inspect.mem_read_address)
     if ist == None:
         return
-    
+    if state.solver.is_true(ist != 0):
+        return
     if state.inspect.mem_read_condition.is_true():
         nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[ist])
 
@@ -207,13 +208,18 @@ def mem_write_after(state):
     ist = is_accessing_nullptr(state, state.inspect.mem_write_address)
     if ist == None:
         return
+    if state.solver.is_true(ist != 0):
+        return
     if state.inspect.mem_write_condition.is_true():
         nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[ist])
 
 
 def call_before(state):
-    if state.inspect.function_address.get_bytes(0,4) in zero_symbolic_mem_data:
-        nullptr_func_check_mem.add(symbolic_mem_data_addr_mapping[state.inspect.function_address.get_bytes(0,4)])
+    read_bytes = state.inspect.function_address.get_bytes(0,4)
+    if state.solver.is_true(read_bytes != 0):
+        return
+    if read_bytes in zero_symbolic_mem_data:
+        nullptr_func_check_mem.add(symbolic_mem_data_addr_mapping[read_bytes])
 
 
 def mem_write_before(state):
@@ -310,7 +316,7 @@ def main():
             simgr.step(thumb=True)
             print(simgr.active)
             get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
-            if len(simgr.active) <= 1 and i >= 10:
+            if len(simgr.active) <= 1 and i >= 5:
                 break   
     except :
         print("error happends")

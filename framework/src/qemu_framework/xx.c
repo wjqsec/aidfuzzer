@@ -7,30 +7,27 @@
 #include "xx.h"
 
 void qemu_init(int,char**);
-bool main_loop_should_exit(int *status);
-void main_loop_wait(int nonblocking);
+
 pre_thread_exec_cb pre_thread_exec_func;
 post_thread_exec_cb post_thread_exec_func;
 
-struct XXSimulator *create_simulator(enum XX_CPU_TYPE cpu_type,bool dbg)
+XXSimulator *create_simulator(bool dbg)
 {
-    struct XXSimulator *ret = (struct XXSimulator *)malloc(sizeof(struct XXSimulator));
-    set_xx_cpu_type(cpu_type);
-    ret->cpu_type = cpu_type;
+    XXSimulator *ret = (XXSimulator *)malloc(sizeof(XXSimulator));
     ret->enable_gdb_dbg = dbg;
     return ret;
 }
 
-void xx_register_pre_thread_exec_hook(pre_thread_exec_cb cb)
+void register_pre_thread_exec_hook(pre_thread_exec_cb cb)
 {
     pre_thread_exec_func = cb;
 }
-void xx_register_post_thread_exec_hook(post_thread_exec_cb cb)
+void register_post_thread_exec_hook(post_thread_exec_cb cb)
 {
     post_thread_exec_func = cb;
 }
 
-void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int mem_offset, int file_size)
+void load_file_ram(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size)
 {
     FILE *fptr = fopen(filename,"rb");
     if(!fptr)
@@ -53,14 +50,14 @@ void xx_load_file_ram(char *filename,hwaddr addr, int file_offset, int mem_offse
     free(tmp);
     fclose(fptr);
 }
-void xx_zero_ram(hwaddr addr,hwaddr size)
+void zero_ram(hw_addr addr,hw_addr size)
 {
     char *tmp = (char *)malloc(size);
     memset(tmp,0,size);
     write_ram(addr,size,tmp);
     free(tmp);
 }
-void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
+void load_file_rom(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size)
 {
     printf("load_file_rom not support yes\n");
     // FILE *fptr = fopen(filename,"rb");
@@ -79,14 +76,14 @@ void xx_load_file_rom(char *filename,hwaddr addr, int file_offset, int size)
     // free(tmp);
     // fclose(fptr);
 }
-void exec_simulator(struct XXSimulator *s)
+void exec_simulator(XXSimulator *s)
 {
     while(1)
     {
         int status = 0;
         if(pre_thread_exec_func)
             pre_thread_exec_func();
-        int ret = xx_thread_loop(s->enable_gdb_dbg);
+        int ret = thread_loop(s->enable_gdb_dbg);
         if(post_thread_exec_func)
             post_thread_exec_func(ret);
         // if(!main_loop_should_exit(&status))
@@ -101,10 +98,10 @@ void exec_simulator(struct XXSimulator *s)
     }
     
 }
-void init_simulator(struct XXSimulator * s)
+void init_simulator(XXSimulator * s)
 {
     int argc = 0;
-    char* args_qemu[20];
+    char* args_qemu[30];
     args_qemu[argc++] = "qemu"; 
     args_qemu[argc++] = "-accel"; 
     args_qemu[argc++] = "xx"; 

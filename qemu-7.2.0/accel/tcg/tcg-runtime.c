@@ -36,19 +36,11 @@
 
 #include "xx.h"
 #include "fuzzer.h"
-extern int64_t bbl_counts;
 
-extern exec_bbl_cb exec_bbl_func;
-extern bool enable_nostop_watchpoint_flag;
-extern mem_access_cb mem_access_log_func;
-
-extern struct NOSTOP_WATCHPOINT **nostop_watchpoints;
-extern uint8_t *mem_has_watchpoints;
 
 extern CPUState *xx_cs;
 extern CPUARMState *xx_env;
 
-void xx_nostop_watchpoint_(uint32_t id,uint32_t addr,uint32_t val, uint32_t flag);
 void  HELPER(xx_bbl)(uint64_t pc,uint32_t id)
 {
 
@@ -73,9 +65,9 @@ void  HELPER(xx_specific_bbls)(uint64_t pc,uint32_t id,void *ptr)
 
 void  HELPER(xx_func)(uint64_t pc,uint32_t id,void *ptr)
 {
-    uint64_t return_val;
-    uint64_t return_addr;
-    return_addr =xx_env->regs[14] & 0xfffffffe;
+    reg_val return_val;
+    hw_addr return_addr;
+    return_addr = xx_env->regs[14] & 0xfffffffe;
     exec_func_cb cb = (exec_func_cb)ptr;
 
     cb(pc,&return_val);
@@ -84,12 +76,12 @@ void  HELPER(xx_func)(uint64_t pc,uint32_t id,void *ptr)
 
 	cpu_loop_exit(xx_cs);
 }
-
+void xx_nostop_watchpoint_(uint32_t addr,uint32_t val, uint32_t flag,uint32_t id);
 __attribute__((noinline)) void xx_nostop_watchpoint_(uint32_t addr,uint32_t val, uint32_t flag,uint32_t id)
 {
     int i;
     int index = 0;
-    struct NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_IRQ_PER_WATCHPOINT;
+    NOSTOP_WATCHPOINT **ptr = nostop_watchpoints + id * NUM_WATCHPOINT_PER_SLOT;
     for(i = 0; i < mem_has_watchpoints[id];)
     {
         if(likely(ptr[index]))
@@ -105,12 +97,10 @@ __attribute__((noinline)) void xx_nostop_watchpoint_(uint32_t addr,uint32_t val,
 }
 void HELPER(xx_nostop_watchpoint)(uint32_t addr,uint32_t val, uint32_t flag)
 {
-    // if(unlikely(!enable_nostop_watchpoint_flag))
-    //     return 1;
    
     register uint32_t id = hash_32(addr) % NUM_WATCHPOINT;
     if(likely(mem_has_watchpoints[id] == 0))
-        return ;
+        return;
     xx_nostop_watchpoint_(addr,val,flag,id);
     
 }

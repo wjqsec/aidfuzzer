@@ -181,6 +181,10 @@ inline input_stream* havoc_arith(FuzzState *state,input_stream* stream)
       break;
     }
     case 3:
+    {
+
+      break;
+    }
     case 4:
     {
       u32 pos = UR(len - 3) & 0xfffffffc;
@@ -241,6 +245,9 @@ inline input_stream* havoc_interesting_value(FuzzState *state,input_stream* stre
       break;
     }
     case 3:
+    {
+      break;
+    }
     case 4:
     {
       s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
@@ -339,6 +346,7 @@ inline input_stream* havoc_random(FuzzState *state,input_stream* stream)
   switch(stream->ptr->element_size)
   {
     case 1:
+    case 3:
     {
       data[UR(len)] = UR(0x100);
       break;
@@ -349,7 +357,7 @@ inline input_stream* havoc_random(FuzzState *state,input_stream* stream)
       *tmp = UR(0x10000);
       break;
     }
-    case 3:
+    
     case 4:
     {
       s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
@@ -370,6 +378,7 @@ inline input_stream* havoc_ascii(FuzzState *state,input_stream* stream)
   switch(stream->ptr->element_size)
   {
     case 1:
+    case 3:
     {
       data[UR(len)] = 0x20 + UR(0x7f - 0x20);
       break;
@@ -380,7 +389,7 @@ inline input_stream* havoc_ascii(FuzzState *state,input_stream* stream)
       *tmp = 0x20 + UR(0x7f - 0x20);
       break;
     }
-    case 3:
+    
     case 4:
     {
       s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
@@ -441,7 +450,8 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
 
   for (i = 0; i < use_stacking; i++) 
   {
-    ret = havoc_arrays[UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]))](state,ret);
+    int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
+    ret = havoc_arrays[index](state,ret);
   }
   return ret;
   

@@ -77,43 +77,42 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
   stream->ptr->element_size = DEFAULT_ELEMENT_SIZE;
   stream->ptr->left_shift = 0;
     
-    
-  for(auto it = state->models->begin() ; it != state->models->end() ; it++)
+  
+  if(state->models->find(stream->ptr->stream_id) != state->models->end())
   {
-    if(it->first == stream->ptr->stream_id)
+    input_model *model = (*state->models)[stream->ptr->stream_id];
+    stream->ptr->mode = model->mode;
+    if(stream->ptr->mode == MODEL_VALUE_SET)
     {
-      stream->ptr->mode = it->second->mode;
-      if(stream->ptr->mode == MODEL_VALUE_SET)
+      assert(model->values->size() && model->values->size() < MAX_VALUE_SET_SIZE);
+      stream->ptr->element_size = 1;
+      i = 0;
+      stream->ptr->value_set_size = model->values->size();
+      for(auto it2 = model->values->begin() ; it2 != model->values->end() ; it2++)
       {
-        assert(it->second->values->size() && it->second->values->size() < MAX_VALUE_SET_SIZE);
-        stream->ptr->element_size = 1;
-        i = 0;
-        stream->ptr->value_set_size = it->second->values->size();
-        for(auto it2 = it->second->values->begin() ; it2 != it->second->values->end() ; it2++)
-        {
-          stream->ptr->value_set[i++] = *it2;
-        }
-      }
-      if(stream->ptr->mode == MODEL_CONSTANT)
-      {
-        stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
-        *(u32*)stream->ptr->data = it->second->constant_val;
-      }
-      if(stream->ptr->mode == MODEL_PASSTHROUGH)
-      {
-        stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
-      }
-      if(stream->ptr->mode == MODEL_BIT_EXTRACT)
-      {
-        stream->ptr->left_shift = it->second->left_shift;
-        stream->ptr->element_size = it->second->size;
-      }
-      if(stream->ptr->mode == MODEL_NONE)
-      {
-        stream->ptr->left_shift = 0;
-        stream->ptr->element_size = it->second->access_size;
+        stream->ptr->value_set[i++] = *it2;
       }
     }
+    if(stream->ptr->mode == MODEL_CONSTANT)
+    {
+      stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
+      *(u32*)stream->ptr->data = model->constant_val;
+    }
+    if(stream->ptr->mode == MODEL_PASSTHROUGH)
+    {
+      stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
+    }
+    if(stream->ptr->mode == MODEL_BIT_EXTRACT)
+    {
+      stream->ptr->left_shift = model->left_shift;
+      stream->ptr->element_size = model->size;
+    }
+    if(stream->ptr->mode == MODEL_NONE)
+    {
+      stream->ptr->left_shift = 0;
+      stream->ptr->element_size = model->access_size;
+    }
+
   }
 
   stream->ptr->initial_len = stream->ptr->len;

@@ -1,6 +1,7 @@
 #ifndef FUZZER_INCLUDED
-
 #define FUZZER_INCLUDED
+
+
 #include <sys/time.h>
 #define SHM_ENV_VAR         "__AFL_SHM_ID"
 #define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
@@ -44,21 +45,35 @@ enum EXIT_REASON
 };
 
 
+static const char* fuzzer_exit_names[] = 
+{
+    "EXIT_STREAM_NOTFOUND",
+    "EXIT_OUTOF_STREAM",
+    "EXIT_TIMEOUT",
+    "EXIT_CRASH",
+    "EXIT_BKP",
+    "EXIT_UNKNOWN",
+    "EXIT_FORKSRV_UP",
+    "EXIT_TERMINATE",
+    "EXIT_MAX"
+};
+
 #define STREAM_STATUS_OK 0
 #define STREAM_STATUS_OUTOF 1
 
-#define DEFAULT_STREAM_LEN 0x30
+#define DEFAULT_STREAM_LEN 0x10
 #define DEFAULT_PASSTHROUGH_CONSTANT_LEN 0x10000
-#define DEFAULT_INCREASE_NOTENOUGH_STREAM_SIZE 0x50
 
 
-#define MAX_BBL_EXEC 1500000
+#define MAX_BBL_EXEC 10000000   //150000
 
 #define DEFAULT_ELEMENT_SIZE 4
 
 
 
 #define SHARE_FUZZDATA_SIZE 1 << 30
+#define SHARE_FUZZQUEUE_SIZE 10 << 20
+
 #define FUZZ_COVERAGE_SIZE (1 << 16)
 
 #define MODEL_VALUE_SET 0
@@ -176,6 +191,11 @@ inline static u64 get_cur_time(void) {
 
   return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
 
+}
+
+static const char* get_fuzz_exit_name(int exit_code)
+{
+    return fuzzer_exit_names[exit_code];
 }
 #endif
 

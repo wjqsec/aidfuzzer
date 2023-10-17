@@ -36,23 +36,24 @@
 #endif
 
 #include "xx.h"
+
 do_arm_interrupt_cb do_arm_interrupt_func;
 exec_nvic_cb exec_nvic_func;
 enable_arm_interrupt_cb enable_arm_interrupt_func;
 disable_arm_interrupt_cb disable_arm_interrupt_func;
-void xx_register_arm_do_interrupt_hook(do_arm_interrupt_cb cb)
+void register_do_arm_interrupt_hook(do_arm_interrupt_cb cb)
 {
     do_arm_interrupt_func = cb;
 }
-void xx_register_exec_nvic_hook(exec_nvic_cb cb)
+void register_exec_nvic_hook(exec_nvic_cb cb)
 {
     exec_nvic_func = cb;
 }
-void xx_register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb)
+void register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb)
 {
     enable_arm_interrupt_func = cb;
 }
-void xx_register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb)
+void register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb)
 {
     disable_arm_interrupt_func = cb;
 }

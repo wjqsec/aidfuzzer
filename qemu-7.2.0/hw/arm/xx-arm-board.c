@@ -14,7 +14,7 @@
 #include "hw/arm/boot.h"
 #include "sysemu/reset.h"
 #include "xx.h"
-extern int64_t bbl_counts;
+
 #define SYSCLK_FRQ 25000000
 #define REFCLK_FRQ (1 * 1000 * 1000)
 
@@ -26,35 +26,33 @@ struct NVICState *xx_nvic;
 CPUState *xx_cs;
 ARMCPU *xx_cpu;
 
+hw_addr precise_pc;
 
-struct ARM_NVIC_ALL_STATE
+typedef struct _ARM_NVIC_ALL_STATE
 {
     CPUARMState *env;
     struct NVICState *nvic;
-};
+}ARM_NVIC_ALL_STATE;
 
-uint32_t precise_pc;
-void xx_set_armv7_vecbase(uint64_t vecbase)
+
+void set_armv7_init_vecbase(hw_addr addr)
 {
-    xx_cpu->init_svtor = vecbase;
-    xx_cpu->init_nsvtor = vecbase;
-
-    xx_env->v7m.vecbase[0] = vecbase;
-    xx_env->v7m.vecbase[1] = vecbase;
+    xx_cpu->init_svtor = addr;
+    xx_cpu->init_nsvtor = addr;
 }
-uint64_t xx_get_arm_precise_pc(void)
+hw_addr get_arm_precise_pc(void)
 {
     return xx_cs->precise_pc;
 }
-uint64_t xx_get_arm_pc(void)
+hw_addr get_arm_pc(void)
 {
     return xx_env->regs[15];
 }
-uint32_t xx_get_nvic_vecbase()
+hw_addr get_nvic_vecbase(void)
 {
     return xx_env->v7m.vecbase[M_REG_NS];
 }
-bool xx_insert_nvic_intc(int irq)
+bool insert_nvic_intc(irq_val irq)
 {
     if(xx_nvic->vectors[irq].enabled && !xx_nvic->vectors[irq].pending)
     {
@@ -63,31 +61,24 @@ bool xx_insert_nvic_intc(int irq)
     }   
     return false;
 }
-int xx_get_arm_v7m_is_handler_mode(void)
+irq_val get_arm_v7m_is_handler_mode(void)
 {
     return xx_env->v7m.exception;
 }
-uint32_t* xx_get_enabled_nvic_irq2(uint16_t **irqs)
+
+irq_val get_enabled_nvic_irq(irq_val **irqs)
 {
     *irqs = xx_nvic->enabled_irqs;
-    return &xx_nvic->enabled_irqs_idx;
+    return xx_nvic->enabled_irqs_idx;
 
 }
 
-
-GArray* xx_get_enabled_nvic_irq(void)
+reg_val get_arm_lr(void)
 {
-    GArray* ret = g_array_new(FALSE, FALSE, sizeof(int));
-
-    for(int i= 15; i < NVIC_MAX_VECTORS; i ++)
-    {
-	    if(xx_nvic->vectors[i].enabled)
-		    g_array_append_val(ret, i);
-    }
-    return ret;
+    return xx_env->regs[14];
 }
 
-void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
+void get_arm_cpu_state(ARM_CPU_STATE *state)
 {
     int i;
     for(i = 0 ;i < 16 ; i++)
@@ -101,7 +92,7 @@ void xx_get_arm_cpu_state(struct ARM_CPU_STATE *state)
     
     state->xpsr = xpsr_read(xx_env);
 }
-void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
+void set_arm_cpu_state(ARM_CPU_STATE *state)
 {
     int i;
     for(i = 0 ;i < 16 ; i++)
@@ -113,13 +104,13 @@ void xx_set_arm_cpu_state(struct ARM_CPU_STATE *state)
         xx_env->xregs[i] = state->xregs[i];
     }
 }
-void xx_reset_arm_reg(void)
+void reset_arm_reg(void)
 {
     cpu_reset(CPU(ARM_CPU(first_cpu)));
 }
-void* xx_save_arm_ctx_state(void)
+void* save_arm_ctx_state(void)
 {
-    struct ARM_NVIC_ALL_STATE *ret = g_new0(struct ARM_NVIC_ALL_STATE,1);
+    ARM_NVIC_ALL_STATE *ret = g_new0(ARM_NVIC_ALL_STATE,1);
     CPUARMState *env_ret = g_new0(CPUARMState,1);
     struct NVICState *nvic_ret = g_new0(struct NVICState,1);
 
@@ -129,17 +120,16 @@ void* xx_save_arm_ctx_state(void)
     ret->nvic = nvic_ret;
     return ret;
 }
-void xx_restore_arm_ctx_state(void* state)
+void restore_arm_ctx_state(void* state)
 {
     bbl_counts = 1;
-    //qemu_devices_reset(SHUTDOWN_CAUSE_SNAPSHOT_LOAD);
-    struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
+    ARM_NVIC_ALL_STATE *ret = (ARM_NVIC_ALL_STATE *)state;
     memcpy(&xx_cpu->env,ret->env,offsetof(CPUARMState, end_reset_fields));
     memcpy(xx_cpu->env.nvic,ret->nvic,sizeof(struct NVICState));
 }
-void xx_delete_arm_ctx_state(void* state)
+void delete_arm_ctx_state(void* state)
 {
-    struct ARM_NVIC_ALL_STATE *ret = (struct ARM_NVIC_ALL_STATE *)state;
+    ARM_NVIC_ALL_STATE *ret = (ARM_NVIC_ALL_STATE *)state;
     g_free(ret->env);
     g_free(ret->nvic);
     g_free(ret);

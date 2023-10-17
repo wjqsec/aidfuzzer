@@ -5,7 +5,7 @@
 struct SNAPSHOT_MEM_SEG
 {
     uint8_t *data;
-    hwaddr start;
+    hw_addr start;
     uint32_t len;
 };
 struct ARMM_SNAPSHOT
@@ -64,14 +64,14 @@ static void arm_restore_snapshot(struct ARMM_SNAPSHOT* snap)
 static struct ARMM_SNAPSHOT *org_snap,*new_snap;
 
 
-hwaddr snapshot_point = 0;
-struct ARM_CPU_STATE state111;
-uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
+hw_addr snapshot_point = 0;
+ARM_CPU_STATE state111;
+uint64_t mmio_read_snapshot(void *opaque,hw_addr addr,unsigned size)
 {
     static bool found = false;
     if(!found)
     {
-        struct ARM_CPU_STATE state;
+        ARM_CPU_STATE state;
         get_arm_cpu_state(&state);
         snapshot_point = state.regs[15];
         found = true;
@@ -79,10 +79,10 @@ uint64_t mmio_read_snapshot(void *opaque,hwaddr addr,unsigned size)
     return 0;
     
 }
-void mmio_write_snapshot(void *opaque,hwaddr addr,uint64_t data,unsigned size){}
+void mmio_write_snapshot(void *opaque,hw_addr addr,uint64_t data,unsigned size){}
 
 
-bool exec_bbl_snapshot(hwaddr pc,uint32_t id)
+bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
 {
     int i;
     static bool returned = false;
@@ -90,16 +90,16 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id)
     if(snapshot_point == pc)
     {
         
-        register_post_thread_exec_hook(post_thread_exec);
+        
         register_exec_bbl_hook(arm_exec_bbl);
-        register_enable_nvic_hook(enable_nvic_hook);
+        
         for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
         {
             if(config->segs[i].size == 0)
                 break;
             if(config->segs[i].type != SEG_MMIO)
                 continue;
-            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_common, mmio_write_common,(void*)config->segs[i].start);
+            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_common, mmio_write_common,(void*)(uint64_t)config->segs[i].start);
         }
         new_snap = arm_take_snapshot();
 
@@ -115,7 +115,7 @@ bool exec_bbl_snapshot(hwaddr pc,uint32_t id)
         returned = true;
         return true;
     }
-    simple_log(flog,false,"snapshot bbl",0,0,0);
+
 
     __afl_area_ptr[id] ++;
     return false;

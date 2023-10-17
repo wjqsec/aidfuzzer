@@ -73,7 +73,11 @@ bool exit_with_code_start()
     int bytes_received;
     struct CMD_INFO cmd_info;
 
-    simple_log(flog,false,"may continue",exit_info.exit_code,0,0);
+    
+
+    #ifdef DBG
+    fprintf(flog,"%d->exit pc:%x %s\n",run_index,get_arm_pc(),get_fuzz_exit_name(exit_info.exit_code));
+    #endif
     write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
     do
     {
@@ -115,7 +119,7 @@ bool exit_with_code_start()
     }
     if(pc_changed)
     {
-        simple_log(flog,false,"exit",exit_info.exit_code,0,0);
+
         num_mmio = 0;
         nommio_executed_bbls = 0;
         run_index++;
@@ -141,14 +145,14 @@ void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio
 
 
 
-uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
+uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
 {
     uint64_t ret = 0;
     u32 stream_dumped = 1;
     if(next_bbl_should_exit)
         return ret;
 
-    addr = (hwaddr)opaque + addr;
+    addr = (hw_addr)opaque + addr;
     uint64_t precise_pc = get_arm_precise_pc();
     
     int stream_status;
@@ -177,7 +181,9 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
         if(!stream->avaliable)
         {
             printf("stream not added by fuzzer id:%x\n",stream_id);
-            terminate();
+            prepare_exit(EXIT_UNKNOWN,stream_id,precise_pc,num_mmio,stream_dumped,0);
+            next_bbl_should_exit = true;
+            return ret;
         }
     }
 
@@ -197,19 +203,20 @@ uint64_t mmio_read_common(void *opaque,hwaddr addr,unsigned size)
 
     }
 
-    simple_log(flog,true,"mmio_read",addr,ret,stream_id);
-
+    #ifdef DBG
+    fprintf(flog,"%d->mmio read pc:%x mmio_addr:%x mmio_value:%x\n",run_index,get_arm_precise_pc(),addr,(reg_val)ret);
+    #endif
     
     return ret;
 }
 
-void mmio_write_common(void *opaque,hwaddr addr,uint64_t data,unsigned size)
+void mmio_write_common(void *opaque,hw_addr addr,uint64_t data,unsigned size)
 {
     
 }
 
 
-bool arm_exec_bbl(hwaddr pc,uint32_t id)
+bool arm_exec_bbl(hw_addr pc,uint32_t id)
 {
     bool pc_changed = false;
     if(unlikely(next_bbl_should_exit))
@@ -238,9 +245,12 @@ bool arm_exec_bbl(hwaddr pc,uint32_t id)
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
     
+    #ifdef DBG
+    fprintf(flog,"%d->bbl pc:%x\n",run_index,pc);
+    #endif
     __afl_area_ptr[id] ++;
     nommio_executed_bbls++;
-    full_log(flog,"bbl",0,0,0);
+
     return pc_changed;
 }
 
@@ -254,23 +264,23 @@ void enable_arm_intc()
     irq_on_idel();
 }
 
-void nostop_watchpoint_exec_overwrite_vec(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
+void nostop_watchpoint_exec_overwrite_vec(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
 {
     int irq = (int)(uint64_t)data;
     irq_on_set_nvic_vec_entry(irq);
 }
-void nostop_watchpoint_exec_mem(hwaddr vaddr,hwaddr len,uint32_t val, void *data)
+void nostop_watchpoint_exec_mem(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
 {
     int irq = (int)(uint64_t)data;
     irq_on_mem_access(irq,vaddr);
 }
-void nostop_watchpoint_exec_unresolved_func_ptr(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
+void nostop_watchpoint_exec_unresolved_func_ptr(hw_addr vaddr,hw_addr len,uint32_t val,void *data)
 {
     int irq = (int)(uint64_t)data;
     irq_on_unsolved_func_ptr_write(irq, vaddr, val);
 
 }
-void nostop_watchpoint_exec_denpendency(hwaddr vaddr,hwaddr len,uint32_t val,void *data)
+void nostop_watchpoint_exec_denpendency(hw_addr vaddr,hw_addr len,uint32_t val,void *data)
 {
     int irq = (int)(uint64_t)data;
    irq_on_dependency_ptr_write(irq, vaddr, val);
@@ -282,20 +292,22 @@ void on_set_nvic_vecbase(uint32_t addr, int secure)
         return;
     irq_on_set_new_vecbase(addr);
 }
-void enable_nvic_hook(int irq)
+void enable_nvic(irq_val irq)
 {
     irq_on_enable_nvic_irq(irq);
 }
 
-bool arm_exec_loop_bbl(hwaddr pc,uint32_t id)
+bool arm_exec_loop_bbl(hw_addr pc,uint32_t id)
 {
     insert_idel_irq();
     return false;
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
-    
-    full_log(flog,"arm_cpu_do_interrupt_hook",exec_index,0,0);
+    #ifdef DBG
+    fprintf(flog,"%d->arm_cpu_do_interrupt pc:%x %s\n",run_index,get_arm_pc(),get_arm_intc_name(exec_index));
+    #endif
+
     if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP && exec_index != EXCP_BKPT)
     {
         return true;
@@ -306,10 +318,14 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
         exit_with_code_start();
         return false;
     }
-    struct ARM_CPU_STATE state;
-    get_arm_cpu_state(&state);
-    crash_log(f_crash_log,"crash",exec_index,0,0);
-    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0,state.regs[14]);
+
+    #ifdef CRASH_DBG
+    fprintf(f_crash_log,"%d->crash ",run_index);
+    append_full_ctx_string(f_crash_log);
+    fprintf(f_crash_log,"\n");
+    #endif
+
+    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0,get_arm_lr());
     exit_with_code_start();
     
     return false;
@@ -319,7 +335,10 @@ void post_thread_exec(int exec_ret)
     
     bool pc_changed;
 
-    simple_log(flog,false,"post_thread_exec",exec_ret,0,0);
+    #ifdef DBG
+    fprintf(flog,"%d->post_thread_exec pc:%x %s\n",run_index,get_arm_pc(),get_qemu_exit_name(exec_ret));
+    #endif
+
     if(exec_ret == EXCP_HLT || exec_ret == EXCP_HALTED)
         insert_idel_irq();
     else
@@ -329,9 +348,9 @@ void post_thread_exec(int exec_ret)
     }
 
 }
-void mem_access_log_func(hwaddr vaddr,uint32_t val,uint32_t flag)
+void mem_access_log(hw_addr vaddr,uint32_t val,uint32_t flag)
 {
-    simple_log(flog,true,"memory access",vaddr,val,flag);
+
 }
 
 //-----------------------------------------------------------
@@ -432,7 +451,7 @@ void init_log()
 void init(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:s")) != -1) 
+    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:sb:")) != -1) 
     {
         switch (opt) {
         case 'd':
@@ -457,6 +476,9 @@ void init(int argc, char **argv)
         case 's':
             model_systick = true;
             break;
+        case 'b':
+            max_bbl_exec = atoi(optarg);
+            break;
         default: /* '?' */
             printf("Usage error\n");
             terminate();
@@ -479,10 +501,10 @@ void init(int argc, char **argv)
 int run_config()
 {
     int i = 0;
-    struct XXSimulator *simulator;
-    simulator = create_simulator(ARM_CORTEX_M,false);
+    XXSimulator *simulator;
+    simulator = create_simulator(false);
     init_simulator(simulator);
-    set_armv7_vecbase(config->vecbase);
+    set_armv7_init_vecbase(config->vecbase);
         
     
 
@@ -509,7 +531,7 @@ int run_config()
         }
         else if(config->segs[i].type == SEG_MMIO)
         {
-            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)config->segs[i].start);
+            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)(uint64_t)config->segs[i].start);
         }
     }
 
@@ -518,17 +540,18 @@ int run_config()
     org_snap = arm_take_snapshot();
 
     register_exec_bbl_hook(exec_bbl_snapshot);
-    register_arm_do_interrupt_hook(arm_cpu_do_interrupt_hook);
-    register_mem_access_log_hook(mem_access_log_func);
+    register_do_arm_interrupt_hook(arm_cpu_do_interrupt_hook);
+    register_mem_access_log_hook(mem_access_log);
     register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
     register_enable_arm_interrupt_hook(enable_arm_intc);
-
+    register_enable_nvic_hook(enable_nvic);
+    register_post_thread_exec_hook(post_thread_exec);
     model_all_infinite_loop();
 
     irq_on_new_run();
     if(model_systick)
     {
-        model_irq(ARMV7M_EXCP_SYSTICK);
+        enable_nvic(ARMV7M_EXCP_SYSTICK);
     }
         
 

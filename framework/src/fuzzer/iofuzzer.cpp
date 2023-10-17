@@ -67,6 +67,8 @@ char *pool_file;
 char *simulator_bin;
 bool fresh_run;
 bool model_systick = false;
+bool use_fuzzware = true;
+int max_bbl_exec;
 int mode = -1;
 
 void kill_simulator(Simulator * simulator)
@@ -193,7 +195,7 @@ void allocate_new_simulator(FuzzState *state)
       fatal("shmat() failed");
   memset(simulator->trace_bits,0,simulator->map_size);
 
-  simulator->shm_id_fuzz_queue = shmget(IPC_PRIVATE, 0x1000, IPC_CREAT | IPC_EXCL | 0600);
+  simulator->shm_id_fuzz_queue = shmget(IPC_PRIVATE, SHARE_FUZZQUEUE_SIZE, IPC_CREAT | IPC_EXCL | 0600);
   if (simulator->shm_id_fuzz_queue < 0) 
       fatal("shmget() failed");
   sprintf(shm_str,"%d",simulator->shm_id_fuzz_queue);
@@ -237,6 +239,8 @@ void allocate_new_simulator(FuzzState *state)
   child_arg[i++] = alloc_printf("%d",start_fd + 1);
   child_arg[i++] = (char*)"-c";
   child_arg[i++] =  config;
+  child_arg[i++] = (char*)"-b";
+  child_arg[i++] =  alloc_printf("%d",max_bbl_exec);
   if(model_systick)
     child_arg[i++] = (char*)"-s";
 
@@ -481,13 +485,13 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     if(exit_info.exit_code == EXIT_STREAM_NOTFOUND)
     {
 
-      if(exit_info.stream_dumped == 0)
+      if(exit_info.stream_dumped == 0 && use_fuzzware)
       {
 
         run_modelling(state,simulator);
 
         sync_models(state,simulator);
-        // add_new_stream_for_all_queue(state,exit_info.exit_stream_id);
+
       }
 
       new_stream = allocate_enough_space_stream(state,exit_info.exit_stream_id, DEFAULT_STREAM_LEN);
@@ -596,7 +600,7 @@ inline void select_streams_2(queue_entry *q,set<input_stream*>* ret)
       if(stream_shouldnot_mutate(stream))
         continue;
       
-      if((it->second) > 100)
+      if((it->second) > 10)
       {
         ret->insert(stream);
       }
@@ -669,18 +673,19 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
 
   fuzz_entry = copy_queue(state,entry);
 
-  
+
   selected_streams = select_streams(entry);
-  
+
   for(auto it = selected_streams->begin(); it != selected_streams->end(); it++) 
   {
-      
+
     fuzz_stream = havoc(state,*it);
 
     replace_stream(state,fuzz_entry,(*it)->ptr->stream_id,fuzz_stream);
 
     
   }
+
   simulator = get_avaliable_simulator(state);  
   fuzz_one_post(state,simulator);
   simulator_task(simulator,fuzz_entry,entry,selected_streams);
@@ -755,7 +760,7 @@ void fuzz_runonce(FuzzState *state)
     fuzz_exit(simulator,&exit_info);
     simulator_classify_count(simulator);
     has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-  
+    show_stat(state);
   }
 }
 void fuzz_run_oneseed(FuzzState *state, char *pool_file, char *seed_file)
@@ -843,7 +848,7 @@ int main(int argc, char **argv)
   int cores;
   init_signal_handler();
   simulator_env_init();
-  while ((opt = getopt(argc, argv, "d:m:p:e:s:ft")) != -1) 
+  while ((opt = getopt(argc, argv, "d:m:p:e:s:ftnb:")) != -1) 
   {
       switch (opt) {
       case 'm':
@@ -872,7 +877,12 @@ int main(int argc, char **argv)
       case 't':
           model_systick = true;
           break;
-
+      case 'n':
+          use_fuzzware = false;
+          break;
+      case 'b':
+          max_bbl_exec = atoi(optarg);
+          break;
           
       default: /* '?' */
           printf("Usage error\n");

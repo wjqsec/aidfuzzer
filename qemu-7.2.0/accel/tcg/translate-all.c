@@ -755,17 +755,13 @@ void page_collection_unlock(struct page_collection *set)
  * Return the size of the generated code, or negative on error.
  */
 #include "xx.h"
-#include <glib.h>
-extern exec_bbl_cb exec_bbl_func;
-extern GArray* specific_bbl_hooks;
-extern GArray* func_hooks;
-extern translate_bbl_cb translate_bbl_func;
+#include "fuzzer.h"
 static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            target_ulong pc, void *host_pc,
                            int *max_insns, int64_t *ti)
 {  
     
-    uint64_t id = hash_32(pc) % FUZZ_COVERAGE_SIZE;
+    uint32_t id = hash_32(pc) % FUZZ_COVERAGE_SIZE;
    
     int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(ret != 0)) {
@@ -780,7 +776,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
         translate_bbl_func(pc,id);
     for (int i = 0; i < func_hooks->len; ++i) 
     {
-        struct Func_Hook *hook = g_array_index(func_hooks, struct Func_Hook *, i);
+        Func_Hook *hook = g_array_index(func_hooks, Func_Hook *, i);
         if(hook->addr == pc) 
         {
             TCGv_i64 arg0_pc = tcg_const_i64(pc);
@@ -799,7 +795,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     for (int i = 0; i < specific_bbl_hooks->len; ++i) 
     {
-        struct BBL_Hook *hook = g_array_index(specific_bbl_hooks, struct BBL_Hook *, i);
+        BBL_Hook *hook = g_array_index(specific_bbl_hooks, BBL_Hook *, i);
         if(hook->addr == pc) 
         {
             TCGv_i64 arg0_pc = tcg_const_i64(pc);
