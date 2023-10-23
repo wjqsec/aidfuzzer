@@ -4,9 +4,38 @@
 #include "afl_utl.h"
 #include <string.h>
 #include <unistd.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
 #include "mis_utl.h"
+#include <vector>
+#include <set>
+#include <map>
+#include <poll.h>
+#include <sched.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <linux/limits.h>
+#include <sys/types.h>
+#include <string.h>
+#include <algorithm>         /* Definition of AT_* constants */
+#include <random>
+#include <sys/syscall.h>      /* Definition of SYS_* constants */
+#include <dirent.h>
+#include <sys/time.h>
+#include <sys/shm.h>
+#include <fcntl.h>              /* Definition of O_* constants */
+#include <sys/stat.h>
+#include <execinfo.h>
+#include <stdarg.h>
+#include <signal.h>
+#include <assert.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <stdio.h>
 
-
+#include "model.h"
 void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<input_stream*> *fuzz_streams)
 {
   simulator->fuzz_entry = fuzz_entry;
@@ -124,7 +153,7 @@ void wait_forkserver_terminate(Simulator * simulator)
     fuzz_exit_timeout(simulator,&exit_info,5,&timeout);
     if(timeout)
       break;
-    else if(exit_info.exit_code == EXIT_TERMINATE)
+    else if(exit_info.exit_code == EXIT_CTL_TERMINATE)
       break;
   }
 }
@@ -172,4 +201,147 @@ void simulator_classify_count(Simulator * simulator)
 void simulator_env_init(void)
 {
   init_count_class16();
+}
+void clean_simualtor_shm(Simulator * simulator)
+{
+
+  shmdt(simulator->trace_bits);
+  shmdt(simulator->shared_fuzz_queue_data);
+
+  shmctl(simulator->shm_id_trace_bit, IPC_RMID, 0);
+  shmctl(simulator->shm_id_fuzz_queue, IPC_RMID, 0);
+}
+void kill_simulator(Simulator * simulator)
+{
+  int status;
+  kill(simulator->pid,SIGKILL);
+  waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
+  printf("simualtor pid:%d terminate\n",simulator->pid);
+  simulator->status = STATUS_KILLED;
+}
+
+void cleanup_simulator(FuzzState *state,int pid)
+{
+  int status;
+  for(Simulator * simulator : (*state->simulators))
+  {
+    if(simulator->pid != pid)
+      continue;
+    kill_simulator(simulator);
+    clean_simualtor_shm(simulator);
+  }
+}
+void allocate_new_simulator(FuzzState *state)
+{
+  static int start_fd = 100;
+  static int cpu = 0;
+  int status;
+  int i;
+  pid_t pid;
+  int st_pipe[2], ctl_pipe[2];
+  char shm_str[PATH_MAX];
+  EXIT_INFO exit_info;
+
+  Simulator *simulator = new Simulator();
+  simulator->state = state;
+  simulator->map_size = state->map_size;
+  simulator->status = STATUS_FREE;
+  simulator->id_queue_idx_mapping = new map<u32,int>();
+
+  simulator->shm_id_trace_bit = shmget(IPC_PRIVATE, simulator->map_size, IPC_CREAT | IPC_EXCL | 0600);
+  if (simulator->shm_id_trace_bit < 0) 
+      fatal("shmget() failed");
+  sprintf(shm_str,"%d",simulator->shm_id_trace_bit);
+  setenv(SHM_ENV_VAR, shm_str, 1);
+  simulator->trace_bits = (u8*)shmat(simulator->shm_id_trace_bit, NULL, 0);
+  if (simulator->trace_bits == (void *)-1) 
+      fatal("shmat() failed");
+  memset(simulator->trace_bits,0,simulator->map_size);
+
+  simulator->shm_id_fuzz_queue = shmget(IPC_PRIVATE, SHARE_FUZZQUEUE_SIZE, IPC_CREAT | IPC_EXCL | 0600);
+  if (simulator->shm_id_fuzz_queue < 0) 
+      fatal("shmget() failed");
+  sprintf(shm_str,"%d",simulator->shm_id_fuzz_queue);
+  setenv(SHM_SHARE_FUZZ_QUEUE_VAR, shm_str, 1);
+  simulator->shared_fuzz_queue_data = (u8*)shmat(simulator->shm_id_fuzz_queue, NULL, 0);
+  if (simulator->shared_fuzz_queue_data == (void *)-1) 
+      fatal("shmat() failed");
+
+  if (pipe(st_pipe) || pipe(ctl_pipe)) fatal("pipe() failed");
+  if (dup2(ctl_pipe[0], start_fd) < 0) fatal("dup2() failed");
+  if (dup2(st_pipe[1], start_fd + 1) < 0) fatal("dup2() failed");
+
+  
+  simulator->fd_ctl_to_simulator = ctl_pipe[1];
+  simulator->fd_ctl_from_simulator = st_pipe[0];
+
+  state->fds[state->num_fds].fd = simulator->fd_ctl_from_simulator;
+  state->fds[state->num_fds].events = POLLIN;
+  state->fds[state->num_fds].revents = 0;
+  
+	char *child_arg[1000];
+  i = 0;
+  child_arg[i++] = simulator_bin;
+
+  simulator->simulator_dump_dir = alloc_printf("%s/simulator_%d",dump_dir,cpu);
+  simulator->simulator_model_dir =  alloc_printf("%s/simulator_%d",model_dir,cpu);
+  simulator->simulator_log_dir = alloc_printf("%s/simulator_%d",log_dir,cpu);
+  mkdir(simulator->simulator_dump_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(simulator->simulator_model_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(simulator->simulator_log_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+
+  child_arg[i++] = (char*)"-d";
+  child_arg[i++] =  simulator->simulator_dump_dir;
+  child_arg[i++] = (char*)"-m";
+  child_arg[i++] = simulator->simulator_model_dir;
+  child_arg[i++] = (char*)"-l";
+  child_arg[i++] = simulator->simulator_log_dir;
+  child_arg[i++] = (char*)"-f";
+  child_arg[i++] = alloc_printf("%d",start_fd);
+  child_arg[i++] = (char*)"-t";
+  child_arg[i++] = alloc_printf("%d",start_fd + 1);
+  child_arg[i++] = (char*)"-c";
+  child_arg[i++] =  config;
+  child_arg[i++] = (char*)"-b";
+  child_arg[i++] =  alloc_printf("%d",max_bbl_exec);
+  child_arg[i++] = (char*)"-a";
+  child_arg[i++] =  alloc_printf("%d",mode);
+  if(model_systick)
+    child_arg[i++] = (char*)"-s";
+
+  child_arg[i++] = NULL;
+
+  pid = fork();
+	if (pid < 0) fatal("fork error\n");
+	else if(!pid)
+	{
+
+		execv(child_arg[0],child_arg);
+	}
+  simulator->pid = pid;
+  simulator->cpu = cpu;
+  simulator->status = STATUS_FREE;
+
+  state->simulators->push_back(simulator);
+
+  printf("pid:%d wait for fork server\n",simulator->pid);
+      
+
+  fuzz_exit(simulator,&exit_info);
+
+  if(exit_info.exit_code != EXIT_CTL_FORKSRV_UP)
+  {
+    printf("fork server is not up\n");
+    cleanup_simulator(state,pid);
+    clean_fuzzer_shm(state);
+    exit(0);
+  }
+  printf("pid:%d fork server is up\n",simulator->pid);
+  simulator_classify_count(simulator);
+  has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  sync_models(state,simulator);
+  
+  start_fd += 2;
+  cpu++;
+  state->num_fds++;
 }

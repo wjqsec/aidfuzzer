@@ -11,7 +11,8 @@
 #include <glib.h>
 #include <string.h>
 #include "xx.h"
-#include "config.h"
+#include "fuzzer.h"
+#include "simulator.h"
 
 
 int main(int argc, char **argv)

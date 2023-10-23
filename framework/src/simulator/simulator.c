@@ -14,23 +14,29 @@
 #include <kk_ihex_write.h>
 #include <sys/time.h>
 #include <execinfo.h>
+
 #include "xx.h"
-#include "config.h"
 #include "fuzzer.h"
+#include "config.h"
+#include "irq.h"
+#include "model.h"
+#include "snapshot.h"
+#include "stream.h"
+#include "log.h"
 #include "simulator.h"
 
 //#define DBG
 #define CRASH_DBG
 
 
+int mode;
 
-struct SIMULATOR_CONFIG* config;
+SIMULATOR_CONFIG* config;
 
 
 
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
-
 uint8_t *__afl_area_ptr;
 // uint32_t __afl_prev_loc;
 
@@ -42,12 +48,11 @@ FILE *f_crash_log;
 
 
 uint64_t nommio_executed_bbls;
-uint64_t max_bbl_exec = MAX_BBL_EXEC;
+uint64_t max_bbl_exec;
 
 
-struct EXIT_INFO exit_info;
+EXIT_INFO exit_info;
 bool next_bbl_should_exit = false;
-uint32_t num_mmio;
 
 
 uint32_t run_index;
@@ -57,13 +62,11 @@ char *model_dir;
 char *log_dir;
 char *fuzzware_config_filename;
 
-#include "utl.h"
-#include "log.h"
-#include "irq.h"
-#include "model.h"
-#include "snapshot.h"
-#include "stream.h"
+bool model_systick = true;
 
+
+
+extern ARMM_SNAPSHOT *org_snap,*new_snap;
 
 
 
@@ -71,20 +74,21 @@ bool exit_with_code_start()
 {
     bool pc_changed;
     int bytes_received;
-    struct CMD_INFO cmd_info;
+    CMD_INFO cmd_info;
 
     
 
     #ifdef DBG
     fprintf(flog,"%d->exit pc:%x %s\n",run_index,get_arm_pc(),get_fuzz_exit_name(exit_info.exit_code));
     #endif
-    write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));   
+
+    write(fd_to_fuzzer , &exit_info,sizeof(EXIT_INFO));   
     do
     {
 
-        bytes_received  = read(fd_from_fuzzer,&cmd_info,sizeof(struct CMD_INFO)); 
+        bytes_received  = read(fd_from_fuzzer,&cmd_info,sizeof(CMD_INFO)); 
 
-    } while (bytes_received != sizeof(struct CMD_INFO));
+    } while (bytes_received != sizeof(CMD_INFO));
     
 
     
@@ -120,7 +124,7 @@ bool exit_with_code_start()
     if(pc_changed)
     {
 
-        num_mmio = 0;
+        exit_info.num_mmio = 0;
         nommio_executed_bbls = 0;
         run_index++;
         irq_on_new_run();
@@ -131,15 +135,15 @@ bool exit_with_code_start()
      
 }
 
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint32_t num_mmio,u32 stream_dumped,uint64_t lr)
+void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,u32 stream_dumped,uint64_t lr,u32 mmio_len)
 {
     
     exit_info.exit_code = code;
     exit_info.exit_stream_id = stream_id;
     exit_info.stream_dumped = stream_dumped;
     exit_info.exit_pc = pc;
-    exit_info.num_mmio = num_mmio;
     exit_info.exit_lr = lr;
+    exit_info.mmio_len = mmio_len;
 }
 
 
@@ -159,32 +163,40 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
     bool pc_changed;
 
     uint32_t stream_id = hash_32_ext(addr) ^ hash_32_ext(precise_pc) ;
-    uint32_t index = stream_id % NUM_QUEUE_STREAMS;
-    struct SHARED_STREAM * stream =  streams[index];
+    
+    SHARED_STREAM * stream =  get_stream(stream_id);
 
 
     if(!stream->avaliable)
     {
-        
-        if(!stream->dumped)
+        if(mode == MODE_FUZZ)
         {
-            stream_dumped = 0;
-            dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir);
-            stream->dumped = true;
-            
+            if(!stream->dumped)
+            {
+                stream_dumped = 0;
+                dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir);
+                stream->dumped = true;
+                
+            }
+
+            prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,stream_id,precise_pc,stream_dumped,0,size);
+
+            exit_with_code_start();
+
+            if(!stream->avaliable)
+            {
+                printf("stream not added by fuzzer id:%x\n",stream_id);
+                exit(0);
+                return ret;
+            }
         }
-
-        prepare_exit(EXIT_STREAM_NOTFOUND,stream_id,precise_pc,num_mmio,stream_dumped,0);
-
-        exit_with_code_start();
-
-        if(!stream->avaliable)
+        else
         {
-            printf("stream not added by fuzzer id:%x\n",stream_id);
-            prepare_exit(EXIT_UNKNOWN,stream_id,precise_pc,num_mmio,stream_dumped,0);
+            prepare_exit(EXIT_DBG_STREAM_NOTFOUND,stream_id,precise_pc,stream_dumped,0,size);
             next_bbl_should_exit = true;
             return ret;
         }
+        
     }
 
     stream_status = get_stream_status(stream);
@@ -195,7 +207,7 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
     }
     else if(stream_status == STREAM_STATUS_OUTOF)
     {
-        prepare_exit(EXIT_OUTOF_STREAM,stream_id,precise_pc,num_mmio,stream_dumped,0);
+        prepare_exit(EXIT_FUZZ_OUTOF_STREAM,stream_id,precise_pc,stream_dumped,0,0);
         next_bbl_should_exit = true;
     }
     else
@@ -228,7 +240,7 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
 
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
-        prepare_exit(EXIT_TIMEOUT,0,pc,num_mmio,0,0);
+        prepare_exit(EXIT_FUZZ_TIMEOUT,0,pc,0,0,0);
         pc_changed = exit_with_code_start();
         return pc_changed;
     }
@@ -305,7 +317,9 @@ bool arm_exec_loop_bbl(hw_addr pc,uint32_t id)
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
 {  
     #ifdef DBG
-    fprintf(flog,"%d->arm_cpu_do_interrupt pc:%x %s\n",run_index,get_arm_pc(),get_arm_intc_name(exec_index));
+    fprintf(flog,"%d->arm_cpu_do_interrupt pc:%x %s  ",run_index,get_arm_pc(),get_arm_intc_name(exec_index));
+    append_full_ctx_string(flog);
+    fprintf(flog,"\n");
     #endif
 
     if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP && exec_index != EXCP_BKPT)
@@ -314,7 +328,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     }
     if(exec_index == EXCP_BKPT)
     {
-        prepare_exit(EXIT_BKP,0,get_arm_pc(),num_mmio,0,0);
+        prepare_exit(EXIT_FUZZ_BKP,0,get_arm_pc(),0,0,0);
         exit_with_code_start();
         return false;
     }
@@ -325,7 +339,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     fprintf(f_crash_log,"\n");
     #endif
 
-    prepare_exit(EXIT_CRASH,0,get_arm_pc(),num_mmio,0,get_arm_lr());
+    prepare_exit(EXIT_FUZZ_CRASH,0,get_arm_pc(),0,get_arm_lr(),0);
     exit_with_code_start();
     
     return false;
@@ -341,9 +355,24 @@ void post_thread_exec(int exec_ret)
 
     if(exec_ret == EXCP_HLT || exec_ret == EXCP_HALTED)
         insert_idel_irq();
-    else
+    else if(exec_ret == EXCP_INTERRUPT)
     {
-        prepare_exit(EXIT_UNKNOWN,0,get_arm_pc(),num_mmio,0,0);
+        prepare_exit(EXIT_FUZZ_EXCP_INTERRUPT,0,get_arm_pc(),0,0,0);
+        pc_changed = exit_with_code_start();
+    }
+    else if(exec_ret == EXCP_DEBUG)
+    {
+        prepare_exit(EXIT_FUZZ_EXCP_DEBUG,0,get_arm_pc(),0,0,0);
+        pc_changed = exit_with_code_start();
+    }
+    else if(exec_ret == EXCP_YIELD)
+    {
+        prepare_exit(EXIT_FUZZ_EXCP_YIELD,0,get_arm_pc(),0,0,0);
+        pc_changed = exit_with_code_start();
+    }
+    else if(exec_ret == EXCP_ATOMIC)
+    {
+        prepare_exit(EXIT_FUZZ_EXCP_ATOMIC,0,get_arm_pc(),0,0,0);
         pc_changed = exit_with_code_start();
     }
 
@@ -377,7 +406,8 @@ void __afl_map_shm(void) {
     if (__afl_share_fuzz_queue_data == (void *)-1) _exit(1);
     }
 
-    queue = (struct fuzz_queue *)__afl_share_fuzz_queue_data;
+    set_queue_addr(__afl_share_fuzz_queue_data);
+
 }
 
 void print_stacktrace()
@@ -397,8 +427,8 @@ void cleanup()
 void terminate()
 {
     cleanup();
-    prepare_exit(EXIT_TERMINATE,0,0,0,0,0);
-    write(fd_to_fuzzer , &exit_info,sizeof(struct EXIT_INFO));  //forkserver up
+    prepare_exit(EXIT_CTL_TERMINATE,0,0,0,0,0);
+    write(fd_to_fuzzer , &exit_info,sizeof(EXIT_INFO));  //forkserver up
     while (1)
     {
         ;
@@ -451,7 +481,7 @@ void init_log()
 void init(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:sb:")) != -1) 
+    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:sb:a:")) != -1) 
     {
         switch (opt) {
         case 'd':
@@ -478,6 +508,9 @@ void init(int argc, char **argv)
             break;
         case 'b':
             max_bbl_exec = atoi(optarg);
+            break;
+        case 'a':
+            mode = atoi(optarg);
             break;
         default: /* '?' */
             printf("Usage error\n");
@@ -522,11 +555,11 @@ int run_config()
             zero_ram(config->segs[i].start,config->segs[i].size);
             for(int j = 0 ; j <= config->segs[i].num_content ; j++)
             {
-                load_file_ram(config->segs[i].content[j].file,
+                load_file_ram(config->segs[i].contents[j].file,
                 config->segs[i].start, 
-                config->segs[i].content[j].file_offset, 
-                config->segs[i].content[j].mem_offset, 
-                config->segs[i].content[j].file_size);
+                config->segs[i].contents[j].file_offset, 
+                config->segs[i].contents[j].mem_offset, 
+                config->segs[i].contents[j].file_size);
             }
         }
         else if(config->segs[i].type == SEG_MMIO)

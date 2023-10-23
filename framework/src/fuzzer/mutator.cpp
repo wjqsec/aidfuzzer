@@ -103,30 +103,6 @@ static void locate_diffs(u8* ptr1, u8* ptr2, u32 len, s32* first, s32* last) {
 
 
 
-input_stream* increase_stream(FuzzState *state,input_stream* stream)
-{
-
-  s32 incease_len;
-  input_stream* ret;
-  s32 len = stream->ptr->len;
-  if (len + HAVOC_BLK_XXL < MAX_FILE) 
-  {
-    incease_len = choose_block_len(HAVOC_BLK_XXL,stream->ptr->element_size);
-  }
-  else
-    incease_len = 0;
-  
-  ret =  extend_stream(state,stream, incease_len);
-
-  return ret;
-  
-}
-
-
-
-
-
-
 inline input_stream* havoc_flip_bit(FuzzState *state,input_stream* stream)
 {
   u8 *data = stream->ptr->data;
@@ -425,6 +401,40 @@ inline input_stream* havoc_splicing_copy(FuzzState *state,input_stream* stream)
                 UR(2) ? UR(256) : data[UR(len)], copy_len);
   return stream;      
 }
+inline input_stream* havoc_state_value(FuzzState *state,input_stream* stream)
+{
+  u8 *data = stream->ptr->data;
+  s32 len = stream->ptr->len;
+  switch(stream->ptr->element_size)
+  {
+    case 1:
+    case 3:
+    {
+      data[UR(len)] = UR(5);
+      break;
+    }
+    case 2:
+    {
+      s16* tmp = (s16*)(data + (UR(len - 1) & 0xfffffffe));
+      *tmp = UR(5);
+      break;
+    }
+    
+    case 4:
+    {
+      s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
+      *tmp = UR(5);
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+  return stream;
+}
+
+
 
 typedef input_stream* (*havoc_fuc) (FuzzState *state,input_stream* stream);
 
@@ -435,7 +445,8 @@ static havoc_fuc havoc_arrays[] = { havoc_flip_bit,
                                     havoc_revert,
                                     havoc_random,
                                     havoc_ascii,
-                                    havoc_splicing_copy};
+                                    havoc_splicing_copy,
+                                    havoc_state_value};
 
 input_stream* havoc(FuzzState *state,input_stream* stream)
 {

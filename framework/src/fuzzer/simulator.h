@@ -15,4 +15,6 @@ void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream);
 void simulator_env_init(void);
 void simulator_classify_count(Simulator * simulator);
 void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<input_stream*> *fuzz_streams);
+void cleanup_simulator(FuzzState *state,int pid);
+void allocate_new_simulator(FuzzState *state);
 #endif

@@ -3,6 +3,7 @@
 #define XX_ARM_M_INCLUDED
 #include <stdint.h>
 #include <glib.h>
+#include <stdbool.h>
 typedef uint32_t hw_addr;
 typedef uint32_t reg_val;
 typedef uint64_t xreg_val;
@@ -10,6 +11,8 @@ typedef uint16_t irq_val;
 typedef uint32_t bbl_id;
 
 typedef uint64_t mmio_val;
+
+#define NVIC_MAX_VECTORS 512
 
 #define EXCP_UDEF            1   /* undefined instruction */
 #define EXCP_SWI             2   /* software interrupt */

@@ -5,13 +5,12 @@
 #include <vector>
 #include <set>
 #include <poll.h>
+#include <linux/limits.h>
 using namespace std;
 #include "fuzzer.h"
 
 
-#define MODE_FUZZ 1
-#define MODE_DEBUG 2
-#define MODE_RUN 3
+
 
 
 struct input_stream
@@ -138,4 +137,35 @@ struct FuzzState
 bool fuzz_one_post(FuzzState *state,Simulator *simulator);
 void show_stat(FuzzState *state);
 void save_coverage(FuzzState *state);
+void clean_fuzzer_shm(FuzzState *state);
+
+
+
+extern bool terminate_next;
+
+extern char *project_dir;
+extern char  in_dir[PATH_MAX];
+extern char  out_dir[PATH_MAX];
+
+extern char  queue_dir[PATH_MAX];
+extern char  crash_dir[PATH_MAX];
+
+extern char  log_dir[PATH_MAX];
+
+extern char  config[PATH_MAX];
+
+extern char  dump_dir[PATH_MAX];
+extern char  dump_backup_dir[PATH_MAX];
+extern char  model_dir[PATH_MAX];
+extern char  model_file[PATH_MAX];
+extern char  coverage_file[PATH_MAX];
+
+extern char *seed_file;
+extern char *pool_file;
+extern char *simulator_bin;
+extern bool fresh_run;
+extern bool model_systick;
+extern bool use_fuzzware;
+extern int max_bbl_exec;
+extern int mode;
 #endif

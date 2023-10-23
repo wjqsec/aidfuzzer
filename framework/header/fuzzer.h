@@ -3,11 +3,7 @@
 
 
 #include <sys/time.h>
-#define SHM_ENV_VAR         "__AFL_SHM_ID"
-#define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
-#define SHM_SHARE_IRQ_VAR         "__AFL_IRQ_SHARE"
-#define SHM_SHARE_UNDISCOVER_STREAM_VAR         "__AFL_UNDISCOVER_STREAM_SHARE"
-#define SHM_SHARE_FUZZ_QUEUE_VAR "__AFL_QUEUE_SHARE"
+#include <stdint.h>
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -28,63 +24,28 @@ typedef int64_t  s64;
 #endif
 
 
-
-// #define STREAM_MAGIC_CHECK
-
-enum EXIT_REASON 
-{
-    EXIT_STREAM_NOTFOUND = 0,
-    EXIT_OUTOF_STREAM,
-    EXIT_TIMEOUT,
-    EXIT_CRASH,
-    EXIT_BKP,
-    EXIT_UNKNOWN,
-    EXIT_FORKSRV_UP,
-    EXIT_TERMINATE,
-    EXIT_MAX,
-};
+#define SHM_ENV_VAR         "__AFL_SHM_ID"
+#define SHM_SHARE_STREAM_VAR         "__AFL_STREAM_SHARE"
+#define SHM_SHARE_FUZZ_QUEUE_VAR "__AFL_QUEUE_SHARE"
 
 
-static const char* fuzzer_exit_names[] = 
-{
-    "EXIT_STREAM_NOTFOUND",
-    "EXIT_OUTOF_STREAM",
-    "EXIT_TIMEOUT",
-    "EXIT_CRASH",
-    "EXIT_BKP",
-    "EXIT_UNKNOWN",
-    "EXIT_FORKSRV_UP",
-    "EXIT_TERMINATE",
-    "EXIT_MAX"
-};
-
-#define STREAM_STATUS_OK 0
-#define STREAM_STATUS_OUTOF 1
 
 #define DEFAULT_STREAM_LEN 0x10
 #define DEFAULT_PASSTHROUGH_CONSTANT_LEN 0x10000
-
-
-#define MAX_BBL_EXEC 10000000   //150000
-
 #define DEFAULT_ELEMENT_SIZE 4
 
 
+#define MAX_BBL_EXEC 150000
 
+
+
+#define ROUNDROBIN_IRQ_BBLS 0x100
+
+#define NUM_QUEUE_STREAMS 0x1000000
 #define SHARE_FUZZDATA_SIZE 1 << 30
 #define SHARE_FUZZQUEUE_SIZE 10 << 20
-
 #define FUZZ_COVERAGE_SIZE (1 << 16)
 
-#define MODEL_VALUE_SET 0
-#define MODEL_BIT_EXTRACT 1
-#define MODEL_CONSTANT 2
-#define MODEL_PASSTHROUGH 3
-#define MODEL_NONE 4
-
-
-
-#define NVIC_MAX_VECTORS 512
 
 #define MMIO_STATE_PREFIX "state_mmio_"
 #define IRQ_STATE_PREFIX "state_irq_"
@@ -97,31 +58,93 @@ static const char* fuzzer_exit_names[] =
 #define STREAM_POOL_FILENAME "pool.bin"
 #define FREED_STREAMS_FILENAME "freed_streams"
 
-//#define ENABLE_ROUNDROBIN_IRQ
-#define ROUNDROBIN_IRQ_BBLS 0x100
+
+typedef enum _MODEL
+{
+    MODE_FUZZ = 1,
+    MODE_DEBUG,
+    MODE_RUN,
+}MODEL;
 
 
+// #define STREAM_MAGIC_CHECK
+
+typedef enum _EXIT_REASON 
+{
+    EXIT_FUZZ_STREAM_NOTFOUND = 0,
+    EXIT_FUZZ_OUTOF_STREAM,
+    EXIT_FUZZ_TIMEOUT,
+    EXIT_FUZZ_CRASH,
+    EXIT_FUZZ_BKP,
+    EXIT_FUZZ_EXCP_DEBUG,
+    EXIT_FUZZ_EXCP_INTERRUPT,
+    EXIT_FUZZ_EXCP_YIELD,
+    EXIT_FUZZ_EXCP_ATOMIC,
+    EXIT_DBG_STREAM_NOTFOUND,
+    EXIT_CTL_FORKSRV_UP,
+    EXIT_CTL_TERMINATE,
+    EXIT_MAX,
+}EXIT_REASON;
 
 
-#define NUM_QUEUE_STREAMS 0x1000000
+static const char* fuzzer_exit_names[] = 
+{
+    "EXIT_FUZZ_STREAM_NOTFOUND",
+    "EXIT_FUZZ_OUTOF_STREAM",
+    "EXIT_FUZZ_TIMEOUT",
+    "EXIT_FUZZ_CRASH",
+    "EXIT_FUZZ_BKP",
+    "EXIT_FUZZ_EXCP_DEBUG",
+    "EXIT_FUZZ_EXCP_INTERRUPT",
+    "EXIT_FUZZ_EXCP_YIELD",
+    "EXIT_FUZZ_EXCP_ATOMIC",
+    "EXIT_DBG_STREAM_NOTFOUND",
+    "EXIT_CTL_FORKSRV_UP",
+    "EXIT_CTL_TERMINATE",
+    "EXIT_MAX",
+};
+
+static const char* get_fuzz_exit_name(int exit_code)
+{
+    return fuzzer_exit_names[exit_code];
+}
 
 
-#define CMD_FUZZ 1
-#define CMD_CONTINUE_UPDATE_STREAM 2
-#define CMD_CONTINUE_ADD_STREAM 3
-#define CMD_TERMINATE 4
+typedef enum _STREAM_STATUS
+{
+    STREAM_STATUS_OK = 0,
+    STREAM_STATUS_OUTOF,
+}STREAM_STATUS;
 
-struct CMD_INFO
+
+typedef enum _STREAM_MODEL
+{
+    MODEL_NONE,
+    MODEL_VALUE_SET,
+    MODEL_BIT_EXTRACT,
+    MODEL_CONSTANT,
+    MODEL_PASSTHROUGH
+}STREAM_MODEL;
+
+
+typedef enum 
+{
+    CMD_FUZZ = 1,
+    CMD_CONTINUE_UPDATE_STREAM,
+    CMD_CONTINUE_ADD_STREAM,
+    CMD_TERMINATE,
+}CMD_CODE;
+
+
+typedef struct _CMD_INFO
 {
     u32 cmd;
     u32 added_stream_index;
     u32 updated_stream_index;
-} __attribute__((packed));
+} __attribute__((packed)) CMD_INFO;
 
 
-
-
-struct EXIT_INFO
+typedef struct _EXIT_INFO
 {
     u32 exit_code;
     u32 exit_stream_id;
@@ -129,7 +152,8 @@ struct EXIT_INFO
     u64 exit_pc;
     u64 exit_lr;
     u32 num_mmio;
-} __attribute__((packed));
+    u32 mmio_len;
+} __attribute__((packed)) EXIT_INFO;
 
 
 
@@ -151,7 +175,8 @@ struct stream_metadata
     s32 value_set_size;
     u32 value_set[MAX_VALUE_SET_SIZE];
     u8 data[];
-} __attribute__((packed));
+}__attribute__((packed));
+
 
 struct fuzz_queue_stream
 {
@@ -159,12 +184,13 @@ struct fuzz_queue_stream
     s32 used;
 } __attribute__((packed));
 
+
+
 struct fuzz_queue
 {
     u32 num_streams;
     struct fuzz_queue_stream streams[];
 }__attribute__((packed));
-
 
 
 
@@ -193,10 +219,7 @@ inline static u64 get_cur_time(void) {
 
 }
 
-static const char* get_fuzz_exit_name(int exit_code)
-{
-    return fuzzer_exit_names[exit_code];
-}
+
 #endif
 
 

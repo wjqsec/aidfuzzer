@@ -44,6 +44,13 @@ void run_modelling(FuzzState *state,Simulator *simulator)
   }
   closedir(dir);
 }
+void add_default_model(FuzzState *state,u32 id, u32 element_size)
+{
+  input_model *model = new input_model();
+  model->mode = MODEL_NONE;
+  model->access_size = element_size;
+  (*state->models)[id] = model;
+}
 void sync_models(FuzzState *state,Simulator *simulator)
 {
   u32 mmio_id;
