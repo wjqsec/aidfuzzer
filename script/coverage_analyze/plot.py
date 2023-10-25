@@ -3,6 +3,7 @@ import json
 import matplotlib.pyplot as plt
 import argparse
 import os
+import re
 
 day_seconds = 24 * 60 * 60
 
@@ -18,6 +19,16 @@ def get_fuzzware_cov(filename):
         return [],[]
     x = []
     y = []
+
+    with open(filename,"r") as f:
+        for line in f.readlines():
+            if "#" in line:
+                continue
+            tmp = re.findall(r'\d+',line)
+            x.append(int(tmp[0]))
+            y.append(tmp[1])
+            print(tmp[0],tmp[1])
+    
     return append_first_last_plot(x,y)    
 
 
@@ -63,7 +74,7 @@ def main():
     parser.add_argument("-f", "--fuzzware", help="fuzzware csv file", default="")
     parser.add_argument("-e", "--hoedur",  help="hoedur plot file", default="")
     parser.add_argument("-x", "--xx",  help="xx log file", default="")
-    parser.add_argument("-o", "--output", help="output dir", default="/home/w/hd/iofuzzer/xxfuzzer/framework/scipt/coverage_analyze/cov_plot")
+    parser.add_argument("-o", "--output", help="output dir", default="./cov_plot/")
     args = parser.parse_args()
 
     fuzzware_x, fuzzware_y = get_fuzzware_cov(args.fuzzware)
@@ -71,7 +82,6 @@ def main():
     xx_x, xx_y = get_xx_cov(args.xx)
 
     
-
     plt.plot(fuzzware_x, fuzzware_y,label="fuzzware")
     plt.plot(hoedur_x, hoedur_y,label="hoedur")
     plt.plot(xx_x, xx_y,label="xx")
@@ -84,7 +94,7 @@ def main():
     plt.title('Data Plot')
 
     
-    plt.savefig(args.output + os.path.basename(args.hoedur) + ".pdf", format="pdf")
+    plt.savefig(args.output + "aaa" + ".pdf", format="pdf")
 
 if __name__ == '__main__':
     main()

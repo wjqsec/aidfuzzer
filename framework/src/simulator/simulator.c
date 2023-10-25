@@ -45,6 +45,7 @@ int fd_to_fuzzer, fd_from_fuzzer;
 
 FILE *flog;
 FILE *f_crash_log;
+FILE *f_irq_log;
 
 
 uint64_t nommio_executed_bbls;
@@ -474,9 +475,12 @@ void init_log()
     flog = fopen(path_buffer,"w");
     sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
     f_crash_log = fopen(path_buffer,"w");
+    sprintf(path_buffer,"%s/simulator_irq.txt",log_dir);
+    f_irq_log = fopen(path_buffer,"w");
 
     setbuf(flog,0);
     setbuf(f_crash_log,0);
+    setbuf(f_irq_log,0);
 }
 void init(int argc, char **argv)
 {

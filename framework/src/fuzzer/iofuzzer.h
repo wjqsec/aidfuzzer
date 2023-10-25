@@ -18,8 +18,6 @@ struct input_stream
 
     u32 offset_to_stream_area;
     s32 ref_count;
-#define DEFAULT_STREAM_PRIORITY 1
-    u32 priority;
     u8 offset_to_save[0];
     stream_metadata *ptr;
 
@@ -31,15 +29,18 @@ struct queue_entry
     u32 edges;
     u32 cksum;
 #define DEFAULT_QUEUE_PRIORITY 1
+#define DEFAULT_STREAM_PRIORITY 1
     s32 priority;
     u32 exit_reason;
     u64 fuzztimes;
     u64 total_stream_len;
+    u64 create_time;
     u8 offset_to_save[0];
     
+    u64 total_stream_priority;
+    map<u32,u64> *stream_priority;
 #define DEFAULT_STREAM_PRIORITY 1
     map<u32,input_stream *> *streams;
-    map<u32,s32> *runtime_stream_priority;
     
 }__attribute__((packed));
 
@@ -128,7 +129,7 @@ struct FuzzState
 #define MAX_NUM_PIPES 100
     int num_fds;
     struct pollfd fds[MAX_NUM_PIPES];
-
+ 
 };
 
 

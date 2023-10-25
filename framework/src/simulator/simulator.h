@@ -40,6 +40,7 @@ extern int fd_to_fuzzer, fd_from_fuzzer;
 
 extern FILE *flog;
 extern FILE *f_crash_log;
+extern FILE *f_irq_log;
 
 
 extern uint64_t nommio_executed_bbls;

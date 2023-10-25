@@ -159,9 +159,15 @@ void model_irq(int irq)
         uint32_t irq_entry;
         read_ram(get_nvic_vecbase() + 4 * irq, 4,&irq_entry);
         state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir);
-        printf("pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),irq_entry);
+
+        sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),irq_entry);
+        printf("%s",cmd);
+        fprintf(f_irq_log,"%s",cmd);
+
         sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s > /dev/null 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
         puts(cmd);
+
+        fprintf(f_irq_log,"%s\n",cmd);
         system(cmd);
         free(state_filename);
         

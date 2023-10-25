@@ -64,6 +64,7 @@ def write_model_to_file(models,modelfilename):
 
 symbolic_mem_data = set()
 symbolic_mem_data_addr_mapping = dict()
+symbolic_mem_data_addr_mapping_rev = dict()
 
 zero_symbolic_mem_data = set()
 
@@ -157,40 +158,70 @@ def is_ast_addr_zero(state,addr):
     return is_addr_zero(addr)
 
 
+def address_concretization_before(state):
+    pass
+    # print(state.inspect.address_concretization_memory,state.inspect.address_concretization_expr,state.inspect.address_concretization_add_constraints,state.inspect.address_concretization_result)
+
+def constraints_before(state):
+    pass
+    # print(state.inspect.added_constraints)
+
+def irsb_before(state):
+    print("irsb_before ",hex(state.inspect.address) )
+
 def mem_read_before(state):
+
     try:
         address = state.solver.eval_one(state.inspect.mem_read_address)
     except Exception as e:
         return
+            
+        
+    
     if not is_ast_addr_valid(state,address):
         return
     if is_ast_mmio_address(state, state.inspect.mem_read_address) or is_ast_stack_address(state,state.inspect.mem_read_address):
         return
+
     value = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
-    if value.symbolic:
+    try:
+        value = state.solver.eval_one(value)
+    except Exception as e:
         return
-    if is_ast_value_pointer(state,value) or is_ast_mmio_address(state, value):
-        return
+
+    
+    if not is_ast_addr_zero(state,value):
+        if is_ast_value_pointer(state,value) or is_ast_mmio_address(state, value):
+            return
+    
     if address in symbolic_mem_data:
+        state.memory.store(address,symbolic_mem_data_addr_mapping_rev[address],disable_actions=True,inspect=False,endness='Iend_LE')
         return
+    
     tmp = claripy.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
+
     if is_ast_addr_zero(state,value):
-        # constrain = tmp == claripy.BVV(0, state.inspect.mem_read_length * 8)
-        # state.add_constraints(constrain)
         zero_symbolic_mem_data.add(tmp)
-    symbolic_mem_data.add(address)
+
+
+    
+    # print("replace ",hex(address))
+    
     state.memory.store(address,tmp,disable_actions=True,inspect=False,endness='Iend_LE')
     symbolic_mem_data_addr_mapping[tmp] = address
-
+    symbolic_mem_data_addr_mapping_rev[address] = tmp
+    symbolic_mem_data.add(address)
 
 def is_accessing_nullptr(state,addr):
-    if is_ast_value_pointer(state,addr) or is_ast_mmio_address(state, addr):
-        return None
-    if isinstance(addr, claripy.ast.Base):
-        for ist in addr.leaf_asts():
-            if ist in zero_symbolic_mem_data:
-                return ist
-
+    # print("1111111111111111111111111111")
+    # if not addr.symbolic:
+    #     return
+    # print("222222222222222222222222222")
+    # if isinstance(addr, claripy.ast.Base):
+    #     for ist in addr.leaf_asts():
+    #         if ist in zero_symbolic_mem_data:
+    #             return ist
+    # print("222222222222222222222222222")
     return None
     
 
@@ -237,22 +268,25 @@ def is_memory_write_action(action):
     return isinstance(action, angr.state_plugins.sim_action.SimActionData) and action.type == 'mem' and action.action == 'write'
 
 
+
+
 def get_memory_access(states,initial_state,accessses,irq):
     for state in states:
         for action in state.history.actions:
-            # print(action.type,action.ins_addr)
+            
             if not is_memory_action(action):
                 continue
-            
+            print("memory_read_action ",action)
             if is_ast_stack_address(initial_state,action.addr):
                 continue
             
             if is_ast_addr_readonly(state,action.addr):
                 continue
+            
+            if is_memory_read_action(action):
+                
+                continue
 
-            # print(action)
-            if is_ast_mmio_address(state,action.addr) and is_memory_read_action(action):
-                pass
             
             if is_ast_mmio_address(state,action.addr):
                 info = ACCESS_INFO()
@@ -305,19 +339,26 @@ def main():
     accessses = []
     initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
+    initial_state.inspect.b("mem_write",when=angr.BP_BEFORE, action=mem_write_before)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
+    initial_state.inspect.b("address_concretization",when=angr.BP_BEFORE, action=address_concretization_before)
 
+    initial_state.inspect.b("constraints",when=angr.BP_BEFORE, action=constraints_before)
+    initial_state.inspect.b("irsb",when=angr.BP_BEFORE, action=irsb_before)
+    
     simgr = project.factory.simgr(initial_state)
     # simgr.use_technique(exploration_techniques.Timeout(30))
-    simgr.use_technique(exploration_techniques.LoopSeer(cfg=cfg, bound=10))
+    # simgr.use_technique(exploration_techniques.LoopSeer(cfg=cfg, bound=10))
 
     try:
-        for i in range(20):
+        for i in range(50):
             simgr.step(thumb=True)
             print(simgr.active)
+            # print(simgr.deadended)
+            # print(simgr.unconstrained)
+            
             get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
-            if len(simgr.active) <= 1 and i >= 5:
-                break   
+            print("-----------------------")
     except :
         print("error happends")
         pass

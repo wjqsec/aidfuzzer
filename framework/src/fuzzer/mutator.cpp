@@ -4,10 +4,10 @@
 #include "afl_utl.h"
 #include "stream.h"
 
-#define HAVOC_BLK_SMALL     16
-#define HAVOC_BLK_MEDIUM    32
-#define HAVOC_BLK_LARGE     64
-#define HAVOC_BLK_XL        256
+#define HAVOC_BLK_SMALL     64
+#define HAVOC_BLK_MEDIUM    128
+#define HAVOC_BLK_LARGE     256
+#define HAVOC_BLK_XL        512
 #define HAVOC_BLK_XXL        1024
 
 #define MAX_FILE            (100 * 1024)
@@ -242,6 +242,39 @@ inline input_stream* havoc_interesting_value(FuzzState *state,input_stream* stre
   }
   return stream;
 }
+
+inline input_stream* havoc_clone(FuzzState *state,input_stream* stream)
+{
+  u8 *data = stream->ptr->data;
+  s32 len = stream->ptr->len;
+  input_stream* ret = stream;
+  if (len + len < MAX_FILE) 
+  {
+    u32 clone_from, clone_to, clone_len;
+    input_stream *new_stream;
+
+    clone_len  = choose_block_len(len,stream->ptr->element_size);
+    clone_from = UR(len - clone_len + 1);
+
+    clone_to   = UR(len);
+
+    new_stream = allocate_enough_space_stream(state,stream->ptr->stream_id,len+clone_len);
+
+    /* Head */
+
+    memcpy(new_stream->ptr->data, data, clone_to);
+
+    memcpy(new_stream->ptr->data + clone_to, data + clone_from, clone_len);
+
+    /* Tail */
+    memcpy(new_stream->ptr->data + clone_to + clone_len, data + clone_to,
+            len - clone_to);
+
+    free_stream(state,stream);
+    ret = new_stream;
+  }
+  return ret;
+}
 inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
 {
   u8 *data = stream->ptr->data;
@@ -249,23 +282,12 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
   input_stream* ret = stream;
   if (len + HAVOC_BLK_XXL < MAX_FILE) {
 
-          /* Clone bytes (75%) or insert a block of constant bytes (25%). */
-
-          u8  actually_clone = UR(4);
           u32 clone_from, clone_to, clone_len;
           input_stream *new_stream;
 
-          if (actually_clone) {
+          clone_len = choose_block_len(HAVOC_BLK_XXL,stream->ptr->element_size);
+          clone_from = 0;
 
-            clone_len  = choose_block_len(len,stream->ptr->element_size);
-            clone_from = UR(len - clone_len + 1);
-
-          } else {
-
-            clone_len = choose_block_len(HAVOC_BLK_XXL,stream->ptr->element_size);
-            clone_from = 0;
-
-          }
 
           clone_to   = UR(len);
 
@@ -277,11 +299,8 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
 
           /* Inserted part */
 
-          if (actually_clone)
-            memcpy(new_stream->ptr->data + clone_to, data + clone_from, clone_len);
-          else
-            memset(new_stream->ptr->data + clone_to,
-                    UR(2) ? UR(256) : data[UR(len)], clone_len);
+          memset(new_stream->ptr->data + clone_to,
+                  UR(2) ? UR(256) : data[UR(len)], clone_len);
 
           /* Tail */
           memcpy(new_stream->ptr->data + clone_to + clone_len, data + clone_to,
@@ -441,6 +460,7 @@ typedef input_stream* (*havoc_fuc) (FuzzState *state,input_stream* stream);
 static havoc_fuc havoc_arrays[] = { havoc_flip_bit, 
                                     havoc_interesting_value, 
                                     havoc_insert,
+                                    havoc_clone,
                                     havoc_delete,
                                     havoc_revert,
                                     havoc_random,
@@ -457,9 +477,9 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
 
   ret = clone_stream(state,stream);
 
-  use_stacking = (1 << (1 + UR(6)));
+  // use_stacking = (1 << (1 + UR(6)));
 
-  for (i = 0; i < use_stacking; i++) 
+  // for (i = 0; i < use_stacking; i++) 
   {
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
     ret = havoc_arrays[index](state,ret);
