@@ -89,7 +89,7 @@ struct Simulator
 
     queue_entry* base_entry;
     queue_entry* fuzz_entry;
-    set<input_stream*> * fuzz_streams;
+    set<u32> * fuzz_streams;
     u32 fuzz_stream_id;
     bool onlyrun;
     map<u32,int> *id_queue_idx_mapping;

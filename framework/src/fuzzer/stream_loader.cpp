@@ -56,6 +56,7 @@ void save_queue(queue_entry *q,char *dir)
   {
     fwrite(it->second,offsetof(input_stream,offset_to_save),1,f_queue);
   }
+
   fclose(f_queue);
 }
 void save_crash(queue_entry *q,char *crash_dir)
@@ -74,12 +75,14 @@ queue_entry *load_queue(FuzzState *state,char *seedfile)
 
   while(1)
   {
+
     stream = new input_stream();
     if(!fread(stream,offsetof(input_stream,offset_to_save),1,f_queue))
       break;
-    fread(&priority,sizeof(32),1,f_queue);
+
     stream->ptr = (stream_metadata*) (state->shared_stream_data + stream->offset_to_stream_area);
     insert_stream(state,q,stream);
+    q->stream_priority = new map<u32,u64>();
     (*q->stream_priority)[stream->ptr->stream_id] = DEFAULT_STREAM_PRIORITY;
     q->total_stream_priority += DEFAULT_STREAM_PRIORITY;
   }

@@ -22,6 +22,18 @@
 #include "qemu/log.h"
 #include "target/arm/idau.h"
 #include "migration/vmstate.h"
+#include "xx.h"
+mmio_read_cb ppb_default_read_func;
+mmio_write_cb ppb_default_write_func;
+
+void register_armm_ppb_default_read_hook(mmio_read_cb cb)
+{
+    ppb_default_read_func = cb;
+}
+void register_armm_ppb_default_write_hook(mmio_write_cb cb)
+{
+    ppb_default_write_func = cb;
+}
 
 /* Bitbanded IO.  Each word corresponds to a single bit.  */
 
@@ -214,6 +226,9 @@ static MemTxResult ppb_default_read(void *opaque, hwaddr addr,
                                     uint64_t *data, unsigned size,
                                     MemTxAttrs attrs)
 {
+    if(ppb_default_read_func)
+        *data = ppb_default_read_func((void *)0xe0000000,addr,size);
+    return MEMTX_OK;
     qemu_log_mask(LOG_UNIMP, "Read of unassigned area of PPB: offset 0x%x\n",
                   (uint32_t)addr);
     if (attrs.user) {
@@ -227,6 +242,9 @@ static MemTxResult ppb_default_write(void *opaque, hwaddr addr,
                                      uint64_t value, unsigned size,
                                      MemTxAttrs attrs)
 {
+    if(ppb_default_write_func)
+        ppb_default_write_func((void *)0xe0000000,addr,value,size);
+    return MEMTX_OK;
     qemu_log_mask(LOG_UNIMP, "Write of unassigned area of PPB: offset 0x%x\n",
                   (uint32_t)addr);
     if (attrs.user) {

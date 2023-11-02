@@ -3,6 +3,7 @@ from setup_env import from_state_file,from_elf_file
 import claripy
 import re
 import sys
+import capstone
 import time
 from pathlib import Path
 import argparse
@@ -11,8 +12,9 @@ from angr import exploration_techniques
 
 config = Configs()
 stack_size = 0x2000
+fix_lr = 0xdeadbeef
 
-
+project = None
 class ACCESS_INFO:
     def __init__(self):
         pass
@@ -28,6 +30,7 @@ class IRQ_MODEL:
     def __init__(self):
         self.irq = 0
         self.accesses = set()
+        self.toend = False
     def dump(self):
         print("-{}".format(self.irq))
         for access in self.accesses:
@@ -43,8 +46,12 @@ def irq_model_from_file(modelfilename):
         for line in f.readlines():
             if "-" in line:
                 model = IRQ_MODEL()
-                current_irq = int(line[1:])
+                current_irq = int(line.split("-")[1].split("-")[0])
                 models[current_irq] = model
+                if "y" in line:
+                    model.toend = True
+                else:
+                    model.toend = False
             else:
                 accessinfo = ACCESS_INFO()
                 accessinfo.type = line.split(":")[0]
@@ -55,9 +62,14 @@ def irq_model_from_file(modelfilename):
                 
 
 def write_model_to_file(models,modelfilename):
+    toend_str = ""
     with open(modelfilename, "w") as f:
         for irq,model in models.items():
-            f.write("-{}\n".format(irq))
+            if model.toend:
+                toend_str = "y"
+            else:
+                toend_str = "n"
+            f.write("-{}-{}\n".format(irq,toend_str))
             f.write("".join(["{}:{} {}\n".format(access.type,hex(access.addr),hex(access.size)) for access in model.accesses]))
             
 
@@ -105,21 +117,21 @@ def is_ast_stack_address(state,ast):
 
 def is_pointer(addr):
     for mem in config.mems:
-        if addr >= mem.start and addr <= mem.start + mem.size:
+        if addr >= mem.start and addr <= mem.start + mem.size and mem.start != 0:
             if mem.ismmio:
                 return False
             else:
                 return True
     return False
                 
-def is_ast_value_pointer(state,value):
+def is_ast_pointer(state,value):
     try:
         data = state.solver.eval_one(value)
     except Exception as e:
         return False
     return is_pointer(data)
 
-def is_readonly_addr(state,addr):
+def is_readonly(state,addr):
     for mem in config.mems:
         if addr >= mem.start and addr <= mem.start + mem.size:
             if mem.isreadonly:
@@ -128,79 +140,91 @@ def is_readonly_addr(state,addr):
                 return False
     return False
 
-def is_ast_addr_readonly(state,addr):
+def is_ast_readonly(state,addr):
     try:
         addr = state.solver.eval_one(addr)
     except Exception as e:
         return False
-    return is_readonly_addr(state,addr)
+    return is_readonly(state,addr)
 
-def is_addr_valid(addr):
-    for mem in config.mems:
-        if addr >= mem.start and addr <= mem.start + mem.size:
-            return True
-    return False
-def is_ast_addr_valid(state,addr):
-    try:
-        addr = state.solver.eval_one(addr)
-    except Exception as e:
-        return False
-    return is_addr_valid(addr)
 
-def is_addr_zero(addr):
+def is_zero(addr):
     return addr == 0
 
-def is_ast_addr_zero(state,addr):
+def is_ast_zero(state,addr):
     try:
         addr = state.solver.eval_one(addr)
     except Exception as e:
         return False
-    return is_addr_zero(addr)
+    return is_zero(addr)
+
+def is_ast_contains_zero_ptr(addr):
+    for leaf in addr.leaf_asts():    
+        if leaf in zero_symbolic_mem_data:
+            return True
+    return False
+
+def get_parent_zero_ast(addr):
+    for leaf in addr.leaf_asts():    
+        if leaf in zero_symbolic_mem_data:
+            return symbolic_mem_data_addr_mapping[leaf]
+
+def get_final_pointer(addr):
+    while True:
+        ptr = symbolic_mem_data_addr_mapping[addr]
+        if not ptr in symbolic_mem_data_addr_mapping:
+            return ptr
+        addr = ptr
 
 
-def address_concretization_before(state):
-    pass
-    # print(state.inspect.address_concretization_memory,state.inspect.address_concretization_expr,state.inspect.address_concretization_add_constraints,state.inspect.address_concretization_result)
+def ast_cannot_be_zero(state,ast):
+    state_backup = state.copy()
 
-def constraints_before(state):
-    pass
-    # print(state.inspect.added_constraints)
+    state_backup.add_constraints(ast == 0)
+    ret = state_backup.satisfiable()
 
-def irsb_before(state):
-    print("irsb_before ",hex(state.inspect.address) )
+    state_backup.solver.constraints.pop()
+    state_backup.solver.reload_solver()
+
+    return not ret
+
+
+
 
 def mem_read_before(state):
 
+    addr = state.inspect.mem_read_address
+    if type(addr) is tuple:
+        addr = addr[1]
     try:
-        address = state.solver.eval_one(state.inspect.mem_read_address)
+        address = state.solver.eval_one(addr)
     except Exception as e:
         return
             
         
     
-    if not is_ast_addr_valid(state,address):
+    if not is_ast_pointer(state,addr):
         return
-    if is_ast_mmio_address(state, state.inspect.mem_read_address) or is_ast_stack_address(state,state.inspect.mem_read_address):
+    if is_ast_stack_address(state,addr):
         return
-
     value = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
     try:
         value = state.solver.eval_one(value)
     except Exception as e:
         return
 
-    
-    if not is_ast_addr_zero(state,value):
-        if is_ast_value_pointer(state,value) or is_ast_mmio_address(state, value):
-            return
+
+    if is_ast_pointer(state,value) or is_ast_mmio_address(state, value):
+        return
     
     if address in symbolic_mem_data:
         state.memory.store(address,symbolic_mem_data_addr_mapping_rev[address],disable_actions=True,inspect=False,endness='Iend_LE')
         return
     
-    tmp = claripy.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
+    tmp = state.solver.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
 
-    if is_ast_addr_zero(state,value):
+
+    if is_ast_zero(state,value):
         zero_symbolic_mem_data.add(tmp)
 
 
@@ -212,45 +236,80 @@ def mem_read_before(state):
     symbolic_mem_data_addr_mapping_rev[address] = tmp
     symbolic_mem_data.add(address)
 
-def is_accessing_nullptr(state,addr):
-    # print("1111111111111111111111111111")
-    # if not addr.symbolic:
-    #     return
-    # print("222222222222222222222222222")
-    # if isinstance(addr, claripy.ast.Base):
-    #     for ist in addr.leaf_asts():
-    #         if ist in zero_symbolic_mem_data:
-    #             return ist
-    # print("222222222222222222222222222")
-    return None
-    
+   
 
 def mem_read_after(state):
-    ist = is_accessing_nullptr(state, state.inspect.mem_read_address)
-    if ist == None:
+    
+    addr = state,state.inspect.mem_read_address
+    value = state,state.inspect.mem_read_expr
+
+    if type(addr) is tuple:
+        addr = addr[1]
+    if type(value) is tuple:
+        value = value[1]
+
+    if ast_cannot_be_zero(state,addr) and not is_ast_contains_zero_ptr(addr):
         return
-    if state.solver.is_true(ist != 0):
-        return
-    if state.inspect.mem_read_condition.is_true():
-        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[ist])
+
+    if is_ast_contains_zero_ptr(addr):
+        zero_symbolic_mem_data.add(addr)
+        symbolic_mem_data_addr_mapping[addr] = get_parent_zero_ast(addr)
+
+
+        zero_symbolic_mem_data.add(value)
+        symbolic_mem_data_addr_mapping[value] = get_parent_zero_ast(addr)
+
+
+    if addr in zero_symbolic_mem_data:
+        # print(state.regs.pc,get_final_pointer(addr))
+        nullptr_data_access_check_mem.add(get_final_pointer(addr))
 
         
 def mem_write_after(state):
-    ist = is_accessing_nullptr(state, state.inspect.mem_write_address)
-    if ist == None:
-        return
-    if state.solver.is_true(ist != 0):
-        return
-    if state.inspect.mem_write_condition.is_true():
-        nullptr_data_access_check_mem.add(symbolic_mem_data_addr_mapping[ist])
 
+    addr = state,state.inspect.mem_write_address
+    if type(addr) is tuple:
+        addr = addr[1]
+    if ast_cannot_be_zero(state,addr) and not is_ast_contains_zero_ptr(addr):
+        return
+    if addr in zero_symbolic_mem_data:
+        # print(state.regs.pc,get_final_pointer(addr))
+        nullptr_data_access_check_mem.add(get_final_pointer(addr))
 
 def call_before(state):
-    read_bytes = state.inspect.function_address.get_bytes(0,4)
-    if state.solver.is_true(read_bytes != 0):
-        return
-    if read_bytes in zero_symbolic_mem_data:
-        nullptr_func_check_mem.add(symbolic_mem_data_addr_mapping[read_bytes])
+    addr = state.inspect.function_address.get_bytes(0,4)
+    if type(addr) is tuple:
+        addr = addr[1]
+    if addr in zero_symbolic_mem_data:
+        nullptr_func_check_mem.add(get_final_pointer(addr))
+        if not ast_cannot_be_zero(state,addr):
+            # print(state.regs.pc,get_final_pointer(addr))
+            nullptr_data_access_check_mem.add(get_final_pointer(addr))
+
+
+def mrs_write_after(state):
+    global project
+    len_ = 4
+    try:
+        pc_addr = state.solver.eval_one(state.regs.pc)
+        disassembly_block = project.factory.block(pc_addr, size=len_).bytes
+        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
+        inses = md.disasm(disassembly_block, pc_addr)
+        for ins in inses:
+            if ins.mnemonic == "mrs":
+                # setattr(state, name, ast)
+                # print( getattr(state.regs, ins.op_str.split(",")[0]))
+                setattr(state.regs,ins.op_str.split(",")[0],state.solver.BVS(f"mrs", 32))
+                pass
+                # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
+            break
+
+        # if pc_addr == 0xD1Ff:
+            # state.regs.r0 = 2
+            # print(state.inspect.reg_write_offset,state.inspect.reg_write_expr)
+    except Exception as e:
+        pass
+
 
 
 def mem_write_before(state):
@@ -276,18 +335,22 @@ def get_memory_access(states,initial_state,accessses,irq):
             
             if not is_memory_action(action):
                 continue
-            print("memory_read_action ",action)
+
+            
             if is_ast_stack_address(initial_state,action.addr):
                 continue
             
-            if is_ast_addr_readonly(state,action.addr):
+            # print(action)
+            if is_ast_readonly(state,action.addr):
                 continue
             
             if is_memory_read_action(action):
-                
                 continue
 
-            
+            if is_ast_zero(state,action.addr):
+                continue
+
+
             if is_ast_mmio_address(state,action.addr):
                 info = ACCESS_INFO()
                 info.ins_addr = state.solver.eval_one(action.ins_addr)
@@ -295,21 +358,29 @@ def get_memory_access(states,initial_state,accessses,irq):
                 info.size = int((action.size + 0)/8)
                 info.type = "mmio"
                 accessses.append(info)
-                continue
-            if not action.addr.symbolic and is_ast_addr_valid(state,action.addr) and is_memory_write_action(action):
+            if not action.addr.symbolic and is_ast_pointer(state,action.addr) and is_memory_write_action(action):
                 info = ACCESS_INFO()
                 info.ins_addr = state.solver.eval_one(action.ins_addr)
                 info.addr = state.solver.min(action.addr)
+
                 info.size = int((action.size + 0)/8)
                 info.type = "mem"
                 accessses.append(info)
                 
 
     
-
+def collect_pcs(pcs, states):
+    for state in states:
+        try:
+            pc_addr = state.solver.eval_one(state.regs.pc)
+            pcs.add(pc_addr)
+        except Exception as e:
+            pass
+        
     
 
 def main():
+    global project
     parser = argparse.ArgumentParser(description="irq dataflow modeling",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-s", "--state", help="irq state binary file")
@@ -319,20 +390,21 @@ def main():
     parser.add_argument("-c","--config",  help="fuzzware config file")
 
     args = parser.parse_args()
+
+
     config.from_fuzzware_config_file(args.config)
-    
+
 
     project, initial_state = from_state_file(args.state)
 
     start_addr = int(args.vecbase,16) + 4 * int(args.irq,10)
     irq_val = initial_state.memory.load(start_addr, 4, endness='Iend_LE')
     initial_state.regs.pc = irq_val
-    
+    initial_state.regs.lr = fix_lr
 
     models = irq_model_from_file(args.output)
+    print("start pc:  ",irq_val)
 
-    
-    cfg = project.analyses.CFGFast(normalize = True)
     model = IRQ_MODEL()
     # if int(args.irq,16) in models:
     #     model = models[int(args.irq,16)]
@@ -341,34 +413,56 @@ def main():
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("mem_write",when=angr.BP_BEFORE, action=mem_write_before)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
-    initial_state.inspect.b("address_concretization",when=angr.BP_BEFORE, action=address_concretization_before)
+    initial_state.inspect.b("instruction",when=angr.BP_AFTER, action=mrs_write_after)
 
-    initial_state.inspect.b("constraints",when=angr.BP_BEFORE, action=constraints_before)
-    initial_state.inspect.b("irsb",when=angr.BP_BEFORE, action=irsb_before)
     
-    simgr = project.factory.simgr(initial_state)
-    # simgr.use_technique(exploration_techniques.Timeout(30))
-    # simgr.use_technique(exploration_techniques.LoopSeer(cfg=cfg, bound=10))
+    
 
-    try:
-        for i in range(50):
-            simgr.step(thumb=True)
-            print(simgr.active)
-            # print(simgr.deadended)
-            # print(simgr.unconstrained)
-            
-            get_memory_access(simgr.active + simgr.deadended + simgr.unconstrained + simgr.unsat + simgr.pruned,initial_state,accessses,args.irq)
-            print("-----------------------")
-    except :
-        print("error happends")
-        pass
+
+
+    simgr = project.factory.simgr(initial_state)
+
+    # simgr.use_technique(exploration_techniques.Timeout(20))
+    
+    
+    
+
+    
+    pcs = set()
+    
+
+
+    collect_pcs(pcs, simgr.active)
+    last_num_pcs = len(pcs)
+
+
+    while True:
+        simgr.step(thumb=True)
+        get_memory_access(simgr.active,initial_state,accessses,args.irq)
         
+        print(simgr.active)
+
+        for ac in simgr.active:
+            try:
+                pc_addr = ac.solver.eval_one(ac.regs.pc)
+                if pc_addr == fix_lr:
+                    model.toend = True
+            except Exception as e:
+                pass
+            
+        collect_pcs(pcs, simgr.active)
+        if last_num_pcs == len(pcs):
+            break
+        else:
+            last_num_pcs = len(pcs)
+            
+        
+        # print("-----------------------")
+
+
         
 
     for ptr in nullptr_func_check_mem:
-        for ac in accessses:
-            if ac.addr == ptr:
-                accessses.remove(ac)
         access = ACCESS_INFO()
         access.ins_addr = 0
         access.addr = ptr
@@ -377,9 +471,6 @@ def main():
         accessses.append(access)
 
     for ptr in nullptr_data_access_check_mem:
-        for ac in accessses:
-            if ac.addr == ptr:
-                accessses.remove(ac)
         access = ACCESS_INFO()
         access.ins_addr = 0
         access.addr = ptr
@@ -391,6 +482,7 @@ def main():
     models[int(args.irq,10)] = model
 
     write_model_to_file(models,args.output)
+        
     
 
 if __name__ == '__main__':

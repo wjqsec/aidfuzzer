@@ -44,20 +44,21 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
     memseg = global_cfg.get_memseg_by_name("text")
 
     ins_size = 4
+    md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
     for i in range(0,memseg.size,ins_size):
         disassembly_block = project.factory.block(memseg.start + i, size=ins_size)
         instruction_bytes = disassembly_block.bytes
-        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+        
         for insn in md.disasm(instruction_bytes, memseg.start + i):
             if "b" == insn.mnemonic:
                 is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i,ins_size == 2)
                 if is_loop:
                     all_loops.add(bbl_addr)
     ins_size = 2
+    md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
     for i in range(0,memseg.size,ins_size):
         disassembly_block = project.factory.block(memseg.start + i, size=ins_size)
         instruction_bytes = disassembly_block.bytes
-        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
         for insn in md.disasm(instruction_bytes, memseg.start + i):
             if "b" == insn.mnemonic:
                 is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i,ins_size == 2)

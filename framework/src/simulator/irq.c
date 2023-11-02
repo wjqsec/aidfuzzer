@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 
-#define MAX_IRQ_MODEL_MEMORY_NUM 0x30
+#define MAX_IRQ_MODEL_MEMORY_NUM 0x100
 
 
 typedef struct _UNSOLVED_FUNC_PTR
@@ -145,7 +145,7 @@ void irq_on_mem_access(int irq,hw_addr addr)
     if(!is_irq_ready(irq))
         return;
 
-    if(get_arm_v7m_is_handler_mode())
+    if(get_arm_v7m_is_handler_mode() != ARMV7M_EXCP_PENDSV && get_arm_v7m_is_handler_mode() != 0)
         return;
     
     
@@ -208,8 +208,18 @@ void irq_on_enable_nvic_irq(int irq)
 }
 void irq_on_idel()
 {
-    
-    if(get_arm_v7m_is_handler_mode())
+    #ifdef DBG
+        fprintf(flog,"%d->try insert idel is_handler_mode:%d num_enabled_irqs:%d ready:",run_index,get_arm_v7m_is_handler_mode(),irq_model.num_enabled_irqs);
+        for(int i = 0; i < irq_model.num_enabled_irqs; i++)
+        {
+            if( is_irq_access_memory(irq_model.enabled_irqs[i]))
+            {
+                fprintf(flog,"%d  ",irq_model.enabled_irqs[i]);
+            }
+        }
+        fprintf(flog,"\n");
+    #endif
+    if(get_arm_v7m_is_handler_mode() != ARMV7M_EXCP_PENDSV && get_arm_v7m_is_handler_mode() != 0)
         return;
     
     if(irq_model.num_enabled_irqs == 0)
@@ -221,6 +231,7 @@ void irq_on_idel()
         try_irq = irq_model.enabled_irqs[irq_model.idel_times % irq_model.num_enabled_irqs];
         irq_model.idel_times++;
         if(is_irq_ready(try_irq) && is_irq_access_memory(try_irq))
+        // if(is_irq_access_memory(try_irq))
         {
             found_valid_irq = true;
             break;
@@ -252,17 +263,29 @@ void irq_on_init()
 }
 void add_memory_access_watchpoint(int irq, uint32_t addr)
 {
+    if(find_value_32(irq_model.global_state[irq].mem,irq_model.global_state[irq].mem_access_trigger_irq_times,addr))
+        return;
     insert_nostop_watchpoint(addr,4,QEMU_PLUGIN_MEM_R_ ,nostop_watchpoint_exec_mem,(void*)(uint64_t)irq);
     irq_model.global_state[irq].mem[irq_model.global_state[irq].mem_access_trigger_irq_times++] = addr;
+    printf("insert_nostop_watchpoint mem irq:%d addr:%x\n",irq,addr);
 }
 void add_unsolved_func_ptr(int irq, uint32_t addr)
 {
+    for(int i = 0 ; i < irq_model.global_state[irq].num_unsolved_func_ptrs ; i++)
+    {
+        if(irq_model.global_state[irq].unsolved_func_ptrs[i].addr == addr)
+            return;
+    }
+
     insert_nostop_watchpoint(addr,4,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_unresolved_func_ptr,(void*)(uint64_t)irq);
     irq_model.global_state[irq].unsolved_func_ptrs[irq_model.global_state[irq].num_unsolved_func_ptrs++].addr = addr;
+    printf("insert_nostop_watchpoint func irq:%d addr:%x\n",irq,addr);
 }
 void add_dependency_func_ptr(int irq,uint32_t addr)
 {
+    if(find_value_32(irq_model.global_state[irq].dependency_ptrs,irq_model.global_state[irq].num_dependency_ptrs,addr))
+        return;
     insert_nostop_watchpoint(addr,4,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_denpendency,(void*)(uint64_t)irq);
     irq_model.global_state[irq].dependency_ptrs[irq_model.global_state[irq].num_dependency_ptrs++] = addr;
-            
+    printf("insert_nostop_watchpoint dependency irq:%d addr:%x\n",irq,addr);
 }

@@ -16,7 +16,7 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id);
 void enable_nvic_hook(int irq);
 uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size);
 void mmio_write_common(void *opaque,hw_addr addr,uint64_t data,unsigned size);
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,u32 stream_dumped,uint64_t lr,u32 mmio_len);
+void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint64_t lr,u32 mmio_len);
 bool exit_with_code_start();
 void terminate();
 void init(int argc, char **argv);

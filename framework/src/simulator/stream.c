@@ -130,15 +130,6 @@ void get_fuzz_data(SHARED_STREAM * stream, uint64_t *out)
         {
             break;
         }
-       
-
-        // case MODEL_NONE:
-        // {
-
-        //     memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
-        //     break;
-        // }
-        
         default:
         {
             printf("wrong stream type:%d\n",stream->metadata->mode);

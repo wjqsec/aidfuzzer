@@ -93,7 +93,7 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
         }
         new_snap = arm_take_snapshot();
 
-        prepare_exit(EXIT_CTL_FORKSRV_UP,0,0,0,0,0);
+        prepare_exit(EXIT_CTL_FORKSRV_UP,0,0,0,0);
         pc_changed = exit_with_code_start();
 
         return pc_changed;

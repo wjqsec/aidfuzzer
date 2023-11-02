@@ -10,7 +10,9 @@
 #define HAVOC_BLK_XL        512
 #define HAVOC_BLK_XXL        1024
 
-#define MAX_FILE            (100 * 1024)
+#define HAVOC_BLK_HUGE        0x1000
+
+#define MAX_FILE            (100 * 0x1000)
 #ifndef MIN
 #  define MIN(_a,_b) ((_a) > (_b) ? (_b) : (_a))
 #  define MAX(_a,_b) ((_a) > (_b) ? (_a) : (_b))
@@ -298,9 +300,12 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
           memcpy(new_stream->ptr->data, data, clone_to);
 
           /* Inserted part */
-
-          memset(new_stream->ptr->data + clone_to,
-                  UR(2) ? UR(256) : data[UR(len)], clone_len);
+          for (int i = 0; i < (clone_len / 4); i++)
+          {
+            *(u32*)(new_stream->ptr->data + clone_to + i * 4) = UR(0xffffffff);
+          }
+          // memset(new_stream->ptr->data + clone_to,
+          //         UR(2) ? UR(256) : data[UR(len)], clone_len);
 
           /* Tail */
           memcpy(new_stream->ptr->data + clone_to + clone_len, data + clone_to,
@@ -310,6 +315,29 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
           ret = new_stream;
         }
     return ret;
+}
+inline input_stream* havoc_append_huge(FuzzState *state,input_stream* stream)
+{
+  u8 *data = stream->ptr->data;
+  s32 len = stream->ptr->len;
+  input_stream* ret = stream;
+  if (len + HAVOC_BLK_HUGE  < MAX_FILE) 
+  {
+    input_stream *new_stream;
+    new_stream = extend_stream(state,stream,HAVOC_BLK_HUGE);
+    for (int i = 0; i < (HAVOC_BLK_HUGE / 4); i++)
+    {
+      *(u32*)(new_stream->ptr->data + len + i * 4) = UR(0xffffffff);
+    }
+
+    // memset(new_stream->ptr->data + len , UR(256),HAVOC_BLK_HUGE);
+    free_stream(state,stream);
+    ret = new_stream;
+  }
+  return ret;
+
+
+
 }
 inline input_stream* havoc_delete(FuzzState *state,input_stream* stream)
 {
@@ -457,16 +485,19 @@ inline input_stream* havoc_state_value(FuzzState *state,input_stream* stream)
 
 typedef input_stream* (*havoc_fuc) (FuzzState *state,input_stream* stream);
 
-static havoc_fuc havoc_arrays[] = { havoc_flip_bit, 
+static havoc_fuc havoc_arrays[] = { 
+                                    havoc_flip_bit, 
                                     havoc_interesting_value, 
                                     havoc_insert,
+                                    havoc_append_huge,
                                     havoc_clone,
                                     havoc_delete,
                                     havoc_revert,
                                     havoc_random,
                                     havoc_ascii,
                                     havoc_splicing_copy,
-                                    havoc_state_value};
+                                    havoc_state_value
+                                    };
 
 input_stream* havoc(FuzzState *state,input_stream* stream)
 {
@@ -482,8 +513,11 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   // for (i = 0; i < use_stacking; i++) 
   {
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
+    
     ret = havoc_arrays[index](state,ret);
+    
   }
+
   return ret;
   
 }

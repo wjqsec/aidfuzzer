@@ -84,6 +84,8 @@ void register_exec_func_hook(hw_addr addr,exec_func_cb cb);
 void register_mem_access_log_hook(mem_access_cb cb);
 void register_post_thread_exec_hook(post_thread_exec_cb cb);
 void register_translate_bbl_hook(translate_bbl_cb cb);
+void register_armm_ppb_default_read_hook(mmio_read_cb cb);
+void register_armm_ppb_default_write_hook(mmio_write_cb cb);
 
 void write_ram(hw_addr addr, hw_addr size, void *buf);  
 void read_ram(hw_addr addr, hw_addr size, void *buf);
@@ -133,4 +135,7 @@ extern exec_bbl_cb exec_bbl_func;
 extern GArray* specific_bbl_hooks;
 extern GArray* func_hooks;
 extern int64_t bbl_counts;
+
+extern mmio_read_cb ppb_default_read_func;
+extern mmio_write_cb ppb_default_write_func;
 #endif

@@ -36,7 +36,7 @@
 #include <stdio.h>
 
 #include "model.h"
-void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<input_stream*> *fuzz_streams)
+void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<u32> *fuzz_streams)
 {
   simulator->fuzz_entry = fuzz_entry;
   simulator->base_entry = base_entry;
@@ -306,6 +306,11 @@ void allocate_new_simulator(FuzzState *state)
   child_arg[i++] =  alloc_printf("%d",max_bbl_exec);
   child_arg[i++] = (char*)"-a";
   child_arg[i++] =  alloc_printf("%d",mode);
+
+  if(!use_fuzzware)
+    child_arg[i++] = (char*)"-n";
+
+
   if(model_systick)
     child_arg[i++] = (char*)"-s";
 
@@ -331,7 +336,7 @@ void allocate_new_simulator(FuzzState *state)
 
   if(exit_info.exit_code != EXIT_CTL_FORKSRV_UP)
   {
-    printf("fork server is not up\n");
+    printf("fork server is not up got %s\n",fuzzer_exit_names[exit_info.exit_code]);
     cleanup_simulator(state,pid);
     clean_fuzzer_shm(state);
     exit(0);

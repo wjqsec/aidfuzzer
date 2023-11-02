@@ -186,7 +186,7 @@ void model_irq(int irq)
     bool start = false;
     int type;
 
-    
+    bool to_end;
 
     while(fgets(line, PATH_MAX, f))
     {
@@ -197,10 +197,21 @@ void model_irq(int irq)
                 start = true;
             else
                 start = false;
+            if(strstr(line,"y"))
+                to_end = true;
+            else
+                to_end = false;
+
+                
             continue;
         }
         if(!start)
             continue;
+        if(!to_end)
+        {
+            printf("this IRQ has infinite loop\n");
+            break;
+        }
         if(strstr(line,"mem:"))
         {
             type = STOPWATCH_TYPE_MEM;
@@ -229,7 +240,7 @@ void model_irq(int irq)
         if(type == STOPWATCH_TYPE_MEM)
         {
             add_memory_access_watchpoint(irq,  addr);
-            printf("insert_nostop_watchpoint mem irq:%d addr:%x\n",irq,addr);
+            
         }
         else if(type == STOPWATCH_TYPE_MMIO)
         {
@@ -238,12 +249,11 @@ void model_irq(int irq)
         else if(type == STOPWATCH_TYPE_FUNC_POINTER)
         {
             add_unsolved_func_ptr(irq,addr);
-            printf("insert_nostop_watchpoint func irq:%d addr:%x\n",irq,addr);
+            
         }
         else if(type == STOPWATCH_TYPE_DEPENDENCY)
         {
             add_dependency_func_ptr(irq,addr);
-            printf("insert_nostop_watchpoint dependency irq:%d addr:%x\n",irq,addr);
         }
         
     }

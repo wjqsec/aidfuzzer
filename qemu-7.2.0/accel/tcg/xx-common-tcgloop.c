@@ -171,6 +171,7 @@ void add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly)
 {
     if(xx_num_ram_regions >= MAX_NUM_MEM_REGION)
         return;
+    start = ROUND_DOWN(start,target_pagesize());
     size = ROUND_UP(size, target_pagesize());
     MemoryRegion *ram_space = get_system_memory();
     //MemoryRegion *mmio_space = get_system_io();
@@ -204,6 +205,7 @@ void add_rom_region(char *name,hw_addr start, hw_addr size)
 {
     if(xx_num_rom_regions >= MAX_NUM_MEM_REGION)
 	    return;
+    start = ROUND_DOWN(start,target_pagesize());
     size = ROUND_UP(size, target_pagesize());
     MemoryRegion *ram_space = get_system_memory();
     //MemoryRegion *mmio_space = get_system_io();
@@ -231,6 +233,7 @@ void add_mmio_region(char *name, hw_addr start, hw_addr size, mmio_read_cb read_
 {
     if(xx_num_mmio_regions >= MAX_NUM_MEM_REGION)
         return;
+    start = ROUND_DOWN(start,target_pagesize());
     size = ROUND_UP(size, target_pagesize());
 
     MemoryRegion *ram_space = get_system_memory();

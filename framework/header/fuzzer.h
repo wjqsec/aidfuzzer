@@ -30,9 +30,9 @@ typedef int64_t  s64;
 
 
 
-#define DEFAULT_STREAM_LEN 0x10
+
 #define DEFAULT_PASSTHROUGH_CONSTANT_LEN 0x10000
-#define DEFAULT_ELEMENT_SIZE 4
+
 
 
 #define MAX_BBL_EXEC 150000

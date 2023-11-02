@@ -71,12 +71,9 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
   #endif
   stream->ptr->stream_id = id;
   stream->ptr->len = len;
-  stream->ptr->mode = MODEL_NONE;
-  stream->ptr->element_size = DEFAULT_ELEMENT_SIZE;
-  stream->ptr->left_shift = 0;
     
   
-  if(state->models->find(stream->ptr->stream_id) != state->models->end())
+  if(state->models->find(id) != state->models->end())
   {
     input_model *model = (*state->models)[stream->ptr->stream_id];
     stream->ptr->mode = model->mode;
@@ -93,11 +90,13 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
     }
     if(stream->ptr->mode == MODEL_CONSTANT)
     {
+      stream->ptr->element_size = 4;
       stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
       *(u32*)stream->ptr->data = model->constant_val;
     }
     if(stream->ptr->mode == MODEL_PASSTHROUGH)
     {
+      stream->ptr->element_size = 4;
       stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
     }
     if(stream->ptr->mode == MODEL_BIT_EXTRACT)
@@ -111,6 +110,11 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
       stream->ptr->element_size = model->access_size;
     }
 
+  }
+  else
+  {
+    printf("stream model not found\n");
+    exit(0);
   }
 
   stream->ptr->initial_len = stream->ptr->len;
@@ -167,6 +171,6 @@ void replace_stream(FuzzState *state,queue_entry* q,u32 id, input_stream *new_tr
 }
 bool stream_shouldnot_mutate(input_stream *stream)
 {
-  return (stream->ptr->mode == MODEL_CONSTANT || stream->ptr->mode == MODEL_PASSTHROUGH  || stream->ptr->len == 0);
+  return (stream->ptr->mode == MODEL_CONSTANT || stream->ptr->mode == MODEL_PASSTHROUGH);
 }
 
