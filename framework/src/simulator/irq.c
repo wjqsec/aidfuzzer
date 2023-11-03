@@ -77,7 +77,15 @@ struct IRQ_MODEL
 
 bool is_irq_ready(irq_val irq)
 {
-    return irq_model.global_state[irq].num_dependency_ptrs == irq_model.runtime_state[irq].num_solved_dependency_ptrs;
+    uint32_t val;
+    for (int i = 0; i < irq_model.global_state[irq].num_dependency_ptrs; i ++)
+    {
+        read_ram(irq_model.global_state[irq].dependency_ptrs[i],4,&val);
+        if(val == 0)
+            return  false;
+    }
+    return true;
+    // return irq_model.global_state[irq].num_dependency_ptrs == irq_model.runtime_state[irq].num_solved_dependency_ptrs;
 }
 bool is_irq_access_memory(irq_val irq)
 {
@@ -285,7 +293,7 @@ void add_dependency_func_ptr(int irq,uint32_t addr)
 {
     if(find_value_32(irq_model.global_state[irq].dependency_ptrs,irq_model.global_state[irq].num_dependency_ptrs,addr))
         return;
-    insert_nostop_watchpoint(addr,4,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_denpendency,(void*)(uint64_t)irq);
+    // insert_nostop_watchpoint(addr,4,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_denpendency,(void*)(uint64_t)irq);
     irq_model.global_state[irq].dependency_ptrs[irq_model.global_state[irq].num_dependency_ptrs++] = addr;
-    printf("insert_nostop_watchpoint dependency irq:%d addr:%x\n",irq,addr);
+    printf("insert dependency irq:%d addr:%x\n",irq,addr);
 }
