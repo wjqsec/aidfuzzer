@@ -103,32 +103,40 @@ typedef struct _ARM_CPU_STATE
 typedef bool (*do_arm_interrupt_cb)(int32_t exec_index); 
 typedef void (*exec_nvic_cb)(irq_val irq);
 typedef void (*enable_nvic_cb)(irq_val irq);
+typedef void (*disable_nvic_cb)(irq_val irq);
 typedef void (*set_nvic_vecbase_cb)(hw_addr addr, int secure);
 typedef void (*enable_arm_interrupt_cb)(void);
 typedef void (*disable_arm_interrupt_cb)(void);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+    void get_arm_cpu_state(ARM_CPU_STATE *state);
+    void set_arm_cpu_state(ARM_CPU_STATE *state);
+    void *save_arm_ctx_state(void);
+    void restore_arm_ctx_state(void* state);
+    void delete_arm_ctx_state(void* state);
+    bool insert_nvic_intc(irq_val irq);
+    irq_val get_enabled_nvic_irq(irq_val **irqs);
+    void reset_arm_reg(void);
+    void set_armv7_init_vecbase(hw_addr addr);
+    hw_addr get_arm_precise_pc(void);
+    hw_addr get_arm_pc(void);
+    reg_val get_arm_lr(void);
 
-void get_arm_cpu_state(ARM_CPU_STATE *state);
-void set_arm_cpu_state(ARM_CPU_STATE *state);
-void *save_arm_ctx_state(void);
-void restore_arm_ctx_state(void* state);
-void delete_arm_ctx_state(void* state);
-bool insert_nvic_intc(irq_val irq);
-irq_val get_enabled_nvic_irq(irq_val **irqs);
-void reset_arm_reg(void);
-void set_armv7_init_vecbase(hw_addr addr);
-hw_addr get_arm_precise_pc(void);
-hw_addr get_arm_pc(void);
-reg_val get_arm_lr(void);
+    void register_do_arm_interrupt_hook(do_arm_interrupt_cb cb);
+    void register_exec_nvic_hook(exec_nvic_cb cb);
+    void register_enable_nvic_hook(enable_nvic_cb cb);
+    void register_disable_nvic_hook(disable_nvic_cb cb);
+    void register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb);
+    void register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb);
+    void register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb);
+    hw_addr get_nvic_vecbase(void);
+    irq_val get_arm_v7m_is_handler_mode(void);
+#ifdef __cplusplus
+}
+#endif
 
-void register_do_arm_interrupt_hook(do_arm_interrupt_cb cb);
-void register_exec_nvic_hook(exec_nvic_cb cb);
-void register_enable_nvic_hook(enable_nvic_cb cb);
-void register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb);
-void register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb);
-void register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb);
-hw_addr get_nvic_vecbase(void);
-irq_val get_arm_v7m_is_handler_mode(void);
 
 __attribute__ ((unused)) static const char* get_arm_intc_name(int intc)
 {

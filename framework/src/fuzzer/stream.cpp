@@ -131,25 +131,12 @@ input_stream * allocate_enough_space_stream(FuzzState *state,u32 id, s32 len)
   return ret;
 }
 
-input_stream *extend_stream(FuzzState *state,input_stream *stream,u32 ext_len)
+input_stream *resize_stream(FuzzState *state,input_stream *stream,u32 new_len)
 {
-  input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,stream->ptr->len + ext_len);
-  memcpy(ret->ptr->data,stream->ptr->data,stream->ptr->len);
-  return ret;
-}
-
-input_stream *clone_stream(FuzzState *state,input_stream *stream)
-{
-  return extend_stream(state,stream,0);
-}
-input_stream *decrease_stream(FuzzState *state,input_stream *stream,u32 new_len)
-{
-  if(new_len >= stream->ptr->len)
-  {
-    fatal("decrease stream should at lease remove some elements\n");
-  }
+  u32 copy_len = stream->ptr->len < new_len ? stream->ptr->len : new_len;
   input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,new_len);
-  memcpy(ret->ptr->data,stream->ptr->data,new_len);
+  memcpy(ret->ptr->data,stream->ptr->data,copy_len);
+  free_stream(state,stream);
   return ret;
 }
 

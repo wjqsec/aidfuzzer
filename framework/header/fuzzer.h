@@ -59,12 +59,12 @@ typedef int64_t  s64;
 #define FREED_STREAMS_FILENAME "freed_streams"
 
 
-typedef enum _MODEL
+typedef enum MODE
 {
     MODE_FUZZ = 1,
     MODE_DEBUG,
     MODE_RUN,
-}MODEL;
+}MODE;
 
 
 // #define STREAM_MAGIC_CHECK
@@ -147,12 +147,16 @@ typedef struct _CMD_INFO
 typedef struct _EXIT_INFO
 {
     u32 exit_code;
-    u32 exit_stream_id;
-    u32 stream_dumped;
-    u64 exit_pc;
-    u64 exit_lr;
-    u32 num_mmio;
-    u32 mmio_len;
+    
+    
+    u32 exit_pc;
+    u32 exit_lr;
+    struct 
+    {
+        u32 exit_stream_id;
+        u32 exit_mmio_addr;
+        u32 mmio_len;
+    } stream_info;
 } __attribute__((packed)) EXIT_INFO;
 
 

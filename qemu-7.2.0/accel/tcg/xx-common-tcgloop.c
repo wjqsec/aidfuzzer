@@ -335,10 +335,11 @@ NOSTOP_WATCHPOINT* insert_nostop_watchpoint(hw_addr addr, hw_addr len, qemu_plug
         {
             ptr[i] = point;
             mem_has_watchpoints[id]++;
-            break;
+            return point;
         }
     }
-    return point;
+    g_free(point);
+    return NULL;
 }
 
 void delete_nostop_watchpoint(NOSTOP_WATCHPOINT *watchpoint)

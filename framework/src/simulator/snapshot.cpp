@@ -9,18 +9,18 @@ ARMM_SNAPSHOT *org_snap,*new_snap;
 ARMM_SNAPSHOT* arm_take_snapshot()
 {
     ARMM_SNAPSHOT *snap = (ARMM_SNAPSHOT*)malloc(sizeof(ARMM_SNAPSHOT));
-    snap->num_segs = 0;
+    snap->mems = new vector<SNAPSHOT_MEM_SEG*>();
     snap->arm_ctx = save_arm_ctx_state();
 
-    for(int i = 0; i < MAX_NUM_MEM_REGION ; i ++)
+    for(auto it = config->segs->begin(); it != config->segs->end(); it++)
     {
-        if(config->segs[i].size && !config->segs[i].readonly && config->segs[i].type == SEG_RAM)
+        if(!(*it)->readonly && (*it)->type == SEG_RAM)
         {
-            snap->mems[snap->num_segs].len = config->segs[i].size;
-            snap->mems[snap->num_segs].start = config->segs[i].start;
-            snap->mems[snap->num_segs].data = (uint8_t*)malloc(snap->mems[snap->num_segs].len);
-            read_ram(snap->mems[snap->num_segs].start,snap->mems[snap->num_segs].len,snap->mems[snap->num_segs].data);
-            snap->num_segs++;
+            snap->mems->push_back(new SNAPSHOT_MEM_SEG());
+            snap->mems->back()->len = (*it)->size;
+            snap->mems->back()->start = (*it)->start;
+            snap->mems->back()->data = (uint8_t*)malloc(snap->mems->back()->len);
+            read_ram(snap->mems->back()->start,snap->mems->back()->len,snap->mems->back()->data);
         }
     }
 
@@ -33,17 +33,17 @@ void arm_restore_snapshot(ARMM_SNAPSHOT* snap)
     static uint8_t dirty_bits[0x1000];
     restore_arm_ctx_state(snap->arm_ctx);
     int page_size = target_pagesize();
-    for(int num_seg = 0; num_seg < snap->num_segs; num_seg++)
+    for(auto it = snap->mems->begin(); it != snap->mems->end(); it++)
     {
-        int num_pages = snap->mems[num_seg].len / page_size;
+        int num_pages = (*it)->len / page_size;
         
-        get_dirty_pages(snap->mems[num_seg].start, snap->mems[num_seg].len, (unsigned long*)dirty_bits);
+        get_dirty_pages((*it)->start, (*it)->len, (unsigned long*)dirty_bits);
         for(int i = 0 ; i < num_pages ; i++)
         {
             if(1 & (dirty_bits[i / 8] >> (i & 7)))
             {
                 uint32_t offset = page_size * i;
-                write_ram(snap->mems[num_seg].start + offset ,page_size, snap->mems[num_seg].data + offset);
+                write_ram((*it)->start + offset ,page_size, (*it)->data + offset);
             }
             
         }  
@@ -83,17 +83,15 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
         
         register_exec_bbl_hook(arm_exec_bbl);
         
-        for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
+        for(auto it = config->segs->begin(); it != config->segs->end(); it++)
         {
-            if(config->segs[i].size == 0)
-                break;
-            if(config->segs[i].type != SEG_MMIO)
+            if((*it)->type != SEG_MMIO)
                 continue;
-            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_common, mmio_write_common,(void*)(uint64_t)config->segs[i].start);
+            add_mmio_region((*it)->name,(*it)->start, (*it)->size, mmio_read_common, mmio_write_common,(void*)(uint64_t)(*it)->start);
         }
         new_snap = arm_take_snapshot();
 
-        prepare_exit(EXIT_CTL_FORKSRV_UP,0,0,0,0);
+        prepare_exit(EXIT_CTL_FORKSRV_UP);
         pc_changed = exit_with_code_start();
 
         return pc_changed;

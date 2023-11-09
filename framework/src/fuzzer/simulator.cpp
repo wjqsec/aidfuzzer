@@ -38,17 +38,17 @@
 #include "model.h"
 void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<u32> *fuzz_streams)
 {
-  simulator->fuzz_entry = fuzz_entry;
-  simulator->base_entry = base_entry;
-  simulator->fuzz_streams = fuzz_streams;
+  simulator->task.fuzz_entry = fuzz_entry;
+  simulator->task.base_entry = base_entry;
+  simulator->task.fuzz_streams = fuzz_streams;
 }
 void copy_fuzz_data(Simulator *simulator)
 {
   int i = 0;
-  simulator->id_queue_idx_mapping->clear();
+  simulator->task.id_queue_idx_mapping->clear();
   map<u32,input_stream *> *streams;
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
-  streams = simulator->fuzz_entry->streams;
+  streams = simulator->task.fuzz_entry->streams;
   queue->num_streams = streams->size();
 
 
@@ -56,7 +56,7 @@ void copy_fuzz_data(Simulator *simulator)
   {
     queue->streams[i].offset_to_stream_area = it->second->offset_to_stream_area;
     queue->streams[i].used = 0;
-    (*simulator->id_queue_idx_mapping)[it->first] = i;
+    (*simulator->task.id_queue_idx_mapping)[it->first] = i;
     i++;
   }
 
@@ -83,7 +83,7 @@ void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream
 
   queue->streams[queue->num_streams].used = 0;
 
-  (*simulator->id_queue_idx_mapping)[new_stream->ptr->stream_id] = queue->num_streams;
+  (*simulator->task.id_queue_idx_mapping)[new_stream->ptr->stream_id] = queue->num_streams;
 
   queue->num_streams++;
 
@@ -98,7 +98,7 @@ void fuzz_continue_stream_outof(Simulator *simulator,input_stream *new_stream)
   int idx;
   cmd_info.cmd = CMD_CONTINUE_UPDATE_STREAM;
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
-  idx = (*simulator->id_queue_idx_mapping)[new_stream->ptr->stream_id];
+  idx = (*simulator->task.id_queue_idx_mapping)[new_stream->ptr->stream_id];
   queue->streams[idx].offset_to_stream_area = new_stream->offset_to_stream_area;
   cmd_info.updated_stream_index = idx;
   write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
@@ -132,7 +132,6 @@ void fuzz_exit_timeout(Simulator *simulator,EXIT_INFO *exit_info, u32 seconds, b
     read(simulator->fd_ctl_from_simulator, exit_info,sizeof(EXIT_INFO));
   } 
   simulator->status = STATUS_FREE;
-  simulator->state->total_exec++;
 }
 void fuzz_terminate(Simulator *simulator)
 {
@@ -180,10 +179,6 @@ Simulator* get_avaliable_simulator(FuzzState *state)
     break;
   }
     
-
-  
-  
-  if (ret == -1) fatal("poll error");
   for (i = 0; i < state->num_fds; i++) 
   {
     if (state->fds[i].revents & POLLIN) 
@@ -216,7 +211,7 @@ void kill_simulator(Simulator * simulator)
   int status;
   kill(simulator->pid,SIGKILL);
   waitpid(simulator->pid,&status,WEXITED | WSTOPPED);
-  printf("simualtor pid:%d terminate\n",simulator->pid);
+  printf("simualtor pid:%d killed\n",simulator->pid);
   simulator->status = STATUS_KILLED;
 }
 
@@ -245,8 +240,7 @@ void allocate_new_simulator(FuzzState *state)
   Simulator *simulator = new Simulator();
   simulator->state = state;
   simulator->map_size = state->map_size;
-  simulator->status = STATUS_FREE;
-  simulator->id_queue_idx_mapping = new map<u32,int>();
+  simulator->task.id_queue_idx_mapping = new map<u32,int>();
 
   simulator->shm_id_trace_bit = shmget(IPC_PRIVATE, simulator->map_size, IPC_CREAT | IPC_EXCL | 0600);
   if (simulator->shm_id_trace_bit < 0) 
@@ -309,10 +303,6 @@ void allocate_new_simulator(FuzzState *state)
 
   if(!use_fuzzware)
     child_arg[i++] = (char*)"-n";
-
-
-  if(model_systick)
-    child_arg[i++] = (char*)"-s";
 
   child_arg[i++] = NULL;
 

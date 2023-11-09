@@ -63,7 +63,6 @@ char *model_dir;
 char *log_dir;
 char *fuzzware_config_filename;
 
-bool model_systick = true;
 bool use_fuzzware = true;
 
 
@@ -97,7 +96,7 @@ bool exit_with_code_start()
     if(unlikely(cmd_info.cmd == CMD_TERMINATE))
     {
         printf("received terminate cmd from fuzzer\n");
-        terminate();
+        terminate_simulation();
         pc_changed = true;
     }   
     else if(unlikely(cmd_info.cmd == CMD_CONTINUE_ADD_STREAM))
@@ -119,31 +118,32 @@ bool exit_with_code_start()
     else
     {
         printf("invlaid cmd %d\n",cmd_info.cmd);
-        terminate();
+        terminate_simulation();
         pc_changed = true;
     }
     if(pc_changed)
     {
-
-        exit_info.num_mmio = 0;
+        arm_restore_snapshot(new_snap);
         nommio_executed_bbls = 0;
         run_index++;
         irq_on_new_run();
-        arm_restore_snapshot(new_snap);
         collect_streams();
     }
     return pc_changed;
      
 }
 
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint64_t lr,u32 mmio_len)
+void prepare_exit(uint32_t exit_code,uint32_t exit_pc, uint32_t exit_lr, uint32_t exit_stream_id, uint32_t exit_mmio_addr ,uint32_t mmio_len)
 {
     
-    exit_info.exit_code = code;
-    exit_info.exit_stream_id = stream_id;
-    exit_info.exit_pc = pc;
-    exit_info.exit_lr = lr;
-    exit_info.mmio_len = mmio_len;
+    exit_info.exit_code = exit_code;
+    exit_info.exit_pc = exit_pc;
+    exit_info.exit_lr = exit_lr;
+
+    exit_info.stream_info.exit_stream_id = exit_stream_id;
+    exit_info.stream_info.exit_mmio_addr = exit_mmio_addr;
+    exit_info.stream_info.mmio_len = mmio_len;
+
 }
 
 
@@ -152,11 +152,10 @@ void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint64_t lr,u32 m
 uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
 {
     uint64_t ret = 0;
-    u32 stream_dumped = 1;
     if(next_bbl_should_exit)
         return ret;
 
-    addr = (hw_addr)opaque + addr;
+    addr = (hw_addr)(uint64_t)opaque + addr;
     uint64_t precise_pc = get_arm_precise_pc();
     
     int stream_status;
@@ -179,7 +178,7 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
                 
             }
 
-            prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,stream_id,precise_pc,0,size);
+            prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,precise_pc,0,stream_id,addr,size);
 
             exit_with_code_start();
 
@@ -195,7 +194,7 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
             #ifdef DBG
             fprintf(flog,"stream not added by fuzzer id:%x\n",stream_id);
             #endif
-            prepare_exit(EXIT_DBG_STREAM_NOTFOUND,stream_id,precise_pc,0,size);
+            prepare_exit(EXIT_DBG_STREAM_NOTFOUND,precise_pc,0,stream_id,addr,size);
             next_bbl_should_exit = true;
             return ret;
         }
@@ -210,7 +209,7 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
     }
     else if(stream_status == STREAM_STATUS_OUTOF)
     {
-        prepare_exit(EXIT_FUZZ_OUTOF_STREAM,stream_id,precise_pc,0,0);
+        prepare_exit(EXIT_FUZZ_OUTOF_STREAM,precise_pc,0,stream_id,addr,size);
         next_bbl_should_exit = true;
     }
     else
@@ -243,7 +242,7 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
 
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
-        prepare_exit(EXIT_FUZZ_TIMEOUT,0,pc,0,0);
+        prepare_exit(EXIT_FUZZ_TIMEOUT);
         pc_changed = exit_with_code_start();
         return pc_changed;
     }
@@ -281,8 +280,9 @@ void enable_arm_intc()
 
 void nostop_watchpoint_exec_overwrite_vec(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
 {
+    
     int irq = (int)(uint64_t)data;
-    irq_on_set_nvic_vec_entry(irq);
+    irq_on_overwrite_vec_entry(irq,vaddr);
 }
 void nostop_watchpoint_exec_mem(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
 {
@@ -295,11 +295,7 @@ void nostop_watchpoint_exec_unresolved_func_ptr(hw_addr vaddr,hw_addr len,uint32
     irq_on_unsolved_func_ptr_write(irq, vaddr, val);
 
 }
-void nostop_watchpoint_exec_denpendency(hw_addr vaddr,hw_addr len,uint32_t val,void *data)
-{
-    int irq = (int)(uint64_t)data;
-   irq_on_dependency_ptr_write(irq, vaddr, val);
-}
+
 
 void on_set_nvic_vecbase(uint32_t addr, int secure)
 {
@@ -310,6 +306,10 @@ void on_set_nvic_vecbase(uint32_t addr, int secure)
 void enable_nvic(irq_val irq)
 {
     irq_on_enable_nvic_irq(irq);
+}
+void disenable_nvic(irq_val irq)
+{
+    irq_on_disable_nvic_irq(irq);
 }
 
 bool arm_exec_loop_bbl(hw_addr pc,uint32_t id)
@@ -331,7 +331,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     }
     if(exec_index == EXCP_BKPT)
     {
-        prepare_exit(EXIT_FUZZ_BKP,0,get_arm_pc(),0,0);
+        prepare_exit(EXIT_FUZZ_BKP,get_arm_pc(),get_arm_lr(),0,0,0);
         exit_with_code_start();
         return false;
     }
@@ -342,7 +342,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     fprintf(f_crash_log,"\n");
     #endif
 
-    prepare_exit(EXIT_FUZZ_CRASH,0,get_arm_pc(),get_arm_lr(),0);
+    prepare_exit(EXIT_FUZZ_CRASH,get_arm_pc(),get_arm_lr(),0,0,0);
     exit_with_code_start();
     
     return false;
@@ -360,22 +360,22 @@ void post_thread_exec(int exec_ret)
         insert_idel_irq();
     else if(exec_ret == EXCP_INTERRUPT)
     {
-        prepare_exit(EXIT_FUZZ_EXCP_INTERRUPT,0,get_arm_pc(),0,0);
+        prepare_exit(EXIT_FUZZ_EXCP_INTERRUPT);
         pc_changed = exit_with_code_start();
     }
     else if(exec_ret == EXCP_DEBUG)
     {
-        prepare_exit(EXIT_FUZZ_EXCP_DEBUG,0,get_arm_pc(),0,0);
+        prepare_exit(EXIT_FUZZ_EXCP_DEBUG);
         pc_changed = exit_with_code_start();
     }
     else if(exec_ret == EXCP_YIELD)
     {
-        prepare_exit(EXIT_FUZZ_EXCP_YIELD,0,get_arm_pc(),0,0);
+        prepare_exit(EXIT_FUZZ_EXCP_YIELD);
         pc_changed = exit_with_code_start();
     }
     else if(exec_ret == EXCP_ATOMIC)
     {
-        prepare_exit(EXIT_FUZZ_EXCP_ATOMIC,0,get_arm_pc(),0,0);
+        prepare_exit(EXIT_FUZZ_EXCP_ATOMIC);
         pc_changed = exit_with_code_start();
     }
 
@@ -391,21 +391,21 @@ void __afl_map_shm(void) {
     char *id_str = getenv(SHM_ENV_VAR);
     if (id_str) {
     uint32_t shm_id = atoi(id_str);
-    __afl_area_ptr = shmat(shm_id, NULL, 0);
+    __afl_area_ptr = (uint8_t *)shmat(shm_id, NULL, 0);
     if (__afl_area_ptr == (void *)-1) _exit(1);
     }
 
     id_str = getenv(SHM_SHARE_STREAM_VAR);
     if (id_str) {
     uint32_t shm_id = atoi(id_str);
-    __afl_share_stream_data = shmat(shm_id, NULL, 0);
+    __afl_share_stream_data = (uint8_t *)shmat(shm_id, NULL, 0);
     if (__afl_share_stream_data == (void *)-1) _exit(1);
     }
 
     id_str = getenv(SHM_SHARE_FUZZ_QUEUE_VAR);
     if (id_str) {
     uint32_t shm_id = atoi(id_str);
-    __afl_share_fuzz_queue_data = shmat(shm_id, NULL, 0);
+    __afl_share_fuzz_queue_data = (uint8_t *)shmat(shm_id, NULL, 0);
     if (__afl_share_fuzz_queue_data == (void *)-1) _exit(1);
     }
 
@@ -427,10 +427,10 @@ void cleanup()
     shmdt(__afl_share_stream_data);
     shmdt(__afl_share_fuzz_queue_data);
 }
-void terminate()
+void terminate_simulation()
 {
     cleanup();
-    prepare_exit(EXIT_CTL_TERMINATE,0,0,0,0);
+    prepare_exit(EXIT_CTL_TERMINATE);
     write(fd_to_fuzzer , &exit_info,sizeof(EXIT_INFO));  //forkserver up
     while (1)
     {
@@ -448,7 +448,7 @@ static void segv_exit(int signal)
 {
     printf("segmentation fault\n");
     print_stacktrace();
-    terminate();
+    terminate_simulation();
 }
 void dummy_sigaction(int signal)
 {
@@ -460,12 +460,12 @@ void init_signal_handler(void)
   if (signal(SIGSEGV, segv_exit) == SIG_ERR) 
   {
     printf("Error setting signal handler");
-    terminate();
+    terminate_simulation();
   }
   if (signal(SIGABRT, segv_exit) == SIG_ERR) 
   {
     printf("Error setting signal handler");
-    terminate();
+    terminate_simulation();
   }
   
 }
@@ -509,9 +509,6 @@ void init(int argc, char **argv)
             fuzzware_config_filename = strdup(optarg);
             config = generate_xx_config(optarg);
             break;
-        case 's':
-            model_systick = true;
-            break;
         case 'b':
             max_bbl_exec = atoi(optarg);
             break;
@@ -525,13 +522,13 @@ void init(int argc, char **argv)
             
         default: /* '?' */
             printf("Usage error\n");
-            terminate();
+            terminate_simulation();
         }
     }
     if(!config)
     {
         printf("generate config error\n");
-        terminate();
+        terminate_simulation();
     }
         
     irq_on_init();
@@ -552,30 +549,27 @@ int run_config()
         
     
 
-    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
+    for(auto it = config->segs->begin(); it!= config->segs->end(); it++)
     {
-        if(config->segs[i].size == 0)
-            break;
-        
-        if(config->segs[i].type == SEG_RAM)
+        if((*it)->type == SEG_RAM)
         {
-            add_ram_region(config->segs[i].name,
-            config->segs[i].start, 
-            config->segs[i].size,
-            config->segs[i].readonly);
-            zero_ram(config->segs[i].start,config->segs[i].size);
-            for(int j = 0 ; j <= config->segs[i].num_content ; j++)
+            add_ram_region((*it)->name,
+            (*it)->start, 
+            (*it)->size,
+            (*it)->readonly);
+            zero_ram((*it)->start,(*it)->size);
+            for(auto it2 = (*it)->contents->begin(); it2 != (*it)->contents->end(); it2++)
             {
-                load_file_ram(config->segs[i].contents[j].file,
-                config->segs[i].start, 
-                config->segs[i].contents[j].file_offset, 
-                config->segs[i].contents[j].mem_offset, 
-                config->segs[i].contents[j].file_size);
+                load_file_ram((*it2)->file,
+                (*it)->start, 
+                (*it2)->file_offset, 
+                (*it2)->mem_offset, 
+                (*it2)->file_size);
             }
         }
-        else if(config->segs[i].type == SEG_MMIO)
+        else if((*it)->type == SEG_MMIO)
         {
-            add_mmio_region(config->segs[i].name,config->segs[i].start, config->segs[i].size, mmio_read_snapshot, mmio_write_snapshot,(void*)(uint64_t)config->segs[i].start);
+            add_mmio_region((*it)->name,(*it)->start, (*it)->size, mmio_read_snapshot, mmio_write_snapshot,(void*)(uint64_t)(*it)->start);
         }
     }
 
@@ -591,19 +585,14 @@ int run_config()
     register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
     register_enable_arm_interrupt_hook(enable_arm_intc);
     register_enable_nvic_hook(enable_nvic);
+    register_disable_nvic_hook(disenable_nvic);
+
     register_post_thread_exec_hook(post_thread_exec);
+    
     model_all_infinite_loop();
 
-    // uint32_t ttt = 5;
-    // read_ram(0x20000500,4,&ttt);
-    // printf("after read %x\n",ttt);
-    // terminate();
-
     irq_on_new_run();
-    if(model_systick)
-    {
-        enable_nvic(ARMV7M_EXCP_SYSTICK);
-    }
+    
         
 
     exec_simulator(simulator);

@@ -79,14 +79,14 @@ char* dump_state(uint32_t mmio_id, const char * prefix, char *dir)
         state.xpsr
     );
     ihex_init(&ihex);
-    for(i = 0; i < MAX_NUM_MEM_REGION ; i++)
+    for(auto it = config->segs->begin(); it != config->segs->end(); it++)
     {
-        if(config->segs[i].size && config->segs[i].type == SEG_RAM)
+        if((*it)->type == SEG_RAM)
         {
-            buf = (uint8_t *)malloc(config->segs[i].size);
-            read_ram(config->segs[i].start,config->segs[i].size,buf);
-            ihex_write_at_address(&ihex, config->segs[i].start);
-            ihex_write_bytes(&ihex, buf, config->segs[i].size);
+            buf = (uint8_t *)malloc((*it)->size);
+            read_ram((*it)->start,(*it)->size,buf);
+            ihex_write_at_address(&ihex, (*it)->start);
+            ihex_write_bytes(&ihex, buf, (*it)->size);
             free(buf);
         }
         
@@ -136,12 +136,12 @@ void model_all_infinite_loop()
     else
     {
         printf("model file %s not found,exit\n",model_filename);
-        terminate();
+        terminate_simulation();
     }
 }
 
 
-void model_irq(int irq)
+void model_dumped_irq(int irq,hw_addr isr)
 {
     char *state_filename;
     char model_filename[PATH_MAX];
@@ -156,11 +156,10 @@ void model_irq(int irq)
 
     // if(access(model_filename,F_OK) != 0)
     // {
-        uint32_t irq_entry;
-        read_ram(get_nvic_vecbase() + 4 * irq, 4,&irq_entry);
+
         state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir);
 
-        sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),irq_entry);
+        sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),isr);
         printf("%s",cmd);
         fprintf(f_irq_log,"%s",cmd);
 
@@ -179,7 +178,7 @@ void model_irq(int irq)
     if(!f)
     {
         printf("model file %s not found,exit\n",model_filename);
-        terminate();
+        terminate_simulation();
     }
 
     
@@ -239,7 +238,7 @@ void model_irq(int irq)
             continue;
         if(type == STOPWATCH_TYPE_MEM)
         {
-            add_memory_access_watchpoint(irq,  addr);
+            add_memory_access_watchpoint(irq,  addr,isr);
             
         }
         else if(type == STOPWATCH_TYPE_MMIO)
@@ -248,12 +247,12 @@ void model_irq(int irq)
         }
         else if(type == STOPWATCH_TYPE_FUNC_POINTER)
         {
-            add_unsolved_func_ptr(irq,addr);
+            add_unsolved_func_ptr(irq,addr,isr);
             
         }
         else if(type == STOPWATCH_TYPE_DEPENDENCY)
         {
-            add_dependency_func_ptr(irq,addr);
+            add_dependency_func_ptr(irq,addr,isr);
         }
         
     }

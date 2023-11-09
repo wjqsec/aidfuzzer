@@ -26,7 +26,7 @@ void add_stream(int index_to_shared_queue)
     if(metadata->magic_number != STREAM_MAGIC)
     {
         printf("stream magic overwritten\n");
-        terminate();
+        terminate_simulation();
     }
     #endif
 
@@ -35,7 +35,7 @@ void add_stream(int index_to_shared_queue)
     if(stream->avaliable)
     {
         printf("stream index colission id:%x  %x\n",metadata->stream_id,stream->metadata->stream_id);
-        terminate();
+        terminate_simulation();
     }
     stream->avaliable = true;
     stream->used = &queue->streams[index_to_shared_queue].used;
@@ -133,12 +133,10 @@ void get_fuzz_data(SHARED_STREAM * stream, uint64_t *out)
         default:
         {
             printf("wrong stream type:%d\n",stream->metadata->mode);
-            terminate();
+            terminate_simulation();
             break;
         }
     } 
-
-    exit_info.num_mmio++;
     nommio_executed_bbls = 0;
     *stream->used += stream->metadata->element_size;
 }

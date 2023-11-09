@@ -5,10 +5,8 @@ queue_entry* new_queue(FuzzState *state)
 {
     queue_entry *entry = new queue_entry();
     entry->streams = new map<u32,input_stream*>();
-    entry->stream_priority = nullptr;
+    entry->stream_info = 0;
     entry->fuzztimes = 0;
-    entry->total_stream_len = 0;
-    entry->total_stream_priority = 0;
     
     return entry;
 }
@@ -26,15 +24,15 @@ void free_queue(FuzzState *state,queue_entry* q)
         free_stream(state,it->second);
     }
     delete q->streams;
-    if (q->stream_priority)
-        delete q->stream_priority;
+    if (q->stream_info)
+        delete q->stream_info;
     delete q;
 }
 
 void insert_queue(FuzzState *state,queue_entry* q)
 {
     state->entries->push_back(q);
-    state->total_priority += q->priority;
+    state->total_queue_priority += q->priority;
 }
 void insert_crash(FuzzState *state,crash_info info)
 {

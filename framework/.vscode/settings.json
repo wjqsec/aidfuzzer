@@ -3,6 +3,10 @@
         "xtree": "cpp",
         "vector": "cpp",
         "utility": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "locale": "cpp",
+        "string": "cpp",
+        "chrono": "cpp",
+        "variant": "cpp"
     }
 }

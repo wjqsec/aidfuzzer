@@ -16,9 +16,9 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id);
 void enable_nvic_hook(int irq);
 uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size);
 void mmio_write_common(void *opaque,hw_addr addr,uint64_t data,unsigned size);
-void prepare_exit(uint32_t code,uint32_t stream_id,uint64_t pc,uint64_t lr,u32 mmio_len);
+void prepare_exit(uint32_t exit_code,uint32_t exit_pc = 0, uint32_t exit_lr = 0, uint32_t exit_stream_id = 0, uint32_t exit_mmio_addr = 0,uint32_t mmio_len = 0);
 bool exit_with_code_start();
-void terminate();
+void terminate_simulation();
 void init(int argc, char **argv);
 int run_config();
 
@@ -58,7 +58,6 @@ extern char *model_dir;
 extern char *log_dir;
 extern char *fuzzware_config_filename;
 
-extern bool model_systick;
 
 #endif
 

@@ -28,15 +28,21 @@
 #include "fuzzer.h"
 #include "xx.h"
 enable_nvic_cb enable_nvic_func;
+disable_nvic_cb disable_nvic_func;
 set_nvic_vecbase_cb set_nvic_vecbase_func;
 void register_enable_nvic_hook(enable_nvic_cb cb)
 {
     enable_nvic_func = cb;
 }
+void register_disable_nvic_hook(disable_nvic_cb cb)
+{
+    disable_nvic_func = cb;
+}
 void register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb)
 {
     set_nvic_vecbase_func = cb;
 }
+
 /* IRQ number counting:
  *
  * the num-irq property counts the number of external IRQ lines
@@ -2390,6 +2396,13 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
                     enable_nvic_func(startvec + i);
                     s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
                 }
+                if(setval == 0 && disable_nvic_func)
+                {
+                    disable_nvic_func(startvec + i);
+                }
+
+
+                
                     
             }
         }

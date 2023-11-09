@@ -300,12 +300,7 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
           memcpy(new_stream->ptr->data, data, clone_to);
 
           /* Inserted part */
-          for (int i = 0; i < (clone_len / 4); i++)
-          {
-            *(u32*)(new_stream->ptr->data + clone_to + i * 4) = UR(0xffffffff);
-          }
-          // memset(new_stream->ptr->data + clone_to,
-          //         UR(2) ? UR(256) : data[UR(len)], clone_len);
+          rand_memset(new_stream->ptr->data + clone_to,clone_len);
 
           /* Tail */
           memcpy(new_stream->ptr->data + clone_to + clone_len, data + clone_to,
@@ -324,14 +319,10 @@ inline input_stream* havoc_append_huge(FuzzState *state,input_stream* stream)
   if (len + HAVOC_BLK_HUGE  < MAX_FILE) 
   {
     input_stream *new_stream;
-    new_stream = extend_stream(state,stream,HAVOC_BLK_HUGE);
-    for (int i = 0; i < (HAVOC_BLK_HUGE / 4); i++)
-    {
-      *(u32*)(new_stream->ptr->data + len + i * 4) = UR(0xffffffff);
-    }
+    new_stream = resize_stream(state,stream,len + HAVOC_BLK_HUGE);
+    rand_memset(new_stream->ptr->data + len,HAVOC_BLK_HUGE);
 
-    // memset(new_stream->ptr->data + len , UR(256),HAVOC_BLK_HUGE);
-    free_stream(state,stream);
+    
     ret = new_stream;
   }
   return ret;
@@ -505,18 +496,20 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   u32 use_stacking;
   s32 i;
   
-
-  ret = clone_stream(state,stream);
-
+  
+  ret = resize_stream(state,stream,stream->ptr->len);
+  
   // use_stacking = (1 << (1 + UR(6)));
 
   // for (i = 0; i < use_stacking; i++) 
-  {
+  // {
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
     
     ret = havoc_arrays[index](state,ret);
     
-  }
+    
+    
+  // }
 
   return ret;
   

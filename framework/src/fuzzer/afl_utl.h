@@ -371,4 +371,22 @@ inline static u32 UR(u32 limit) {
 
 }
 
+inline void rand_memset(void* ptr, int len)
+{
+  u32 *tmp1 = (u32*)ptr;
+  u8 *tmp2;
+  int size_in_dword = len / 4;
+  int size_remain = len - (size_in_dword * 4);
+
+  tmp2 = (u8 *)ptr + (size_in_dword * 4);
+  for(int i = 0; i < size_in_dword; i++)
+  {
+    tmp1[i] = UR(0xffffffff);
+  }
+  for(int i = 0 ; i < size_remain ; i++)
+  {
+    tmp2[i] = UR(0xff);
+  }
+}
+
 #endif

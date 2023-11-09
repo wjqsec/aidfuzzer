@@ -6,7 +6,7 @@
 #include <glib.h>
 #include "xx.h"
 
-void qemu_init(int,char**);
+
 
 pre_thread_exec_cb pre_thread_exec_func;
 post_thread_exec_cb post_thread_exec_func;
@@ -102,16 +102,16 @@ void init_simulator(XXSimulator * s)
 {
     int argc = 0;
     char* args_qemu[30];
-    args_qemu[argc++] = "qemu"; 
-    args_qemu[argc++] = "-accel"; 
-    args_qemu[argc++] = "xx"; 
-    args_qemu[argc++] = "-M"; 
-    args_qemu[argc++] = "xx";
-    args_qemu[argc++] = "-nographic";  
+    args_qemu[argc++] = (char *)"qemu"; 
+    args_qemu[argc++] = (char *)"-accel"; 
+    args_qemu[argc++] = (char *)"xx"; 
+    args_qemu[argc++] = (char *)"-M"; 
+    args_qemu[argc++] = (char *)"xx";
+    args_qemu[argc++] = (char *)"-nographic";  
     if(s->enable_gdb_dbg)
     {
-        args_qemu[argc++] = "-s"; 
-        args_qemu[argc++] = "-S"; 
+        args_qemu[argc++] = (char *)"-s"; 
+        args_qemu[argc++] = (char *)"-S"; 
     }
     qemu_init(argc, args_qemu);
 }

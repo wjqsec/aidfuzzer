@@ -1,19 +1,22 @@
 #ifndef SNAPSHOT_INCLUDED
 #define SNAPSHOT_INCLUDED
 
-typedef struct _SNAPSHOT_MEM_SEG
+#include <vector>
+using namespace std;
+
+struct SNAPSHOT_MEM_SEG
 {
     uint8_t *data;
     hw_addr start;
-    uint32_t len;
-}SNAPSHOT_MEM_SEG;
+    hw_addr len;
+};
 
-typedef struct _ARMM_SNAPSHOT
+struct ARMM_SNAPSHOT
 {
-    int num_segs;
-    SNAPSHOT_MEM_SEG mems[MAX_NUM_MEM_REGION];
     void *arm_ctx;
-}ARMM_SNAPSHOT;
+    vector<SNAPSHOT_MEM_SEG*> *mems;
+    
+};
 
 ARMM_SNAPSHOT* arm_take_snapshot();
 void arm_restore_snapshot(ARMM_SNAPSHOT* snap);

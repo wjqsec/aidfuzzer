@@ -23,6 +23,12 @@ struct input_stream
 
 }__attribute__((packed));
 
+struct stream_schedule_info
+{
+    u32 schedule_times;
+    u32 interesting_times;
+    u32 len;
+};
 struct queue_entry
 {
     s32 depth;
@@ -33,12 +39,10 @@ struct queue_entry
     s32 priority;
     u32 exit_reason;
     u64 fuzztimes;
-    u64 total_stream_len;
     u64 create_time;
     u8 offset_to_save[0];
     
-    u64 total_stream_priority;
-    map<u32,u64> *stream_priority;
+    map<u32,stream_schedule_info *> *stream_info;
 #define DEFAULT_STREAM_PRIORITY 1
     map<u32,input_stream *> *streams;
     
@@ -51,6 +55,9 @@ struct crash_info
 };
 struct input_model
 {
+    u32 mmio_addr;
+    u32 pc_addr;
+
     int mode;
     u32 mask;
     u32 left_shift;
@@ -87,12 +94,14 @@ struct Simulator
 #define STATUS_KILLED 3
     int status;
 
-    queue_entry* base_entry;
-    queue_entry* fuzz_entry;
-    set<u32> * fuzz_streams;
-    u32 fuzz_stream_id;
-    bool onlyrun;
-    map<u32,int> *id_queue_idx_mapping;
+    struct
+    {
+        queue_entry* base_entry;
+        queue_entry* fuzz_entry;
+        set<u32> * fuzz_streams;
+        map<u32,int> *id_queue_idx_mapping;
+    } task;
+    
 
 
     FuzzState *state;
@@ -103,23 +112,21 @@ struct FuzzState
     u32 map_size;
     u32 share_size;
     u8 *virgin_bits;
+
     u8 *shared_stream_data;
     s32 shm_id_streampool;
-
     u32 shared_stream_used;
     
-
     u32 total_exec;
-    s64 total_priority;
 
+    s64 total_queue_priority;
     vector<queue_entry*> *entries;
+
     map<u32,vector<input_stream*>*> *freed_streams;
-    set<u32> *crash_ids;
     vector<crash_info> *crashes;
 
 
     map<u32,input_model*> *models;
-    map<u32,u32> *streamid_mmioaddr_mapping;
 
     FILE *flog;
 

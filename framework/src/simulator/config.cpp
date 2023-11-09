@@ -16,24 +16,24 @@ static bool is_seg_start(char *line)
 
 SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
 {
-    int index = -1;
     char line[PATH_MAX];
     char *ptr;
-    SEG_TYPE type = SEG_INVALID;
+    SEG_TYPE type;
     static char file_buf[PATH_MAX];
 
     bool start = false;
 
     char *dir_base = dirname(strdup(fuzzware_config_filename));
 
-    SIMULATOR_CONFIG *config = (SIMULATOR_CONFIG *)malloc(sizeof(SIMULATOR_CONFIG));
-    memset(config, 0, sizeof(SIMULATOR_CONFIG));
+    SIMULATOR_CONFIG *config = new SIMULATOR_CONFIG();
+    config->segs = new vector<SEG*>();
 
     FILE *fp = fopen(fuzzware_config_filename , "r");
     if(fp == NULL) 
     {
-        printf("%s config not found\n", fuzzware_config_filename);
-        free(config);
+        printf("%s not found\n", fuzzware_config_filename);
+        delete config->segs;
+        delete config;
         return NULL;
     }
 
@@ -57,7 +57,6 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
 
         if(is_seg_start(line))
         {
-            index++;
             if(strstr(line,MEMSEG_START"mmio"))
             {
                 type = SEG_MMIO;
@@ -70,67 +69,68 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
             {
                 type = SEG_RAM;
             }
-            config->segs[index].type = type;
+            config->segs->push_back(new SEG());
+            config->segs->back()->type = type;
             while(*ptr == ' ')
                 ptr++;
             *strstr(ptr,":") = 0;
-            config->segs[index].name = strdup(ptr);
-            config->segs[index].num_content = -1;
+            config->segs->back()->name = strdup(ptr);
+            config->segs->back()->contents = new vector<SEG_CONTENT*>();
         }
         else if (is_option_start(line))
         {
             if(strstr(line,OPTION_START"base_addr:"))
             {
-                config->segs[index].start = strtol(strstr(line,"base_addr: ") + strlen("base_addr: "), 0, 16);
+                config->segs->back()->start = strtol(strstr(line,"base_addr: ") + strlen("base_addr: "), 0, 16);
             }
             else if(strstr(line,OPTION_START"permissions:"))
             {
                 if(strstr(line,"w"))
                 {
-                    config->segs[index].readonly = false;
+                    config->segs->back()->readonly = false;
                 }
                 else
                 {
-                    config->segs[index].readonly = true;
+                    config->segs->back()->readonly = true;
                 }
-                config->segs[index].readonly = false;  // we need this for memory content writing
+                config->segs->back()->readonly = false;  // we need this for memory content writing
             }
             else if(strstr(line,OPTION_START"size:"))
             {
-                config->segs[index].size = strtol(strstr(line,"size: ") + strlen("size: "), 0, 16);
+                config->segs->back()->size = strtol(strstr(line,"size: ") + strlen("size: "), 0, 16);
                 
                 
             }
             else if(strstr(line,OPTION_START"file:"))
             {
                 
-                config->segs[index].num_content++;
+                config->segs->back()->contents->push_back(new SEG_CONTENT());
                 line[strcspn(line, "\n")] = 0;
                 strcpy(file_buf,dir_base);
                 strcat(file_buf,"/");
                 strcat(file_buf, strstr(line,"file: ") + strlen("file: "));
-                config->segs[index].contents[config->segs[index].num_content].file = strdup(file_buf);
+                config->segs->back()->contents->back()->file = strdup(file_buf);
                 
                 
             }
             else if(strstr(line,OPTION_START"file_size:"))
             {
-                config->segs[index].contents[config->segs[index].num_content].file_size = strtol(strstr(line,"file_size: ") + strlen("file_size: "), 0, 16);
+                config->segs->back()->contents->back()->file_size = strtol(strstr(line,"file_size: ") + strlen("file_size: "), 0, 16);
             }
             else if(strstr(line,OPTION_START"file_offset:"))
             {
 
-                config->segs[index].contents[config->segs[index].num_content].file_offset = strtol(strstr(line,"file_offset: ") + strlen("file_offset: "), 0, 16);
+                config->segs->back()->contents->back()->file_offset = strtol(strstr(line,"file_offset: ") + strlen("file_offset: "), 0, 16);
 
             }
             else if(strstr(line,OPTION_START"mem_offset:"))
             {
-                config->segs[index].contents[config->segs[index].num_content].mem_offset = strtol(strstr(line,"mem_offset: ") + strlen("mem_offset: "), 0, 16);
+                config->segs->back()->contents->back()->mem_offset = strtol(strstr(line,"mem_offset: ") + strlen("mem_offset: "), 0, 16);
             
             }
             else if(strstr(line,OPTION_START"ivt_offset:"))
             {
-                config->vecbase = strtol(strstr(line,"ivt_offset: ") + strlen("ivt_offset: "), 0, 16) + config->segs[index].start;
+                config->vecbase = strtol(strstr(line,"ivt_offset: ") + strlen("ivt_offset: "), 0, 16) + config->segs->back()->start;
             }
 
         }

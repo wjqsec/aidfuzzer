@@ -61,7 +61,9 @@ def from_state_file(statefile):
         project.factory.default_engine.default_strict_block_end = True
 
         initial_state = project.factory.call_state(addr=0,add_options=angr.options.refs)
-
+        # initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_REGISTERS)
+        initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY)
+        
         # arm_thumb_quirks.add_special_initstate_reg_vals(initial_state, regs) maybe later
 
         # apply registers to state

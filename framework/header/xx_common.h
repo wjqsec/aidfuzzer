@@ -72,35 +72,43 @@ typedef struct _NOSTOP_WATCHPOINT
     void *data;
 }NOSTOP_WATCHPOINT;
 
-XXSimulator *create_simulator(bool dbg);     
-void init_simulator(XXSimulator * s);
-void exec_simulator(XXSimulator *s);
-int thread_loop(bool debug);
+#ifdef __cplusplus
+extern "C" {
+#endif
+    XXSimulator *create_simulator(bool dbg);     
+    void qemu_init(int,char**);
+    void init_simulator(XXSimulator * s);
+    void exec_simulator(XXSimulator *s);
+    int thread_loop(bool debug);
 
-void register_pre_thread_exec_hook(pre_thread_exec_cb cb);
-void register_exec_bbl_hook(exec_bbl_cb cb);
-void register_exec_specific_bbl_hook(hw_addr addr,exec_bbl_cb cb);
-void register_exec_func_hook(hw_addr addr,exec_func_cb cb);
-void register_mem_access_log_hook(mem_access_cb cb);
-void register_post_thread_exec_hook(post_thread_exec_cb cb);
-void register_translate_bbl_hook(translate_bbl_cb cb);
-void register_armm_ppb_default_read_hook(mmio_read_cb cb);
-void register_armm_ppb_default_write_hook(mmio_write_cb cb);
+    void register_pre_thread_exec_hook(pre_thread_exec_cb cb);
+    void register_exec_bbl_hook(exec_bbl_cb cb);
+    void register_exec_specific_bbl_hook(hw_addr addr,exec_bbl_cb cb);
+    void register_exec_func_hook(hw_addr addr,exec_func_cb cb);
+    void register_mem_access_log_hook(mem_access_cb cb);
+    void register_post_thread_exec_hook(post_thread_exec_cb cb);
+    void register_translate_bbl_hook(translate_bbl_cb cb);
+    void register_armm_ppb_default_read_hook(mmio_read_cb cb);
+    void register_armm_ppb_default_write_hook(mmio_write_cb cb);
 
-void write_ram(hw_addr addr, hw_addr size, void *buf);  
-void read_ram(hw_addr addr, hw_addr size, void *buf);
-void rom_write(hw_addr addr, hw_addr len, void *buf);
-void add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly);
-void add_rom_region(char *name,hw_addr start, hw_addr size);
-void add_mmio_region(char *name, hw_addr start, hw_addr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
-void load_file_ram(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
-void zero_ram(hw_addr addr,hw_addr size);
-void load_file_rom(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
-void zero_ram(hw_addr addr,hw_addr size);
-int target_pagesize(void);
-void get_dirty_pages(hw_addr addr,hw_addr size, unsigned long dirty[]);
-NOSTOP_WATCHPOINT* insert_nostop_watchpoint(hw_addr addr, hw_addr len, qemu_plugin_mem_rw_ flag, nostop_watchpoint_cb cb,void *data);
-void delete_nostop_watchpoint(NOSTOP_WATCHPOINT *watchpoint);
+    void write_ram(hw_addr addr, hw_addr size, void *buf);  
+    void read_ram(hw_addr addr, hw_addr size, void *buf);
+    void rom_write(hw_addr addr, hw_addr len, void *buf);
+    void add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly);
+    void add_rom_region(char *name,hw_addr start, hw_addr size);
+    void add_mmio_region(char *name, hw_addr start, hw_addr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
+    void load_file_ram(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
+    void zero_ram(hw_addr addr,hw_addr size);
+    void load_file_rom(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
+    void zero_ram(hw_addr addr,hw_addr size);
+    int target_pagesize(void);
+    void get_dirty_pages(hw_addr addr,hw_addr size, unsigned long dirty[]);
+    NOSTOP_WATCHPOINT* insert_nostop_watchpoint(hw_addr addr, hw_addr len, qemu_plugin_mem_rw_ flag, nostop_watchpoint_cb cb,void *data);
+    void delete_nostop_watchpoint(NOSTOP_WATCHPOINT *watchpoint);
+#ifdef __cplusplus
+}
+#endif
+
 
 __attribute__ ((unused)) static const char* get_qemu_exit_name(int exit)
 {

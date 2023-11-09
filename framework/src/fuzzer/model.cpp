@@ -95,7 +95,6 @@ void sync_models(FuzzState *state,Simulator *simulator)
       model->mode = mode;
       model->values = vals;
       (*state->models)[mmio_id] = model;
-      (*state->streamid_mmioaddr_mapping)[mmio_id] = mmio_addr;
     }
     
     if(strstr(line,"access_size: "))
