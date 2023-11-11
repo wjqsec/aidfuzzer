@@ -18,9 +18,10 @@ ARMM_SNAPSHOT* arm_take_snapshot()
         {
             snap->mems->push_back(new SNAPSHOT_MEM_SEG());
             snap->mems->back()->len = (*it)->size;
+            snap->mems->back()->ptr = (*it)->ptr;
             snap->mems->back()->start = (*it)->start;
             snap->mems->back()->data = (uint8_t*)malloc(snap->mems->back()->len);
-            read_ram(snap->mems->back()->start,snap->mems->back()->len,snap->mems->back()->data);
+            memcpy(snap->mems->back()->data,snap->mems->back()->ptr,snap->mems->back()->len);
         }
     }
 
@@ -43,7 +44,7 @@ void arm_restore_snapshot(ARMM_SNAPSHOT* snap)
             if(1 & (dirty_bits[i / 8] >> (i & 7)))
             {
                 uint32_t offset = page_size * i;
-                write_ram((*it)->start + offset ,page_size, (*it)->data + offset);
+                memcpy((uint8_t*)(*it)->ptr + offset, (*it)->data + offset,page_size);
             }
             
         }  

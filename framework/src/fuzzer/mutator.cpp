@@ -321,7 +321,7 @@ inline input_stream* havoc_append_huge(FuzzState *state,input_stream* stream)
     input_stream *new_stream;
     new_stream = resize_stream(state,stream,len + HAVOC_BLK_HUGE);
     rand_memset(new_stream->ptr->data + len,HAVOC_BLK_HUGE);
-
+    free_stream(state,stream);
     
     ret = new_stream;
   }

@@ -89,7 +89,7 @@ bool exit_with_code_start()
         bytes_received  = read(fd_from_fuzzer,&cmd_info,sizeof(CMD_INFO)); 
 
     } while (bytes_received != sizeof(CMD_INFO));
-    
+   
 
     
     
@@ -101,8 +101,10 @@ bool exit_with_code_start()
     }   
     else if(unlikely(cmd_info.cmd == CMD_CONTINUE_ADD_STREAM))
     {
-
+       
         add_stream(cmd_info.added_stream_index);
+        
+        
 
         pc_changed = false;
     }
@@ -179,9 +181,9 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
             }
 
             prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,precise_pc,0,stream_id,addr,size);
-
+            
             exit_with_code_start();
-
+            
             if(!stream->avaliable)
             {
                 printf("stream not added by fuzzer id:%x\n",stream_id);
@@ -553,19 +555,22 @@ int run_config()
     {
         if((*it)->type == SEG_RAM)
         {
-            add_ram_region((*it)->name,
+            void * p = add_ram_region((*it)->name,
             (*it)->start, 
             (*it)->size,
             (*it)->readonly);
-            zero_ram((*it)->start,(*it)->size);
+            (*it)->ptr = p;
+            zero_ram(p,(*it)->size);
             for(auto it2 = (*it)->contents->begin(); it2 != (*it)->contents->end(); it2++)
             {
-                load_file_ram((*it2)->file,
-                (*it)->start, 
+                load_file_ram(p,
+                (*it2)->file,
                 (*it2)->file_offset, 
                 (*it2)->mem_offset, 
                 (*it2)->file_size);
             }
+            
+            
         }
         else if((*it)->type == SEG_MMIO)
         {

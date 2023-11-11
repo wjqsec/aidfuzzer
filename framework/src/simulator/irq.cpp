@@ -6,6 +6,7 @@
 #include "utl.h"
 #include "model.h"
 #include "simulator.h"
+#include "config.h"
 #include <stdio.h>
 
 using namespace std;
@@ -23,7 +24,7 @@ struct WATCHPOINT
 struct IRQ_N_STATIC_STATE 
 {
     map<hw_addr,WATCHPOINT*> *mem_addr;
-    set<hw_addr> *dependency_nullptr;
+    set<void*> *dependency_nullptr;
     map<hw_addr,WATCHPOINT*> *func_nullptr;
     set<hw_addr> *func_resolved_ptrs;
 };
@@ -58,7 +59,7 @@ IRQ_N_STATE *get_void_state()
 {
     IRQ_N_STATE* state = new IRQ_N_STATE();
     state->static_state.mem_addr = new map<hw_addr,WATCHPOINT*>();
-    state->static_state.dependency_nullptr = new set<hw_addr>();
+    state->static_state.dependency_nullptr = new set<void*>();
     state->static_state.func_nullptr = new map<hw_addr,WATCHPOINT*>();
     state->static_state.func_resolved_ptrs = new set<hw_addr>();
     state->runtime_state.mem_access_trigger_irq_times_count = 0;
@@ -119,23 +120,23 @@ void clear_state(IRQ_N_STATE *state)
 }
 
 
-bool is_irq_ready(irq_val irq)
+__attribute__((always_inline)) bool is_irq_ready(irq_val irq)
 {
-    set<hw_addr> *dependency_nullptr = (*models[irq]->state)[get_current_isr(irq)]->static_state.dependency_nullptr;
-    // printf("is_irq_ready %d current isr %x %d\n",irq,get_current_isr(irq),dependency_nullptr->size());
-    uint32_t val;
+    if(!models[irq]->enabled)
+        return false;
+    set<void*> *dependency_nullptr = (*models[irq]->state)[get_current_isr(irq)]->static_state.dependency_nullptr;
+    
     for(auto it = dependency_nullptr->begin(); it != dependency_nullptr->end(); it++)
     {
-        read_ram(*it,4,&val);
-        if(val == 0)
-            return  false;
+        if(*(uint32_t*)(*it) == 0)
+            return false;
     }
     return true;
 }
-bool is_irq_access_memory(irq_val irq)
+__attribute__((always_inline)) bool is_irq_access_memory(irq_val irq)
 {
     int num_mem = (*models[irq]->state)[get_current_isr(irq)]->static_state.mem_addr->size();
-    // printf("is_irq_access_memory irq %d current isr %x  %d\n",irq,get_current_isr(irq),num_mem);
+    
     return num_mem != 0 ;
 }
 
@@ -276,7 +277,8 @@ void irq_on_mem_access(int irq,hw_addr addr)
 
     if(get_arm_v7m_is_handler_mode() != 0)
         return;
-
+    if(!is_irq_access_memory(irq))
+            return;
     if(!is_irq_ready(irq))
         return;
 
@@ -328,20 +330,15 @@ void irq_on_idel()
     for(auto it = enabled_irqs.begin(); it != enabled_irqs.end(); it++)
     {
         irq_val irq = *it;
-        bool con1 = is_irq_ready(irq);
-        bool con2 = is_irq_access_memory(irq);
-        
-        // printf("try insert %d %d  %d\n", irq, con1, con2);
-        if(
-            con1 && con2
-        )
-        {
-            bool insert_irq = insert_nvic_intc(irq);
-            #ifdef DBG
-            if(insert_irq)
-                fprintf(flog,"%d->insert idel irq %d\n",run_index,irq);
-            #endif
-        }
+        if(!is_irq_access_memory(irq))
+            continue;
+        if(!is_irq_ready(irq))
+            continue;
+        bool insert_irq = insert_nvic_intc(irq);
+        #ifdef DBG
+        if(insert_irq)
+            fprintf(flog,"%d->insert idel irq %d\n",run_index,irq);
+        #endif
     }
     
 }
@@ -359,7 +356,7 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
 }
 
 
-void add_memory_access_watchpoint(int irq, uint32_t addr, hw_addr isr)
+void add_memory_access_watchpoint(int irq, hw_addr addr, hw_addr isr)
 {
     IRQ_N_STATIC_STATE *static_state = &((*models[irq]->state)[isr]->static_state);
     if(static_state->mem_addr->find(addr) == static_state->mem_addr->end())
@@ -372,7 +369,7 @@ void add_memory_access_watchpoint(int irq, uint32_t addr, hw_addr isr)
     }
     
 }
-void add_unsolved_func_ptr(int irq, uint32_t addr, hw_addr isr)
+void add_unsolved_func_ptr(int irq, hw_addr addr, hw_addr isr)
 {
     IRQ_N_STATIC_STATE *static_state = &((*models[irq]->state)[isr]->static_state);
     if(static_state->func_nullptr->find(addr) == static_state->func_nullptr->end())
@@ -380,13 +377,13 @@ void add_unsolved_func_ptr(int irq, uint32_t addr, hw_addr isr)
         WATCHPOINT *watchpoint = new WATCHPOINT();
         watchpoint->addr = addr;
         watchpoint->point = 0;
-        (*static_state->mem_addr)[addr] = watchpoint;
+        (*static_state->func_nullptr)[addr] = watchpoint;
         printf("add unsolved func ptr irq %d addr %x\n",irq,addr);
     }
     
 }
-void add_dependency_func_ptr(int irq,uint32_t addr, hw_addr isr)
+void add_dependency_func_ptr(int irq,hw_addr addr, hw_addr isr)
 {
-    (*models[irq]->state)[isr]->static_state.dependency_nullptr->insert(addr);
+    (*models[irq]->state)[isr]->static_state.dependency_nullptr->insert(get_ram_ptr(addr));
     printf("add dependency ptr irq %d addr %x\n",irq,addr);
 }

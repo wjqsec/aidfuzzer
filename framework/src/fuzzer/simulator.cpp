@@ -78,7 +78,10 @@ void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream
   cmd_info.cmd = CMD_CONTINUE_ADD_STREAM;
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
 
+ 
+
   cmd_info.added_stream_index = queue->num_streams;
+  
   queue->streams[queue->num_streams].offset_to_stream_area = new_stream->offset_to_stream_area;
 
   queue->streams[queue->num_streams].used = 0;

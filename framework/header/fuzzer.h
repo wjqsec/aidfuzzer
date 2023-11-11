@@ -147,8 +147,6 @@ typedef struct _CMD_INFO
 typedef struct _EXIT_INFO
 {
     u32 exit_code;
-    
-    
     u32 exit_pc;
     u32 exit_lr;
     struct 

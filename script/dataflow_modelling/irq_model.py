@@ -88,8 +88,12 @@ value_concrete_value_map = dict()
 
 
 nullptr_func_check_mem = set()
-nullptr_data_access_check_mem = set()
+nullptr_func_check_mem_addr = set()
 
+nullptr_data_access_check_mem = set()
+nullptr_data_access_check_mem_addr = set()
+
+mem_access_addr = set()
 
 def is_mmio_address(state, addr):
     for mem in config.mems:
@@ -289,13 +293,13 @@ def mem_read_after(state):
     null_values.add(assign_value)
     value_addr_map[assign_value] = nullptr_ast
         
-    if ast_cannot_be_zero(state,nullptr_ast):
+    if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
         return
     
     print("add dependency pc ",hex(state.addr), " ast ",nullptr_ast," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
-
+    nullptr_data_access_check_mem_addr.add(state.addr)
 
         
 def mem_write_after(state):
@@ -306,11 +310,12 @@ def mem_write_after(state):
     nullptr_ast = get_nullptr_ast_in_ast(addr)
     if nullptr_ast == None:
         return
-    if ast_cannot_be_zero(state,nullptr_ast):
+    if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
         return
     print("add dependency pc ",hex(state.addr), " ast ",nullptr_ast," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
+    nullptr_data_access_check_mem_addr.add(state.addr)
 
 def call_before(state):
 
@@ -339,50 +344,63 @@ def call_before(state):
     except Exception as e:
         if len(str(state.regs.r3)) > 30:
             state.regs.r3 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    
 
-
-def call_ins_before(state):
+def call_statement_before(state):
     global project
     len_ = 4
     try:
-        pc_addr = state.solver.eval_one(state.regs.pc)
+        pc_addr = state.solver.eval_one(state.addr)
         disassembly_block = project.factory.block(pc_addr, size=len_).bytes
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
         inses = md.disasm(disassembly_block, pc_addr)
         for ins in inses:
-            if "bx" in ins.mnemonic:
+            if ("bx" in ins.mnemonic or "blx" in ins.mnemonic) and "lr" not in ins.op_str:
+                # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
+                if ins.address != state.addr:
+                    break
+                # print(hex(ins.address),hex(state.addr))
                 addr = getattr(state.regs,ins.op_str)
                 if not addr.symbolic:
                     break
                 if addr in value_concrete_value_map and value_concrete_value_map[addr] != 0:
                     print("resolve a function at ",hex(state.addr), "to pointer ",hex(value_concrete_value_map[addr]))
+                    state.add_constraints(addr == value_concrete_value_map[addr])
                     setattr(state.regs,ins.op_str,value_concrete_value_map[addr])
-                    
+                    break
+
+                    # state_copy = state.copy()
+                    # state_copy.regs.pc = value_concrete_value_map[addr]
+                    # state_copy.regs.lr = state.addr + 2
+                    # simgr.active.append(state_copy)  
                 # else:
                 #     setattr(state_copy.regs,"pc",state.addr + 2)
                 # print(state.solver.constraints)
                 # setattr(state_copy.regs,"r3",0xBFC)
                 # simgr.active.append(state_copy)
-                # state_copy.step(thumb=True)
+                # state_copy.step(thumb=True)   
                 # print(state_copy.step(thumb=True).unsat_successors)
-                
+                # simgr.active.remove(state)
                 # print(simgr.active)
-                # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
                 
+                # print(hex(state.addr),state.solver.constraints)
                 nullptr_ast = get_nullptr_ast_in_ast(addr)
                 if nullptr_ast == None:
                     break
                 
-                nullptr_func_check_mem.add(get_addr_for_null_value(nullptr_ast))
-                if ast_cannot_be_zero(state,nullptr_ast):
+                if state.addr not in  nullptr_func_check_mem_addr:
+                    nullptr_func_check_mem.add(get_addr_for_null_value(nullptr_ast))
+                    nullptr_func_check_mem_addr.add(state.addr)
+                print("add nullptr  pc  ",hex(state.addr),"  ast  ", nullptr_ast, "  addr   ",hex(get_addr_for_null_value(nullptr_ast)))
+                if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
                     break
                 
                 nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
+                nullptr_data_access_check_mem_addr.add(state.addr)
                 print("add dependency pc ",hex(state.addr), " ast ",nullptr_ast," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     except Exception as e:
         pass
-
 
 
 def mrs_write_after(state):
@@ -449,7 +467,7 @@ def get_memory_access(states,accessses):
                 info.size = int((action.size + 0)/8)
                 info.type = "mmio"
                 accessses.append(info)
-            if not action.addr.symbolic and is_ast_pointer(state,action.addr) and not is_ast_readonly(state,action.addr) and is_memory_write_action(action):
+            if not action.addr.symbolic and is_ast_pointer(state,action.addr) and not is_ast_readonly(state,action.addr) and is_memory_write_action(action) and action.addr not in  mem_access_addr:
                 info = ACCESS_INFO()
                 info.ins_addr = state.solver.eval_one(action.ins_addr)
                 info.addr = state.solver.min(action.addr)
@@ -457,6 +475,7 @@ def get_memory_access(states,accessses):
                 info.size = int((action.size + 0)/8)
                 info.type = "mem"
                 accessses.append(info)
+                mem_access_addr.add(action.addr)
                 
         
     
@@ -499,8 +518,8 @@ def main():
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
     initial_state.inspect.b("instruction",when=angr.BP_AFTER, action=mrs_write_after)
-    initial_state.inspect.b("instruction",when=angr.BP_BEFORE, action=call_ins_before)
-
+    # initial_state.inspect.b("instruction",when=angr.BP_BEFORE, action=call_ins_before)
+    initial_state.inspect.b("statement",when=angr.BP_BEFORE, action=call_statement_before)
     
     
 

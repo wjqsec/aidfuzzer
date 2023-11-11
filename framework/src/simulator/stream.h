@@ -4,13 +4,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "fuzzer.h"
-typedef struct _SHARED_STREAM
+struct SHARED_STREAM
 {
     struct stream_metadata *metadata;
     s32 *used;
+    u32 id;
     bool avaliable;
     bool dumped;
-}SHARED_STREAM;
+};
 
 
 void add_stream(int index_to_shared_queue);

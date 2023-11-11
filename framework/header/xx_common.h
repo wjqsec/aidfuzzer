@@ -94,13 +94,13 @@ extern "C" {
     void write_ram(hw_addr addr, hw_addr size, void *buf);  
     void read_ram(hw_addr addr, hw_addr size, void *buf);
     void rom_write(hw_addr addr, hw_addr len, void *buf);
-    void add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly);
+    void* add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly);
     void add_rom_region(char *name,hw_addr start, hw_addr size);
     void add_mmio_region(char *name, hw_addr start, hw_addr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
-    void load_file_ram(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
-    void zero_ram(hw_addr addr,hw_addr size);
+    void load_file_ram(void *ptr,char *filename, int file_offset, int mem_offset, int file_size);
+    void zero_ram(void *ptr,hw_addr size);
     void load_file_rom(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
-    void zero_ram(hw_addr addr,hw_addr size);
+    
     int target_pagesize(void);
     void get_dirty_pages(hw_addr addr,hw_addr size, unsigned long dirty[]);
     NOSTOP_WATCHPOINT* insert_nostop_watchpoint(hw_addr addr, hw_addr len, qemu_plugin_mem_rw_ flag, nostop_watchpoint_cb cb,void *data);

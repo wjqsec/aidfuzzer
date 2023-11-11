@@ -126,6 +126,7 @@ void load_queues(FuzzState *state,char *queue_dir)
   }
   closedir(dir);
 }
+
 void clean_queues(FuzzState *state,char *queue_dir)
 {
   char cmd[PATH_MAX];

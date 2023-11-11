@@ -136,7 +136,6 @@ input_stream *resize_stream(FuzzState *state,input_stream *stream,u32 new_len)
   u32 copy_len = stream->ptr->len < new_len ? stream->ptr->len : new_len;
   input_stream *ret = allocate_enough_space_stream(state,stream->ptr->stream_id,new_len);
   memcpy(ret->ptr->data,stream->ptr->data,copy_len);
-  free_stream(state,stream);
   return ret;
 }
 

@@ -167,10 +167,10 @@ static MemoryRegion *find_mr_by_addr(hw_addr start)
     return NULL;
 }
 
-void add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly)
+void* add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly)
 {
     if(xx_num_ram_regions >= MAX_NUM_MEM_REGION)
-        return;
+        return 0;
     start = ROUND_DOWN(start,target_pagesize());
     size = ROUND_UP(size, target_pagesize());
     MemoryRegion *ram_space = get_system_memory();
@@ -200,6 +200,8 @@ void add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly)
     xx_ram_regions[xx_num_ram_regions].mr = mr;
     xx_num_ram_regions++;
     printf("add ram %lx-%lx %s readonly:%d\n",start, start+size,name,readonly);
+    return memory_region_get_ram_ptr(mr);
+    
 }
 void add_rom_region(char *name,hw_addr start, hw_addr size)
 {

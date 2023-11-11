@@ -230,11 +230,37 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 {
   int i;
   stream_metadata *stream;
+  input_stream* new_stream;
+  input_stream* old_stream;
+  EXIT_INFO exit_info;
+  
+  // simulator_task(simulator,entry,0,0);
+  // fuzz_start(simulator);
+  // while(1)
+  // {
+    
+  //   fuzz_exit(simulator,&exit_info);
+  //   if(exit_info.exit_code == EXIT_FUZZ_STREAM_NOTFOUND)
+  //   {
+  //     new_stream = allocate_enough_space_stream(state,exit_info.stream_info.exit_stream_id, 1 << (6 + UR(3)));
+  //     if(!stream_shouldnot_mutate(new_stream))
+  //       rand_memset(new_stream->ptr->data,new_stream->ptr->len);
+
+  //     insert_stream(state,entry,new_stream);
+      
+  //     fuzz_continue_stream_notfound(simulator,new_stream);
+      
+  //     continue;
+  //   }
+  //   break;
+  // }
+  
+  
+  
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
 
 
-  input_stream* new_stream;
-  input_stream* old_stream;
+  
   for(i = 0 ; i < queue->num_streams; i++)
   {
     stream = (stream_metadata*)(queue->streams[i].offset_to_stream_area + state->shared_stream_data);
@@ -319,7 +345,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     
     if(exit_info.exit_code == EXIT_FUZZ_STREAM_NOTFOUND)
     {
-
+      
       if(state->models->find(exit_info.stream_info.exit_stream_id) == state->models->end())
       {
         if(use_fuzzware)
@@ -340,9 +366,9 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
         rand_memset(new_stream->ptr->data,new_stream->ptr->len);
 
       insert_stream(state,fuzz_entry,new_stream);
-
+      
       fuzz_continue_stream_notfound(simulator,new_stream);
-
+      
       continue;
     }
     
@@ -442,9 +468,8 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   queue_entry* base_entry;
   u32 use_stacking;
   u32 fuzz_stream_id;
-
+  /*
   base_entry = entry;
-  
   use_stacking = (1 << (5 + UR(3)));
 
   for(int i = 0; i < use_stacking; i++)
@@ -452,28 +477,18 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
     
     fuzz_entry = new_queue(state);
     copy_queue_streams(state,base_entry,fuzz_entry);
-
-  
     fuzz_stream_id =  select_stream(entry);
-
-
-
     if(fuzz_stream_id != 0 )
-    {
-      
-      fuzz_stream = havoc(state,(*entry->streams)[fuzz_stream_id]);
-
+    { 
+      fuzz_stream = havoc(state,(*base_entry->streams)[fuzz_stream_id]);
       selected_streams = new set<u32>();
       selected_streams->insert(fuzz_stream_id);
       replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
       simulator = get_avaliable_simulator(state);  
-
       fuzz_one_post(state,simulator);
       simulator_task(simulator,fuzz_entry,entry,selected_streams);
       fuzz_start(simulator);
-
       base_entry = fuzz_entry;
-
     }
     else
     {
@@ -481,9 +496,28 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
     }
     if(terminate_next)
       fuzzer_terminate(state);
-    
-
   }
+  */
+  use_stacking = (1 << (5 + UR(3)));
+  fuzz_entry = new_queue(state);
+  selected_streams = new set<u32>();
+
+  copy_queue_streams(state,entry,fuzz_entry);
+  for(int i = 0; i < use_stacking; i++)
+  {
+    fuzz_stream_id =  select_stream(entry);
+    if(fuzz_stream_id == 0)
+      continue;
+    selected_streams->insert(fuzz_stream_id);
+    fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
+    replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
+  }
+  simulator = get_avaliable_simulator(state);  
+  fuzz_one_post(state,simulator);
+  simulator_task(simulator,fuzz_entry,entry,selected_streams);
+  fuzz_start(simulator);
+  if(terminate_next)
+      fuzzer_terminate(state);
   
 }
 
@@ -525,7 +559,7 @@ void fuzz_loop(FuzzState *state)
     {
         entry = select_entry(state);
         fuzz_queue(state,entry);
-        if((times & 0xf) == 0)
+        if((times & 0xff) == 0)
           show_stat(state);
         
         times++;
@@ -549,7 +583,7 @@ void fuzz_runonce(FuzzState *state)
     fuzz_exit(simulator,&exit_info);
     if(exit_info.exit_code == EXIT_DBG_STREAM_NOTFOUND)
     {
-      printf("queue %x not found stream %x\n",q->cksum,exit_info.stream_info.exit_stream_id);
+      printf("pc %x queue %x not found stream %x\n",exit_info.exit_pc,q->cksum,exit_info.stream_info.exit_stream_id);
     }
 
     simulator_classify_count(simulator);
@@ -610,6 +644,13 @@ void clean_fuzzer_shm(FuzzState *state)
 void prepare_terminate(int signal)
 {
   terminate_next = true;
+  if(signal == SIGSEGV)
+  {
+    printf("segv\n");
+    fuzzer_terminate(&global_state);
+    exit(0);
+    
+  }
 }
 
 void init_signal_handler(void)
@@ -622,6 +663,7 @@ void init_signal_handler(void)
   if (signal(SIGSEGV, prepare_terminate) == SIG_ERR) 
   {
     printf("Error setting signal handler");
+    
     exit(0);
   }
 }

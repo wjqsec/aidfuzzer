@@ -22,6 +22,7 @@ void add_stream(int index_to_shared_queue)
     
     metadata = (struct stream_metadata *)(__afl_share_stream_data + queue->streams[index_to_shared_queue].offset_to_stream_area);
 
+    
     #ifdef STREAM_MAGIC_CHECK
     if(metadata->magic_number != STREAM_MAGIC)
     {
@@ -34,10 +35,11 @@ void add_stream(int index_to_shared_queue)
     stream = streams[index_to_streams];
     if(stream->avaliable)
     {
-        printf("stream index colission id:%x  %x\n",metadata->stream_id,stream->metadata->stream_id);
+        printf("stream index colission id:%x  %x  index: %d  offset:%x\n",metadata->stream_id,stream->id,index_to_shared_queue,queue->streams[index_to_shared_queue].offset_to_stream_area);
         terminate_simulation();
     }
     stream->avaliable = true;
+    stream->id = metadata->stream_id;
     stream->used = &queue->streams[index_to_shared_queue].used;
     stream->metadata = metadata;
     stream_indexs[num_stream_indexs] = index_to_streams;
@@ -81,6 +83,7 @@ void init_streams()
     for(int i = 0; i < NUM_QUEUE_STREAMS ;i ++)
     {
         streams[i] = (SHARED_STREAM *)malloc(sizeof(SHARED_STREAM));
+        streams[i]->id = 0;
         streams[i]->avaliable = false;
         streams[i]->dumped = false;
     }

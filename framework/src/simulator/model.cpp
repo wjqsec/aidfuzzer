@@ -84,7 +84,7 @@ char* dump_state(uint32_t mmio_id, const char * prefix, char *dir)
         if((*it)->type == SEG_RAM)
         {
             buf = (uint8_t *)malloc((*it)->size);
-            read_ram((*it)->start,(*it)->size,buf);
+            memcpy(buf,(*it)->ptr,(*it)->size);
             ihex_write_at_address(&ihex, (*it)->start);
             ihex_write_bytes(&ihex, buf, (*it)->size);
             free(buf);

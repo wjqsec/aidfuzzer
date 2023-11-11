@@ -6,6 +6,7 @@ using namespace std;
 
 struct SNAPSHOT_MEM_SEG
 {
+    void *ptr;
     uint8_t *data;
     hw_addr start;
     hw_addr len;

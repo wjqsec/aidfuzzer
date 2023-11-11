@@ -32,7 +32,7 @@ struct SEG
     hw_addr start;
     hw_addr size;
     bool readonly;
-
+    void *ptr;
     vector<SEG_CONTENT*> *contents;
 };
 
@@ -44,7 +44,7 @@ struct SIMULATOR_CONFIG
 
 
 SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename);
-
+void *get_ram_ptr(hw_addr addr);
 
 
 #endif

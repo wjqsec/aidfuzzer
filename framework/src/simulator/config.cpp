@@ -1,5 +1,5 @@
 #include "config.h"
-
+#include "simulator.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,7 +13,17 @@ static bool is_seg_start(char *line)
     return !memcmp(line,MEMSEG_START,strlen(MEMSEG_START)) && !is_option_start(line);
 }
 
-
+void *get_ram_ptr(hw_addr addr)
+{
+    for(auto it = config->segs->begin(); it != config->segs->end(); it++)
+    {
+        if (addr >= (*it)->start && addr < (*it)->start + (*it)->size)
+        {
+            return (uint8_t*)(*it)->ptr + (addr - (*it)->start);
+        }
+    }
+    return 0;
+}
 SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
 {
     char line[PATH_MAX];
@@ -93,7 +103,6 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
                 {
                     config->segs->back()->readonly = true;
                 }
-                config->segs->back()->readonly = false;  // we need this for memory content writing
             }
             else if(strstr(line,OPTION_START"size:"))
             {
