@@ -533,7 +533,7 @@ void init(int argc, char **argv)
         terminate_simulation();
     }
         
-    irq_on_init();
+    
     init_log();
     init_signal_handler();
     init_streams();
@@ -582,6 +582,8 @@ int run_config()
 
     org_snap = arm_take_snapshot();
 
+    irq_on_init();
+
     register_armm_ppb_default_read_hook(mmio_read_common);
     register_armm_ppb_default_write_hook(mmio_write_common);
     register_exec_bbl_hook(exec_bbl_snapshot);
@@ -597,7 +599,7 @@ int run_config()
     model_all_infinite_loop();
 
     irq_on_new_run();
-    
+
         
 
     exec_simulator(simulator);

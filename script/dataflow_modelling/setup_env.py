@@ -63,6 +63,7 @@ def from_state_file(statefile):
         initial_state = project.factory.call_state(addr=0,add_options=angr.options.refs)
         # initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_REGISTERS)
         initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY)
+        initial_state.options.add(angr.options.LAZY_SOLVES)
         
         # arm_thumb_quirks.add_special_initstate_reg_vals(initial_state, regs) maybe later
 
@@ -70,8 +71,8 @@ def from_state_file(statefile):
         for name, val in regs.items():
             ast = claripy.BVS(f"initstate_{name}", 32)  
             if name == "sp":
-                constraint = ast == 0x70000000
-                initial_state.add_constraints(constraint)
+                setattr(initial_state.regs, name, 0x70000000)
+                continue
             setattr(initial_state.regs, name, ast)
             
 

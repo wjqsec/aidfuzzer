@@ -6,10 +6,10 @@
 #include <set>
 #include <poll.h>
 #include <linux/limits.h>
-using namespace std;
+
 #include "fuzzer.h"
 
-
+using namespace std;
 
 
 

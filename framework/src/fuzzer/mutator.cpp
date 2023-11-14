@@ -394,20 +394,20 @@ inline input_stream* havoc_ascii(FuzzState *state,input_stream* stream)
     case 1:
     case 3:
     {
-      data[UR(len)] = 0x20 + UR(0x7f - 0x20);
+      data[UR(len)] = 0x20 + UR(0x80 - 0x20);
       break;
     }
     case 2:
     {
       s16* tmp = (s16*)(data + (UR(len - 1) & 0xfffffffe));
-      *tmp = 0x20 + UR(0x7f - 0x20);
+      *tmp = 0x20 + UR(0x80 - 0x20);
       break;
     }
     
     case 4:
     {
       s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
-      *tmp = 0x20 + UR(0x7f - 0x20);
+      *tmp = 0x20 + UR(0x80 - 0x20);
       break;
     }
     default:
@@ -430,13 +430,8 @@ inline input_stream* havoc_splicing_copy(FuzzState *state,input_stream* stream)
   copy_from = UR(len - copy_len + 1);
   copy_to   = UR(len - copy_len + 1);
 
-  if (UR(4)) {
-
-    if (copy_from != copy_to)
-      memmove(data + copy_to, data + copy_from, copy_len);
-
-  } else memset(data + copy_to,
-                UR(2) ? UR(256) : data[UR(len)], copy_len);
+  if (copy_from != copy_to)
+    memmove(data + copy_to, data + copy_from, copy_len);
   return stream;      
 }
 inline input_stream* havoc_state_value(FuzzState *state,input_stream* stream)
@@ -448,20 +443,20 @@ inline input_stream* havoc_state_value(FuzzState *state,input_stream* stream)
     case 1:
     case 3:
     {
-      data[UR(len)] = UR(5);
+      data[UR(len)] = -10 + UR(21);
       break;
     }
     case 2:
     {
       s16* tmp = (s16*)(data + (UR(len - 1) & 0xfffffffe));
-      *tmp = UR(5);
+      *tmp = -10 + UR(21);
       break;
     }
     
     case 4:
     {
       s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
-      *tmp = UR(5);
+      *tmp = -10 + UR(21);
       break;
     }
     default:
@@ -496,7 +491,7 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   u32 use_stacking;
   s32 i;
   
-  
+
   ret = resize_stream(state,stream,stream->ptr->len);
   
   // use_stacking = (1 << (1 + UR(6)));
@@ -505,7 +500,9 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   // {
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
     
+
     ret = havoc_arrays[index](state,ret);
+
     
     
     

@@ -51,9 +51,10 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
         
         for insn in md.disasm(instruction_bytes, memseg.start + i):
             if "b" == insn.mnemonic:
-                is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i,ins_size == 2)
+                is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i,ins_size == ins_size)
                 if is_loop:
                     all_loops.add(bbl_addr)
+            break
     ins_size = 2
     md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
     for i in range(0,memseg.size,ins_size):
@@ -61,9 +62,10 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
         instruction_bytes = disassembly_block.bytes
         for insn in md.disasm(instruction_bytes, memseg.start + i):
             if "b" == insn.mnemonic:
-                is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i,ins_size == 2)
+                is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i,ins_size == ins_size)
                 if is_loop:
                     all_loops.add(bbl_addr)
+            break
     return all_loops
 
 if __name__ == "__main__":

@@ -91,6 +91,12 @@ void sync_models(FuzzState *state,Simulator *simulator)
       {
         vals = nullptr;
       }
+      if(state->models->find(mmio_id) != state->models->end())
+      {
+        if((*state->models)[mmio_id]->values != nullptr)
+          delete (*state->models)[mmio_id]->values;
+        delete (*state->models)[mmio_id];
+      }
       model = new input_model();
       model->mode = mode;
       model->values = vals;

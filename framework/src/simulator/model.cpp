@@ -1,4 +1,4 @@
-#include "model.h"
+
 #include "xx.h"
 #include "kk_ihex.h"
 #include "simulator.h"
@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <kk_ihex_write.h>
 #include "irq.h"
+#include "model.h"
 #define STOPWATCH_TYPE_MMIO 0
 #define STOPWATCH_TYPE_MEM 1
 #define STOPWATCH_TYPE_FUNC_POINTER 2
@@ -140,77 +141,44 @@ void model_all_infinite_loop()
     }
 }
 
-
-void model_dumped_irq(int irq,hw_addr isr)
+void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
 {
-    char *state_filename;
-    char model_filename[PATH_MAX];
-    char cmd[PATH_MAX];
     char line[PATH_MAX];
-    char *addr_size_ptr;
-
-    FILE *f;
-
-    
-    sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
-
-    // if(access(model_filename,F_OK) != 0)
-    // {
-
-        state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir);
-
-        sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),isr);
-        printf("%s",cmd);
-        fprintf(f_irq_log,"%s",cmd);
-
-        sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s > /dev/null 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
-        puts(cmd);
-
-        fprintf(f_irq_log,"%s\n",cmd);
-        system(cmd);
-        free(state_filename);
-        
-    // }
-        
-
-        
-    f = fopen(model_filename,"r");
+    FILE *f = fopen(model_filename,"r");
     if(!f)
     {
         printf("model file %s not found,exit\n",model_filename);
         terminate_simulation();
     }
 
-    
-    bool start = false;
     int type;
-
     bool to_end;
-
+    int irq;
+    uint32_t isr;
+    char *addr_size_ptr;
+    IRQ_N_MODEL *model;
+    IRQ_N_STATE *state;
     while(fgets(line, PATH_MAX, f))
     {
         if(strstr(line,"-"))
         {
-            int tmp_irq = strtol(strstr(line,"-") + 1,0,10);
-            if(tmp_irq == irq)
-                start = true;
-            else
-                start = false;
+            irq = strtol(strstr(line,"-") + 1,0,10);
+            model = (*models)[irq];
+            isr = strtol(strstr(strstr(line,"-") + 1, "-") + 1,0,16);
+            if (model->state->find(isr) == model->state->end())
+            {
+                (*model->state)[isr] = get_void_state();
+            }
+            state = (*model->state)[isr];
             if(strstr(line,"y"))
-                to_end = true;
+                state->toend = true;
             else
-                to_end = false;
+            {
+                state->toend = false;   
+            }
+            continue;
+        }
 
-                
-            continue;
-        }
-        if(!start)
-            continue;
-        if(!to_end)
-        {
-            printf("this IRQ has infinite loop\n");
-            break;
-        }
         if(strstr(line,"mem:"))
         {
             type = STOPWATCH_TYPE_MEM;
@@ -231,14 +199,20 @@ void model_dumped_irq(int irq,hw_addr isr)
             type = STOPWATCH_TYPE_DEPENDENCY;
             addr_size_ptr = line + strlen("dependency:");
         }
-            
+
         uint32_t addr = strtol(addr_size_ptr, 0, 16);
         uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
-        if(!addr)
-            continue;
+
         if(type == STOPWATCH_TYPE_MEM)
         {
-            add_memory_access_watchpoint(irq,  addr,isr);
+            if(state->mem_addr->find(addr) == state->mem_addr->end())
+            {
+                WATCHPOINT *watchpoint = new WATCHPOINT();
+                watchpoint->addr = addr;
+                watchpoint->point = 0;
+                (*state->mem_addr)[addr] = watchpoint;
+                printf("add memory access watchpoint irq %d addr %x\n",irq,addr);
+            }
             
         }
         else if(type == STOPWATCH_TYPE_MMIO)
@@ -247,17 +221,53 @@ void model_dumped_irq(int irq,hw_addr isr)
         }
         else if(type == STOPWATCH_TYPE_FUNC_POINTER)
         {
-            add_unsolved_func_ptr(irq,addr,isr);
-            
+            if(state->func_nullptr->find(addr) == state->func_nullptr->end())
+            {
+                WATCHPOINT *watchpoint = new WATCHPOINT();
+                watchpoint->addr = addr;
+                watchpoint->point = 0;
+                (*state->func_nullptr)[addr] = watchpoint;
+                printf("add unsolved func ptr irq %d addr %x\n",irq,addr);
+            }
         }
         else if(type == STOPWATCH_TYPE_DEPENDENCY)
         {
-            add_dependency_func_ptr(irq,addr,isr);
+            void *ramptr = get_ram_ptr(addr);
+            if(state->dependency_nullptr->find(ramptr) == state->dependency_nullptr->end())
+            {
+                state->dependency_nullptr->insert(ramptr);
+                printf("add dependency ptr irq %d addr %x\n",irq,addr);
+            }
+            
         }
-        
     }
-    puts("model done");
-
         
     fclose(f);
+    
+}
+
+
+void dump_prcoess_load_model(int irq,hw_addr isr, map<irq_val,IRQ_N_MODEL*> *models)
+{
+    char *state_filename;
+    char model_filename[PATH_MAX];
+    char cmd[PATH_MAX];
+    
+    
+    sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
+
+    state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir);
+
+    sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),isr);
+    printf("%s",cmd);
+    fprintf(f_irq_log,"%s",cmd);
+
+    sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s > /dev/null 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
+    puts(cmd);
+
+    fprintf(f_irq_log,"%s\n",cmd);
+    system(cmd);
+    free(state_filename);
+
+    load_model(model_filename, models);
 }

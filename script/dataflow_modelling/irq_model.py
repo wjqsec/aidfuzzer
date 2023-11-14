@@ -9,7 +9,7 @@ from pathlib import Path
 import argparse
 from config import *
 from angr import exploration_techniques
-from pyvex.lifting.gym.arm_spotter import *
+import pyvex.lifting.gym.arm_spotter
 import logging
 
 # logging.getLogger('angr').setLevel('ERROR')
@@ -19,65 +19,66 @@ stack_size = 0x4000
 fix_lr = 0xdeadbeef
 
 project = None
-simgr = None
+
 class ACCESS_INFO:
     def __init__(self):
         pass
     def __eq__(self, other):
-        if self.addr == other.addr and self.type == other.type:
+        if self.addr == other.addr and self.type == other.type and self.size == other.size:
             return True
         else:
             return False
     def __hash__(self):
-        return hash(hex(self.addr) + hex(self.size))
+        return hash(hex(self.addr) + self.type) 
     
 class IRQ_MODEL:
     def __init__(self):
         self.irq = 0
+        self.isr = 0
         self.accesses = set()
-        self.toend = False
-    def dump(self):
-        print("-{}".format(self.irq))
-        for access in self.accesses:
-            print("{} {}".format(hex(access.addr), hex(access.size)))
+        self.toend = "n"
+        
 
 def irq_model_from_file(modelfilename):
-    models = {}
+    models = []
     model = None
-    current_irq = 0
     if not Path(modelfilename).exists():
         return models
     with open(modelfilename, "r") as f:
         for line in f.readlines():
             if "-" in line:
+                if model != None:
+                    models.append(model)
                 model = IRQ_MODEL()
-                current_irq = int(line.split("-")[1].split("-")[0])
-                models[current_irq] = model
-                if "y" in line:
-                    model.toend = True
-                else:
-                    model.toend = False
+                model.irq = int(line.split("-")[1],10)
+                model.isr = int(line.split("-")[2],16)
+                model.toend = line.split("-")[3].strip()
             else:
                 accessinfo = ACCESS_INFO()
                 accessinfo.type = line.split(":")[0]
                 accessinfo.addr = int(line.split(":")[1].split(" ")[0],16)
                 accessinfo.size = int(line.split(":")[1].split(" ")[1],16)
-                models[current_irq].accesses.add(accessinfo)
+                model.accesses.add(accessinfo)
+    if model != None:
+        models.append(model)
     return models
                 
 
 def write_model_to_file(models,modelfilename):
-    toend_str = ""
     with open(modelfilename, "w") as f:
-        for irq,model in models.items():
-            if model.toend:
-                toend_str = "y"
-            else:
-                toend_str = "n"
-            f.write("-{}-{}\n".format(irq,toend_str))
+        for model in models:
+            f.write("-{}-{}-{}\n".format(model.irq,hex(model.isr),model.toend))
             f.write("".join(["{}:{} {}\n".format(access.type,hex(access.addr),hex(access.size)) for access in model.accesses]))
             
-
+def get_and_insert_model(models,irq,isr):
+    for model in models:
+        if model.irq == irq and model.isr == isr:
+            return model
+    tmp = IRQ_MODEL()
+    tmp.irq = irq
+    tmp.isr = isr
+    models.append(tmp)
+    return tmp
 
 
 
@@ -172,12 +173,16 @@ def is_ast_zero(state,ast):
 
 
 def get_nullptr_ast_in_ast(ast):
-    for leaf in ast.leaf_asts():    
-        if leaf in null_values:
-            return leaf
     if ast in null_values:
         return ast
-    return None
+    ret = None
+    for leaf in ast.leaf_asts():    
+        if leaf in null_values:
+            ret = leaf
+        elif leaf.symbolic:
+            return None
+    
+    return ret
 
 def get_addr_for_null_value(ast):
     while True:
@@ -194,8 +199,8 @@ def ast_cannot_be_zero(state,ast):
 
     state_backup.add_constraints(ast == 0)
     ret = state_backup.satisfiable()
-    # state_backup.solver.constraints.pop()
-    # state_backup.solver.reload_solver()
+    state_backup.solver.constraints.pop()
+    state_backup.solver.reload_solver()
     return not ret
 
 def ast_can_be_zero(state,ast):
@@ -206,20 +211,25 @@ def ast_condition_hold(state,con):
     state_backup.add_constraints(con)
     ret = state_backup.satisfiable()
 
-    # state_backup.solver.constraints.pop()
-    # state_backup.solver.reload_solver()
+    state_backup.solver.constraints.pop()
+    state_backup.solver.reload_solver()
     return ret
 
 def mem_read_before(state):
 
     addr = state.inspect.mem_read_address
-
     if type(addr) is tuple:
-        addr = addr[1]
-    try:
-        address = state.solver.eval_one(addr)
-    except Exception as e:
-        return
+            addr = addr[1]
+
+    if addr in value_concrete_value_map and value_concrete_value_map[addr] != 0:
+        state.add_constraints(addr == value_concrete_value_map[addr])
+        state.solver.reload_solver()
+        address = value_concrete_value_map[addr]
+    else:
+        try:
+            address = state.solver.eval_one(addr)
+        except Exception as e:
+            return
             
     if not is_ast_pointer(state,address):
         return
@@ -237,7 +247,6 @@ def mem_read_before(state):
         value = state.solver.eval_one(value)
     except Exception as e:
         return
-
     
     if is_ast_stack_address(state,value) or is_ast_mmio_address(state, value):
         return
@@ -267,36 +276,52 @@ def mem_read_after(state):
     if type(value) is tuple:
         value = value[1]
 
-    nullptr_ast = get_nullptr_ast_in_ast(addr)
 
-    if nullptr_ast == None:
-        return
-    
     assign_value = state.solver.BVS(f"assign_sym_{hex(state.addr)}", state.inspect.mem_read_length * 8)
     disassembly_block = project.factory.block(state.addr, size=4).bytes
     md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
+    md.detail = True
     inses = md.disasm(disassembly_block, state.addr)
     for ins in inses:
         if "ldr" not in ins.mnemonic:
             return
+        if len(ins.operands) < 2 :
+            return
+        if "[" not in ins.op_str:
+            return
+        base_addr_reg = ins.op_str.split("[")[1].split("]")[0]
+        if "," in base_addr_reg:
+            base_addr_reg = base_addr_reg.split(",")[0]
+        if base_addr_reg == "pc":
+            return
+        # # addr = getattr(state.regs,base_addr_reg)
+        # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
+        # print(base_addr_reg)
+        # print(addr)
+        # print(getattr(state.regs,base_addr_reg))
+        
+
+        # nullptr_ast = get_nullptr_ast_in_ast(addr)
+        # if nullptr_ast == None:
+        #     return
+        # setattr(state.regs,ins.op_str.split(",")[0],assign_value)
+        break
+    nullptr_ast = get_nullptr_ast_in_ast(addr)
+    if nullptr_ast == None:
+        return
 
     null_values.add(addr)
     value_addr_map[addr] = get_addr_for_null_value(nullptr_ast)
     # angr read zero from symbolic memory, this is not what we want, replace it with a symbolic value
     
-    for ins in inses:
-        # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
-        if "ldr" in ins.mnemonic:
-            setattr(state.regs,ins.op_str.split(",")[0],assign_value)
-        break
     # state.add_constraints(assign_value == 0)
     null_values.add(assign_value)
-    value_addr_map[assign_value] = nullptr_ast
+    value_addr_map[assign_value] = addr
         
     if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
         return
     
-    print("add dependency pc ",hex(state.addr), " ast ",nullptr_ast," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+    print("add mem_read_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
     nullptr_data_access_check_mem_addr.add(state.addr)
@@ -312,38 +337,38 @@ def mem_write_after(state):
         return
     if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
         return
-    print("add dependency pc ",hex(state.addr), " ast ",nullptr_ast," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+    print("add mem_write_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
     nullptr_data_access_check_mem_addr.add(state.addr)
 
 def call_before(state):
-
+    pass
     # to make the symbol expression simple, we replace the function arguments that contain more than 32 characters with a single symbol.
     # I believe it doesn't affect the evaluation retuslt, becase angr cannot handle too complicated symbols.
-    try:
-        state.solver.eval_one(state.regs.r0)
-    except Exception as e:
-        if len(str(state.regs.r0)) > 30:
-            state.regs.r0 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    # try:
+    #     state.solver.eval_one(state.regs.r0)
+    # except Exception as e:
+    #     if len(str(state.regs.r0)) > 30:
+    #         state.regs.r0 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
 
-    try:
-        state.solver.eval_one(state.regs.r1)
-    except Exception as e:
-        if len(str(state.regs.r1)) > 30:
-            state.regs.r1 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    # try:
+    #     state.solver.eval_one(state.regs.r1)
+    # except Exception as e:
+    #     if len(str(state.regs.r1)) > 30:
+    #         state.regs.r1 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
 
-    try:
-        state.solver.eval_one(state.regs.r2)
-    except Exception as e:
-        if len(str(state.regs.r2)) > 30:
-            state.regs.r2 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    # try:
+    #     state.solver.eval_one(state.regs.r2)
+    # except Exception as e:
+    #     if len(str(state.regs.r2)) > 30:
+    #         state.regs.r2 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
 
-    try:
-        state.solver.eval_one(state.regs.r3)
-    except Exception as e:
-        if len(str(state.regs.r3)) > 30:
-            state.regs.r3 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    # try:
+    #     state.solver.eval_one(state.regs.r3)
+    # except Exception as e:
+    #     if len(str(state.regs.r3)) > 30:
+    #         state.regs.r3 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
     
 
 def call_statement_before(state):
@@ -367,6 +392,7 @@ def call_statement_before(state):
                     print("resolve a function at ",hex(state.addr), "to pointer ",hex(value_concrete_value_map[addr]))
                     state.add_constraints(addr == value_concrete_value_map[addr])
                     setattr(state.regs,ins.op_str,value_concrete_value_map[addr])
+                    state.solver.reload_solver()
                     break
 
                     # state_copy = state.copy()
@@ -397,7 +423,7 @@ def call_statement_before(state):
                 
                 nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
                 nullptr_data_access_check_mem_addr.add(state.addr)
-                print("add dependency pc ",hex(state.addr), " ast ",nullptr_ast," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+                print("add call dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     except Exception as e:
         pass
@@ -466,15 +492,14 @@ def get_memory_access(states,accessses):
                 info.addr = state.solver.min(action.addr)
                 info.size = int((action.size + 0)/8)
                 info.type = "mmio"
-                accessses.append(info)
-            if not action.addr.symbolic and is_ast_pointer(state,action.addr) and not is_ast_readonly(state,action.addr) and is_memory_write_action(action) and action.addr not in  mem_access_addr:
+                accessses.add(info)
+            if not action.addr.symbolic and is_ast_pointer(state,action.addr) and is_memory_write_action(action) and action.addr not in  mem_access_addr:
                 info = ACCESS_INFO()
                 info.ins_addr = state.solver.eval_one(action.ins_addr)
                 info.addr = state.solver.min(action.addr)
-
                 info.size = int((action.size + 0)/8)
                 info.type = "mem"
-                accessses.append(info)
+                accessses.add(info)
                 mem_access_addr.add(action.addr)
                 
         
@@ -482,7 +507,7 @@ def get_memory_access(states,accessses):
 
 def main():
     global project
-    global simgr
+
     parser = argparse.ArgumentParser(description="irq dataflow modeling",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-s", "--state", help="irq state binary file")
@@ -492,28 +517,26 @@ def main():
     parser.add_argument("-c","--config",  help="fuzzware config file")
 
     args = parser.parse_args()
-    set_current_irq(int(args.irq,10))
+    pyvex.lifting.gym.arm_spotter.set_current_irq(int(args.irq,10))
 
     config.from_fuzzware_config_file(args.config)
 
-    spiller = angr.exploration_techniques.Spiller(max=100)
-    # multi_thread = angr.exploration_techniques.Threading()
-
+    spiller = angr.exploration_techniques.Spiller(max=50)
+    suggest = angr.exploration_techniques.Suggestions()
+    loopser = angr.exploration_techniques.LocalLoopSeer(bound=1)       
     project, initial_state = from_state_file(args.state)
 
     start_addr = int(args.vecbase,16) + 4 * int(args.irq,10)
     irq_val = initial_state.memory.load(start_addr, 4, endness='Iend_LE')
+    irq_val = initial_state.solver.eval_one(irq_val)
     initial_state.regs.pc = irq_val
     initial_state.regs.lr = fix_lr
 
     models = irq_model_from_file(args.output)
+    model = get_and_insert_model(models,int(args.irq,10),irq_val)
     
-    print("start pc:  ",irq_val)
+    print("start pc:  ",hex(irq_val))
 
-    model = IRQ_MODEL()
-    # if int(args.irq,16) in models:
-    #     model = models[int(args.irq,16)]
-    accessses = []
     initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
@@ -528,21 +551,28 @@ def main():
     simgr = project.factory.simgr(initial_state)
 
     simgr.use_technique(spiller)
-    # simgr.use_technique(multi_thread)
+    simgr.use_technique(suggest)
+    simgr.use_technique(loopser)
     
 
     for i in range(50):
-        get_memory_access(simgr.active,accessses)
+        get_memory_access(simgr.active,model.accesses)
+        to_remove = []
         for active_state in simgr.active:
-            # active_state.history.trim()
             try:
                 pc_addr = active_state.solver.eval_one(active_state.regs.pc)
+                # for zephyr, a very complex operation happened
+                if pc_addr == 0x4105Bb:
+                    to_remove.append(active_state)
                 if pc_addr == fix_lr:
-                    model.toend = True
-                    simgr.active.remove(active_state)
+                    model.toend = "y"
+                    to_remove.append(active_state)
             except Exception as e:
                 pass
-        # print(simgr.active)
+        for r in to_remove:
+            simgr.active.remove(r)
+        
+        print(simgr.active)
         
         
         simgr.step(thumb=True)
@@ -560,7 +590,7 @@ def main():
         access.addr = ptr
         access.size = 4
         access.type = "func"
-        accessses.append(access)
+        model.accesses.add(access)
 
     for ptr in nullptr_data_access_check_mem:
         access = ACCESS_INFO()
@@ -568,10 +598,7 @@ def main():
         access.addr = ptr
         access.size = 4
         access.type = "dependency"
-        accessses.append(access)
-    for ac in accessses:
-            model.accesses.add(ac)
-    models[int(args.irq,10)] = model
+        model.accesses.add(access)
 
     write_model_to_file(models,args.output)
         
