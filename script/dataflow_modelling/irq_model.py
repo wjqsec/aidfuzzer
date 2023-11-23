@@ -171,6 +171,18 @@ def is_ast_zero(state,ast):
         return False
     return is_zero(addr)
 
+def is_ast_only_eval_one_value(state,ast):
+    try:
+        state.solver.eval_one(ast)
+        return True
+    except Exception as e:
+        return False
+
+def get_addr_ast_in_ast(ast):
+    for leaf in ast.leaf_asts():
+        if leaf in value_concrete_value_map:
+            return leaf
+    return None
 
 def get_nullptr_ast_in_ast(ast):
     if ast in null_values:
@@ -220,24 +232,27 @@ def mem_read_before(state):
     addr = state.inspect.mem_read_address
     if type(addr) is tuple:
             addr = addr[1]
-
-    if addr in value_concrete_value_map and value_concrete_value_map[addr] != 0:
-        state.add_constraints(addr == value_concrete_value_map[addr])
+    root_ast = get_addr_ast_in_ast(addr)
+    
+    if root_ast != None and value_concrete_value_map[root_ast] != 0:
+        state.add_constraints(root_ast == value_concrete_value_map[root_ast])
         state.solver.reload_solver()
-        address = value_concrete_value_map[addr]
-    else:
-        try:
-            address = state.solver.eval_one(addr)
-        except Exception as e:
-            return
-            
+        
+    try:
+        address = state.solver.eval_one(addr)
+    except Exception as e:
+        return
+    
     if not is_ast_pointer(state,address):
         return
+    
     if is_ast_stack_address(state,address):
         return
-
+    
     if is_ast_readonly(state,address):
         return
+    
+    
 
     if is_ast_mmio_address(state, address):
         state.memory.store(address, state.solver.BVS(f"mmio_sym_{hex(address)}", state.inspect.mem_read_length * 8) ,disable_actions=True,inspect=False,endness='Iend_LE')
@@ -262,6 +277,7 @@ def mem_read_before(state):
         null_values.add(tmp)
         value_addr_map[tmp] = address
     value_concrete_value_map[tmp] = value
+    
 
 
    
@@ -321,6 +337,9 @@ def mem_read_after(state):
     if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
         return
     
+    if len(state.solver.constraints) > 5:
+        return
+
     print("add mem_read_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
@@ -328,7 +347,6 @@ def mem_read_after(state):
 
         
 def mem_write_after(state):
-
     addr = state,state.inspect.mem_write_address
     if type(addr) is tuple:
         addr = addr[1]
@@ -337,38 +355,44 @@ def mem_write_after(state):
         return
     if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
         return
+    if len(state.solver.constraints) > 5:
+        return
     print("add mem_write_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
     nullptr_data_access_check_mem_addr.add(state.addr)
 
 def call_before(state):
-    pass
+    # return
     # to make the symbol expression simple, we replace the function arguments that contain more than 32 characters with a single symbol.
     # I believe it doesn't affect the evaluation retuslt, becase angr cannot handle too complicated symbols.
-    # try:
-    #     state.solver.eval_one(state.regs.r0)
-    # except Exception as e:
-    #     if len(str(state.regs.r0)) > 30:
-    #         state.regs.r0 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    try:
+        state.solver.eval_one(state.regs.r0)
+    except Exception as e:
+        if len(str(state.regs.r0)) > 150:
+            print("replace call argument r0",state.regs.r0)
+            state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r1)
-    # except Exception as e:
-    #     if len(str(state.regs.r1)) > 30:
-    #         state.regs.r1 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    try:
+        state.solver.eval_one(state.regs.r1)
+    except Exception as e:
+        if len(str(state.regs.r1)) > 150:
+            print("replace call argument r1",state.regs.r1)
+            state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r2)
-    # except Exception as e:
-    #     if len(str(state.regs.r2)) > 30:
-    #         state.regs.r2 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    try:
+        state.solver.eval_one(state.regs.r2)
+    except Exception as e:
+        if len(str(state.regs.r2)) > 150:
+            print("replace call argument r2",state.regs.r2)
+            state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r3)
-    # except Exception as e:
-    #     if len(str(state.regs.r3)) > 30:
-    #         state.regs.r3 = state.solver.BVS(f"call_sym_{hex(state.addr)}", 32)
+    try:
+        state.solver.eval_one(state.regs.r3)
+    except Exception as e:
+        if len(str(state.regs.r3)) > 150:
+            print("replace call argument r3",state.regs.r3)
+            state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
     
 
 def call_statement_before(state):
@@ -382,34 +406,19 @@ def call_statement_before(state):
         for ins in inses:
             if ("bx" in ins.mnemonic or "blx" in ins.mnemonic) and "lr" not in ins.op_str:
                 # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
-                if ins.address != state.addr:
+                if ins.address != pc_addr:
                     break
-                # print(hex(ins.address),hex(state.addr))
+
                 addr = getattr(state.regs,ins.op_str)
                 if not addr.symbolic:
                     break
                 if addr in value_concrete_value_map and value_concrete_value_map[addr] != 0:
-                    print("resolve a function at ",hex(state.addr), "to pointer ",hex(value_concrete_value_map[addr]))
+                    print("resolve a function at ",hex(pc_addr), "to pointer ",hex(value_concrete_value_map[addr]))
                     state.add_constraints(addr == value_concrete_value_map[addr])
                     setattr(state.regs,ins.op_str,value_concrete_value_map[addr])
                     state.solver.reload_solver()
                     break
 
-                    # state_copy = state.copy()
-                    # state_copy.regs.pc = value_concrete_value_map[addr]
-                    # state_copy.regs.lr = state.addr + 2
-                    # simgr.active.append(state_copy)  
-                # else:
-                #     setattr(state_copy.regs,"pc",state.addr + 2)
-                # print(state.solver.constraints)
-                # setattr(state_copy.regs,"r3",0xBFC)
-                # simgr.active.append(state_copy)
-                # state_copy.step(thumb=True)   
-                # print(state_copy.step(thumb=True).unsat_successors)
-                # simgr.active.remove(state)
-                # print(simgr.active)
-                
-                # print(hex(state.addr),state.solver.constraints)
                 nullptr_ast = get_nullptr_ast_in_ast(addr)
                 if nullptr_ast == None:
                     break
@@ -417,13 +426,13 @@ def call_statement_before(state):
                 if state.addr not in  nullptr_func_check_mem_addr:
                     nullptr_func_check_mem.add(get_addr_for_null_value(nullptr_ast))
                     nullptr_func_check_mem_addr.add(state.addr)
-                print("add nullptr  pc  ",hex(state.addr),"  ast  ", nullptr_ast, "  addr   ",hex(get_addr_for_null_value(nullptr_ast)))
-                if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
+                    print("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(get_addr_for_null_value(nullptr_ast)))
+                if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr or len(state.solver.constraints) > 5:
                     break
                 
                 nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
                 nullptr_data_access_check_mem_addr.add(state.addr)
-                print("add call dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+                print("add call dependency pc ",hex(pc_addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     except Exception as e:
         pass
@@ -473,16 +482,16 @@ def get_memory_access(states,accessses):
                 continue
 
             # if is_memory_read_action(action) and not is_ast_mmio_address(state,action.addr):
-            #     print(action)
-
+            # print(action)
+            # print(state.solver.constraints)
             if is_ast_readonly(state,action.addr):
                 continue
             
             if is_memory_read_action(action):
-                
                 continue
-            
             if is_ast_zero(state,action.addr):
+                continue
+            if not is_ast_only_eval_one_value(state,action.addr):
                 continue
 
 
@@ -493,14 +502,16 @@ def get_memory_access(states,accessses):
                 info.size = int((action.size + 0)/8)
                 info.type = "mmio"
                 accessses.add(info)
-            if not action.addr.symbolic and is_ast_pointer(state,action.addr) and is_memory_write_action(action) and action.addr not in  mem_access_addr:
+            if is_ast_pointer(state,action.addr) and is_memory_write_action(action) and action.ins_addr not in  mem_access_addr:
                 info = ACCESS_INFO()
                 info.ins_addr = state.solver.eval_one(action.ins_addr)
                 info.addr = state.solver.min(action.addr)
                 info.size = int((action.size + 0)/8)
                 info.type = "mem"
                 accessses.add(info)
-                mem_access_addr.add(action.addr)
+                mem_access_addr.add(info.ins_addr)
+                print("watchpoint",hex(info.ins_addr),hex(info.addr))
+
                 
         
     
@@ -551,8 +562,8 @@ def main():
     simgr = project.factory.simgr(initial_state)
 
     simgr.use_technique(spiller)
-    simgr.use_technique(suggest)
-    simgr.use_technique(loopser)
+    # simgr.use_technique(suggest)
+    # simgr.use_technique(loopser)
     
 
     for i in range(50):
@@ -572,7 +583,7 @@ def main():
         for r in to_remove:
             simgr.active.remove(r)
         
-        print(simgr.active)
+        # print(simgr.active)
         
         
         simgr.step(thumb=True)

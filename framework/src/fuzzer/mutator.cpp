@@ -475,7 +475,7 @@ static havoc_fuc havoc_arrays[] = {
                                     havoc_flip_bit, 
                                     havoc_interesting_value, 
                                     havoc_insert,
-                                    havoc_append_huge,
+                                    // havoc_append_huge,
                                     havoc_clone,
                                     havoc_delete,
                                     havoc_revert,

@@ -23,6 +23,12 @@
         "xmemory": "cpp",
         "stdio.h": "c",
         "stdbool.h": "c",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "cmath": "cpp",
+        "complex": "cpp",
+        "__tree": "cpp",
+        "functional": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp"
     }
 }

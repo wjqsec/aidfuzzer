@@ -27,7 +27,7 @@ void register_post_thread_exec_hook(post_thread_exec_cb cb)
     post_thread_exec_func = cb;
 }
 
-void load_file_ram(void *ptr,char *filename, int file_offset, int mem_offset, int file_size)
+void load_file_ram(void *ptr,char *filename, int file_offset, int mem_offset, int file_size, int mem_size)
 {
     FILE *fptr = fopen(filename,"rb");
     if(!fptr)
@@ -44,8 +44,11 @@ void load_file_ram(void *ptr,char *filename, int file_offset, int mem_offset, in
     }
     else
         file_size = file_size < remainder_size ? file_size : remainder_size;
-
+    if (file_size > mem_size)
+        file_size = mem_size;
+        
     fread((uint8_t*)ptr + mem_offset,file_size,1,fptr);
+    fclose(fptr);
 }
 void zero_ram(void *ptr,hw_addr size)
 {

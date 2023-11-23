@@ -104,6 +104,9 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
         returned = true;
         return true;
     }
+    #ifdef DBG
+    fprintf(flog,"%d->bbl pc:%x\n",run_index,pc);
+    #endif
 
 
     __afl_area_ptr[id] ++;

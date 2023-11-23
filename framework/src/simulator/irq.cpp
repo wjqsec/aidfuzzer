@@ -21,7 +21,7 @@ using namespace std;
 
 map<irq_val,IRQ_N_MODEL*> models;
 set<irq_val> enabled_irqs;
-
+uint64_t idle_count = 0;
 
 IRQ_N_STATE *get_void_state()
 {
@@ -54,16 +54,17 @@ void set_vec_watchpoint(irq_val irq,hw_addr addr)
 
 void set_state(IRQ_N_STATE *state,irq_val irq)
 {
+    for(auto it = state->func_nullptr->begin() ; it!= state->func_nullptr->end(); it++)
+    {
+        it->second->point = insert_nostop_watchpoint(it->first,4,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_unresolved_func_ptr,(void*)(uint64_t)irq);   
+    }
     if(!state->toend)
         return;
     for(auto it = state->mem_addr->begin() ; it!= state->mem_addr->end(); it++)
     {
         it->second->point = insert_nostop_watchpoint(it->first,4,QEMU_PLUGIN_MEM_R_ ,nostop_watchpoint_exec_mem,(void*)(uint64_t)irq);
     }
-    for(auto it = state->func_nullptr->begin() ; it!= state->func_nullptr->end(); it++)
-    {
-        it->second->point = insert_nostop_watchpoint(it->first,4,QEMU_PLUGIN_MEM_W_ ,nostop_watchpoint_exec_unresolved_func_ptr,(void*)(uint64_t)irq);   
-    }
+    
     
     state->mem_access_trigger_irq_times_count = 0;
 }
@@ -206,6 +207,7 @@ void irq_on_new_run()
         irq_on_disable_nvic_irq(it->first);
     }
     irq_on_enable_nvic_irq(ARMV7M_EXCP_SYSTICK);
+    idle_count = 1;
 }
 void irq_on_init()
 {
@@ -224,6 +226,7 @@ void irq_on_init()
 
     if (access(model_filename, F_OK) == 0) 
     {
+        // remove(model_filename);
         load_model(model_filename, &models);
     }
 
@@ -247,7 +250,7 @@ void irq_on_mem_access(int irq,hw_addr addr)
     IRQ_N_STATE *state = (*models[irq]->state)[get_current_isr(irq)];
 
     state->mem_access_trigger_irq_times_count++;
-    if(state->mem_access_trigger_irq_times_count > state->mem_addr->size())
+    if(state->mem_access_trigger_irq_times_count > (state->mem_addr->size() * 5))
     {
         insert_irq = insert_nvic_intc(irq);
         state->mem_access_trigger_irq_times_count = 0;
@@ -260,10 +263,9 @@ void irq_on_mem_access(int irq,hw_addr addr)
     }
 }
 
+
 void irq_on_idel()
-{
-    static uint64_t count = 0;
-    
+{   
     
     if(
        get_arm_v7m_is_handler_mode() != ARMV7M_EXCP_PENDSV && 
@@ -271,12 +273,12 @@ void irq_on_idel()
        get_arm_v7m_is_handler_mode() != 0)
         return;
 
-    if((count & 7) != 0)
+    if((idle_count & 7) != 0)
     {
-        count++;
+        idle_count++;
         return;
     }
-    count++;
+    idle_count++;
     
     for(auto it = enabled_irqs.begin(); it != enabled_irqs.end(); it++)
     {

@@ -306,6 +306,8 @@ void allocate_new_simulator(FuzzState *state)
 
   if(!use_fuzzware)
     child_arg[i++] = (char*)"-n";
+  if(!model_infinite_loop)
+    child_arg[i++] = (char*)"-e";
 
   child_arg[i++] = NULL;
 

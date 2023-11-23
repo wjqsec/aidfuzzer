@@ -25,10 +25,10 @@ struct input_stream
 
 struct stream_schedule_info
 {
-    u32 schedule_times;
-    u32 interesting_times;
-    u32 len;
+    u64 schedule_times;
+    u64 interesting_times;
 };
+
 struct queue_entry
 {
     s32 depth;
@@ -42,7 +42,6 @@ struct queue_entry
     u64 create_time;
     u8 offset_to_save[0];
     
-    map<u32,stream_schedule_info *> *stream_info;
 #define DEFAULT_STREAM_PRIORITY 1
     map<u32,input_stream *> *streams;
     
@@ -125,7 +124,7 @@ struct FuzzState
     map<u32,vector<input_stream*>*> *freed_streams;
     vector<crash_info> *crashes;
 
-
+    map<u32,stream_schedule_info *> *stream_schedule_info;
     map<u32,input_model*> *models;
 
     FILE *flog;
@@ -176,4 +175,6 @@ extern bool model_systick;
 extern bool use_fuzzware;
 extern int max_bbl_exec;
 extern int mode;
+
+extern bool model_infinite_loop;
 #endif

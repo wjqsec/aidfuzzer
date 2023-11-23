@@ -97,7 +97,7 @@ extern "C" {
     void* add_ram_region(char *name,hw_addr start, hw_addr size, bool readonly);
     void add_rom_region(char *name,hw_addr start, hw_addr size);
     void add_mmio_region(char *name, hw_addr start, hw_addr size, mmio_read_cb mmio_read_cb, mmio_write_cb mmio_write_cb,void * opaque);
-    void load_file_ram(void *ptr,char *filename, int file_offset, int mem_offset, int file_size);
+    void load_file_ram(void *ptr,char *filename, int file_offset, int mem_offset, int file_size, int mem_size);
     void zero_ram(void *ptr,hw_addr size);
     void load_file_rom(char *filename,hw_addr addr, int file_offset, int mem_offset, int file_size);
     

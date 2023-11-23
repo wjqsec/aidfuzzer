@@ -4,6 +4,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <stdint.h>
+#include <cmath>
 #include <stdlib.h>
 #include <stdio.h>
 #include <linux/limits.h>
@@ -46,6 +47,7 @@ void clean_fuzzer_shm(FuzzState *state);
 FuzzState global_state;
 bool terminate_next = false;
 
+
 char *project_dir;
 char  in_dir[PATH_MAX];
 char  out_dir[PATH_MAX];
@@ -68,6 +70,7 @@ char *pool_file;
 char *simulator_bin;
 bool fresh_run;
 bool use_fuzzware = true;
+bool model_infinite_loop = true;
 int max_bbl_exec = MAX_BBL_EXEC;
 int mode = -1;
 
@@ -130,6 +133,7 @@ void fuzzer_init(FuzzState *state, u32 max_edge, u32 share_size)
     state->simulators = new vector<Simulator*>();
     state->freed_streams = new map<u32,vector<input_stream*>*>();
     state->crashes = new vector<crash_info>();
+    state->stream_schedule_info = new map<u32,stream_schedule_info *>();
 
     state->num_fds = 0;
     state->shared_stream_used = 0;
@@ -265,11 +269,10 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 
 
 
-void update_entry_state(queue_entry*q, Simulator *simulator,u32 exit_reason)
+void init_entry_state(queue_entry*q, Simulator *simulator,u32 exit_reason)
 {
-  q->stream_info = new map<u32,stream_schedule_info *>();
-
   q->edges = count_bytes(simulator->trace_bits, simulator->map_size);
+  q->fuzztimes = 0;
   q->cksum = hash32(simulator->trace_bits,simulator->map_size);
   q->exit_reason = exit_reason;
   q->priority = q->edges + 1;
@@ -281,30 +284,24 @@ void update_entry_state(queue_entry*q, Simulator *simulator,u32 exit_reason)
     q->depth = simulator->task.base_entry->depth + 1;
   else
     q->depth = 1;
-  
-  for(auto it = q->streams->begin(); it != q->streams->end(); it++)
-  {
-    if(stream_shouldnot_mutate(it->second))
-      continue;
-    (*q->stream_info)[it->first] = new stream_schedule_info();
-    (*q->stream_info)[it->first]->schedule_times = 1;
-    (*q->stream_info)[it->first]->interesting_times = 1;
-    (*q->stream_info)[it->first]->len = it->second->ptr->len;
-  }
-
-
 }
 
-void update_queue_state(queue_entry*q,set<u32> *fuzz_streams, int r)
+void update_stream_schedule_info(FuzzState *state,set<u32> *fuzz_streams,int r)
 {
-  q->fuzztimes++;
   for(auto it = fuzz_streams->begin(); it != fuzz_streams->end(); it++)
   {
-    (*q->stream_info)[*it]->schedule_times++;
-    if(unlikely(r))
-      (*q->stream_info)[*it]->interesting_times++;
+    (*state->stream_schedule_info)[*it]->schedule_times ++;
+    if (unlikely(r)) 
+      (*state->stream_schedule_info)[*it]->interesting_times += 1000;
+      // (*state->stream_schedule_info)[*it]->interesting_times += log10(state->total_exec) * 2000;
+    else
+    {
+      if((*state->stream_schedule_info)[*it]->interesting_times > 1)
+        (*state->stream_schedule_info)[*it]->interesting_times--;
+    } 
   }
 }
+
 
 bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 {
@@ -336,11 +333,15 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
         }
         if(state->models->find(exit_info.stream_info.exit_stream_id) == state->models->end())
         {
-          add_default_model(state,exit_info.stream_info.exit_stream_id, exit_info.stream_info.mmio_len);
+          add_default_model(state,exit_info.stream_info.exit_stream_id, exit_info.stream_info.mmio_len,exit_info.exit_pc,exit_info.stream_info.exit_mmio_addr);
         }
       }
-      (*state->models)[exit_info.stream_info.exit_stream_id]->mmio_addr = exit_info.stream_info.exit_mmio_addr;
-      (*state->models)[exit_info.stream_info.exit_stream_id]->pc_addr = exit_info.exit_pc;
+      if (state->stream_schedule_info->find(exit_info.stream_info.exit_stream_id) == state->stream_schedule_info->end())
+      {
+        (*state->stream_schedule_info)[exit_info.stream_info.exit_stream_id] = new stream_schedule_info();
+        (*state->stream_schedule_info)[exit_info.stream_info.exit_stream_id]->schedule_times = 1;
+        (*state->stream_schedule_info)[exit_info.stream_info.exit_stream_id]->interesting_times = 1;
+      }
 
       new_stream = allocate_enough_space_stream(state,exit_info.stream_info.exit_stream_id, 1 << (6 + UR(3)));
       if(!stream_shouldnot_mutate(new_stream))
@@ -370,11 +371,14 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 
   simulator_classify_count(simulator);
   int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-
+    
+  
   if(base_entry)
   {
-    update_queue_state(base_entry,fuzz_streams, r);
+    update_stream_schedule_info(state,fuzz_streams,r);
+    base_entry->fuzztimes++;
   }
+    
 
   if(unlikely(r))
   {
@@ -382,7 +386,8 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
       save_coverage(state);
 
     trim_queue(state,fuzz_entry,simulator);
-    update_entry_state(fuzz_entry, simulator,exit_info.exit_code);
+
+    init_entry_state(fuzz_entry, simulator,exit_info.exit_code);
 
     insert_queue(state,fuzz_entry);
 
@@ -394,7 +399,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     crash_info info;
     info.pc = exit_info.exit_pc;
     info.lr = exit_info.exit_lr;
-    if(!find_crash(state, &info))
+    if(!find_crash(state, &info) && state->crashes->size() < 100)
     {
 
       insert_crash(state,info);
@@ -416,18 +421,36 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   
 }
 
-u32 select_stream(queue_entry* entry)
+u32 select_stream(FuzzState *state,queue_entry* entry, bool uniformly)
 {
-  if(entry->stream_info->size() == 0)
-    fatal("no avaliable fuzz stream\n");
-  int index = UR(entry->stream_info->size());
-  int i = 0;
-  for(auto it = entry->stream_info->begin(); it != entry->stream_info->end(); ++it)
+  s64 total = 0;
+  s64 priority;
+  map<u32,s64> tmp_priority;
+  for(auto it = entry->streams->begin(); it!= entry->streams->end(); it++)
   {
-    if (i == index)
-      return it->first;
-    i++;
+    
+    if(stream_shouldnot_mutate(it->second))
+      continue;
+
+    priority = (*state->stream_schedule_info)[it->first]->interesting_times;
+    total += priority;
+    tmp_priority[it->first] = priority;
+
+    
   }
+ 
+  s32 random_number =  UR(total);
+  s32 weight_sum = 0;
+  for(auto it = tmp_priority.begin(); it!= tmp_priority.end(); it++)
+  {
+    weight_sum += it->second;
+    if(random_number < weight_sum)
+    {
+      
+      return it->first;
+    }
+  }
+  
   return 0;
 }
 
@@ -440,25 +463,41 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   queue_entry* fuzz_entry;
   queue_entry* base_entry;
   u32 use_stacking;
-  u32 fuzz_stream_id;
-  /*
+  u32 fuzz_stream_id = 0;
+  
   base_entry = entry;
-  use_stacking = (1 << (5 + UR(3)));
+  
 
+/*
   for(int i = 0; i < use_stacking; i++)
   {
-    
+
     fuzz_entry = new_queue(state);
+
     copy_queue_streams(state,base_entry,fuzz_entry);
-    fuzz_stream_id =  select_stream(entry);
+    
+    fuzz_stream_id =  select_stream(state,entry);
+    
     if(fuzz_stream_id != 0 )
     { 
+      
       fuzz_stream = havoc(state,(*base_entry->streams)[fuzz_stream_id]);
+      
       selected_streams = new set<u32>();
       selected_streams->insert(fuzz_stream_id);
+    
       replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
-      simulator = get_avaliable_simulator(state);  
-      fuzz_one_post(state,simulator);
+ 
+      simulator = get_avaliable_simulator(state); 
+      
+      bool interesting =  fuzz_one_post(state,simulator);
+   
+      if(i != 0 && interesting)
+      {
+        free_queue(state,fuzz_entry);
+        delete selected_streams;
+        return;
+      }
       simulator_task(simulator,fuzz_entry,entry,selected_streams);
       fuzz_start(simulator);
       base_entry = fuzz_entry;
@@ -471,31 +510,55 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
       fuzzer_terminate(state);
   }
   */
-  use_stacking = (1 << (5 + UR(3)));
-  fuzz_entry = new_queue(state);
-  selected_streams = new set<u32>();
+ 
 
-  copy_queue_streams(state,entry,fuzz_entry);
-  for(int i = 0; i < use_stacking; i++)
-  {
-    fuzz_stream_id =  select_stream(entry);
-    if(fuzz_stream_id == 0)
-      continue;
-    selected_streams->insert(fuzz_stream_id);
+      fuzz_entry = new_queue(state);
+      selected_streams = new set<u32>();
+
+      copy_queue_streams(state,entry,fuzz_entry);
     
-    fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
+      use_stacking = (1 << (5 + UR(3)));
+      for(int i = 0; i < use_stacking; i++)
+      {
+        fuzz_stream_id =  select_stream(state,entry,false);
 
-    replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
-  }
-  simulator = get_avaliable_simulator(state);  
-  fuzz_one_post(state,simulator);
-  simulator_task(simulator,fuzz_entry,entry,selected_streams);
-  fuzz_start(simulator);
-  if(terminate_next)
-      fuzzer_terminate(state);
+        selected_streams->insert(fuzz_stream_id);
+        
+        fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
+
+        replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
+      }
+      
+
+
+      simulator = get_avaliable_simulator(state);  
+      fuzz_one_post(state,simulator);
+      simulator_task(simulator,fuzz_entry,entry,selected_streams);
+      fuzz_start(simulator);
+      if(terminate_next)
+          fuzzer_terminate(state);
+
+  
+      
   
 }
 
+void dump_queue_schedule_info(FuzzState *state,queue_entry* q)
+{
+  for(auto it = state->stream_schedule_info->begin(); it != state->stream_schedule_info->end(); it++)
+  {
+
+    if(it->second->schedule_times > 1)
+    {
+      printf("stream id:%x pc:%x mmio:%x times:%d interesting:%d\n",
+      it->first,
+      (*state->models)[it->first]->pc_addr,
+      (*state->models)[it->first]->mmio_addr,
+      it->second->schedule_times,
+      it->second->interesting_times);
+    }
+  }
+}
 
 inline queue_entry* select_entry(FuzzState *state)
 {
@@ -532,10 +595,19 @@ void fuzz_loop(FuzzState *state)
     int times = 0;
     while(1)
     {
+
         entry = select_entry(state);
+        
         fuzz_queue(state,entry);
+        
+        
+        
         if((times & 0xff) == 0)
+        {
           show_stat(state);
+          // dump_queue_schedule_info(state,entry);
+        }
+          
         
         times++;
             
@@ -656,7 +728,7 @@ int main(int argc, char **argv)
   int opt;
   int cores;
   init();
-  while ((opt = getopt(argc, argv, "d:m:p:e:s:ftnb:")) != -1) 
+  while ((opt = getopt(argc, argv, "d:m:p:e:s:ftnb:a")) != -1) 
   {
       switch (opt) {
       case 'm':
@@ -685,6 +757,12 @@ int main(int argc, char **argv)
       case 'n':
           use_fuzzware = false;
           break;
+      case 'a':
+          model_infinite_loop = false;
+          break;
+
+
+          
       case 'b':
           max_bbl_exec = atoi(optarg);
           break;

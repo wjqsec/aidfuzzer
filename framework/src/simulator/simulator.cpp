@@ -64,7 +64,7 @@ char *log_dir;
 char *fuzzware_config_filename;
 
 bool use_fuzzware = true;
-
+bool model_infinite_loop = true;
 
 extern ARMM_SNAPSHOT *org_snap,*new_snap;
 
@@ -489,7 +489,7 @@ void init_log()
 void init(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:sb:a:n")) != -1) 
+    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:sb:a:nme")) != -1) 
     {
         switch (opt) {
         case 'd':
@@ -520,6 +520,11 @@ void init(int argc, char **argv)
         case 'n':
             use_fuzzware = false;
             break;
+        case 'e':
+            model_infinite_loop = false;
+            break;
+
+            
 
             
         default: /* '?' */
@@ -555,29 +560,30 @@ int run_config()
     {
         if((*it)->type == SEG_RAM)
         {
+            
             void * p = add_ram_region((*it)->name,
             (*it)->start, 
             (*it)->size,
             (*it)->readonly);
             (*it)->ptr = p;
+
             zero_ram(p,(*it)->size);
+
             for(auto it2 = (*it)->contents->begin(); it2 != (*it)->contents->end(); it2++)
             {
                 load_file_ram(p,
                 (*it2)->file,
                 (*it2)->file_offset, 
                 (*it2)->mem_offset, 
-                (*it2)->file_size);
+                (*it2)->file_size,
+                (*it)->size);
             }
-            
-            
         }
         else if((*it)->type == SEG_MMIO)
         {
             add_mmio_region((*it)->name,(*it)->start, (*it)->size, mmio_read_snapshot, mmio_write_snapshot,(void*)(uint64_t)(*it)->start);
         }
     }
-
     reset_arm_reg();
 
     org_snap = arm_take_snapshot();
@@ -595,12 +601,10 @@ int run_config()
     register_disable_nvic_hook(disenable_nvic);
 
     register_post_thread_exec_hook(post_thread_exec);
-    
-    model_all_infinite_loop();
+    if(model_infinite_loop)
+        model_all_infinite_loop();
 
     irq_on_new_run();
-
-        
 
     exec_simulator(simulator);
     return 1;

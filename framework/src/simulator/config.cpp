@@ -86,12 +86,15 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
             *strstr(ptr,":") = 0;
             config->segs->back()->name = strdup(ptr);
             config->segs->back()->contents = new vector<SEG_CONTENT*>();
+            
         }
         else if (is_option_start(line))
         {
             if(strstr(line,OPTION_START"base_addr:"))
             {
                 config->segs->back()->start = strtol(strstr(line,"base_addr: ") + strlen("base_addr: "), 0, 16);
+                if(strstr(config->segs->back()->name,"text"))
+                    config->vecbase = config->segs->back()->start;
             }
             else if(strstr(line,OPTION_START"permissions:"))
             {
@@ -107,8 +110,6 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
             else if(strstr(line,OPTION_START"size:"))
             {
                 config->segs->back()->size = strtol(strstr(line,"size: ") + strlen("size: "), 0, 16);
-                
-                
             }
             else if(strstr(line,OPTION_START"file:"))
             {
@@ -119,7 +120,6 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
                 strcat(file_buf,"/");
                 strcat(file_buf, strstr(line,"file: ") + strlen("file: "));
                 config->segs->back()->contents->back()->file = strdup(file_buf);
-                
                 
             }
             else if(strstr(line,OPTION_START"file_size:"))
@@ -139,12 +139,14 @@ SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
             }
             else if(strstr(line,OPTION_START"ivt_offset:"))
             {
-                config->vecbase = strtol(strstr(line,"ivt_offset: ") + strlen("ivt_offset: "), 0, 16) + config->segs->back()->start;
+                if(strstr(config->segs->back()->name,"text"))
+                    config->vecbase += strtol(strstr(line,"ivt_offset: ") + strlen("ivt_offset: "), 0, 16);
             }
 
         }
 
     }
+    printf("parse config file done\n");
     fclose(fp);
     return config;
 }

@@ -9,7 +9,7 @@ day_seconds = 24 * 60 * 60
 
 
 def append_first_last_plot(x,y):
-    if len(x) != 0:
+    if len(x) != 0 and x[-1] < day_seconds:
         x.append(day_seconds)
         y.append(y[-1])
     return x,y
@@ -26,8 +26,7 @@ def get_fuzzware_cov(filename):
                 continue
             tmp = re.findall(r'\d+',line)
             x.append(int(tmp[0]))
-            y.append(tmp[1])
-            print(tmp[0],tmp[1])
+            y.append(int(tmp[1]))
     
     return append_first_last_plot(x,y)    
 
@@ -43,7 +42,7 @@ def get_hoedur_cov(filename):
             if int(point["x"]) > day_seconds:
                 break
             x.append(int(point["x"]))
-            y.append((point["y"]))
+            y.append(int(point["y"]))
     return append_first_last_plot(x,y)   
 
 
@@ -81,10 +80,10 @@ def main():
     hoedur_x , hoedur_y = get_hoedur_cov(args.hoedur)
     xx_x, xx_y = get_xx_cov(args.xx)
 
-    
+
+    plt.plot(xx_x, xx_y,label="aid")
     plt.plot(fuzzware_x, fuzzware_y,label="fuzzware")
     plt.plot(hoedur_x, hoedur_y,label="hoedur")
-    plt.plot(xx_x, xx_y,label="xx")
 
     plt.ylim(ymin=0)
     plt.xlim(xmin=0,xmax = day_seconds)
@@ -94,7 +93,7 @@ def main():
     plt.title('Data Plot')
 
     
-    plt.savefig(args.output + "aaa" + ".pdf", format="pdf")
+    plt.savefig(args.output, format="pdf")
 
 if __name__ == '__main__':
     main()
