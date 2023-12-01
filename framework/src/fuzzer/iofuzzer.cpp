@@ -292,7 +292,7 @@ void update_stream_schedule_info(FuzzState *state,set<u32> *fuzz_streams,int r)
   {
     (*state->stream_schedule_info)[*it]->schedule_times ++;
     if (unlikely(r)) 
-      (*state->stream_schedule_info)[*it]->interesting_times += 1000;
+      (*state->stream_schedule_info)[*it]->interesting_times += 100;
       // (*state->stream_schedule_info)[*it]->interesting_times += log10(state->total_exec) * 2000;
     else
     {

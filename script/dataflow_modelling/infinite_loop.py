@@ -61,6 +61,7 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
     return all_loops
 
 if __name__ == "__main__":
+    start_time = time.time()
     parser = argparse.ArgumentParser(description="infinite loop modelling",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-s", "--state", help="irq state binary file")
@@ -73,3 +74,5 @@ if __name__ == "__main__":
     with open(args.output,"w") as f:
         for addr in loop_addrs:
             f.write("%x\n"%(addr))
+    end_time = time.time()
+    print("infinite total time: {}".format(end_time-start_time))

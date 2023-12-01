@@ -2386,24 +2386,22 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
         /* fall through */
     case 0x180 ... 0x1bf: /* NVIC Clear enable */
         startvec = 8 * (offset - 0x180) + NVIC_FIRST_IRQ;
-
         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
             if (value & (1 << i) &&
                 (attrs.secure || s->itns[startvec + i])) {
                 s->vectors[startvec + i].enabled = setval;
-                if(setval == 1 && enable_nvic_func)
+                if(setval == 1)
                 {
-                    enable_nvic_func(startvec + i);
-                    s->enabled_irqs[s->enabled_irqs_idx++] = startvec + i;
+                    s->enabled_irqs[s->enabled_irqs_idx] = startvec + i;
+                    s->enabled_irqs_idx++;
+                    
+                    if (enable_nvic_func)
+                        enable_nvic_func(startvec + i);
                 }
                 if(setval == 0 && disable_nvic_func)
                 {
                     disable_nvic_func(startvec + i);
-                }
-
-
-                
-                    
+                }   
             }
         }
         nvic_irq_update(s);
@@ -2679,9 +2677,9 @@ static void armv7m_nvic_reset(DeviceState *dev)
         }
     }
     s->enabled_irqs_idx = 0;
-    for(int i = 0; i < NVIC_INTERNAL_VECTORS ; i ++)
+    for(int i = 1; i < NVIC_INTERNAL_VECTORS ; i ++)
     {
-        s->enabled_irqs[s->enabled_irqs_idx] = i + 1;
+        s->enabled_irqs[s->enabled_irqs_idx] = i;
         s->enabled_irqs_idx++;
     }
     /*

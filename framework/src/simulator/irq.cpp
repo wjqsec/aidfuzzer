@@ -250,7 +250,7 @@ void irq_on_mem_access(int irq,hw_addr addr)
     IRQ_N_STATE *state = (*models[irq]->state)[get_current_isr(irq)];
 
     state->mem_access_trigger_irq_times_count++;
-    if(state->mem_access_trigger_irq_times_count > (state->mem_addr->size() * 5))
+    if(state->mem_access_trigger_irq_times_count > (state->mem_addr->size() * 7))
     {
         insert_irq = insert_nvic_intc(irq);
         state->mem_access_trigger_irq_times_count = 0;

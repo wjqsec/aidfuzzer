@@ -28,6 +28,7 @@
 //#define DBG
 #define CRASH_DBG
 
+//#define ROUND_ROBIN
 
 int mode;
 
@@ -69,6 +70,9 @@ bool model_infinite_loop = true;
 extern ARMM_SNAPSHOT *org_snap,*new_snap;
 
 
+#ifdef ROUND_ROBIN
+uint64_t bbls;
+#endif
 
 bool exit_with_code_start()
 {
@@ -103,9 +107,6 @@ bool exit_with_code_start()
     {
        
         add_stream(cmd_info.added_stream_index);
-        
-        
-
         pc_changed = false;
     }
     else if(unlikely(cmd_info.cmd == CMD_CONTINUE_UPDATE_STREAM))
@@ -128,8 +129,16 @@ bool exit_with_code_start()
         arm_restore_snapshot(new_snap);
         nommio_executed_bbls = 0;
         run_index++;
-        irq_on_new_run();
+        
         collect_streams();
+
+        #ifndef ROUND_ROBIN
+        irq_on_new_run();
+        #endif
+
+        #ifdef ROUND_ROBIN
+        bbls = 1;
+        #endif
     }
     return pc_changed;
      
@@ -249,13 +258,25 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
         return pc_changed;
     }
     
-    #ifdef ENABLE_ROUNDROBIN_IRQ
-    if(*num_irqs && (bbl % ROUNDROBIN_IRQ_BBLS) == 0)
+    
+    #ifdef ROUND_ROBIN
+    if ((bbls % ROUNDROBIN_IRQ_BBLS) == 0)
     {
-        insert_nvic_intc(irqs[tmp % (*num_irqs)],false);
+        
+        irq_val *irqs;
+        irq_val num_irqs =  get_enabled_nvic_irq(&irqs);
+        int index = (bbls / ROUNDROBIN_IRQ_BBLS) % (num_irqs - ARMV7M_EXCP_SYSTICK + 1);
 
+        bool insert  = insert_nvic_intc(irqs[index + ARMV7M_EXCP_SYSTICK -1]);
+        
+        #ifdef DBG
+        if(insert)
+            fprintf(flog,"%d->insert round robin irq:%d\n",run_index,irqs[index + ARMV7M_EXCP_SYSTICK -1]);
+        #endif
     }
+    bbls ++;
     #endif
+
 
 
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
@@ -277,7 +298,10 @@ void insert_idel_irq()
 }
 void enable_arm_intc()
 {
-    irq_on_idel();
+    #ifdef DBG
+            fprintf(flog,"%d->cpie\n",run_index);
+    #endif
+    insert_idel_irq();
 }
 
 void nostop_watchpoint_exec_overwrite_vec(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
@@ -316,6 +340,9 @@ void disenable_nvic(irq_val irq)
 
 bool arm_exec_loop_bbl(hw_addr pc,uint32_t id)
 {
+    #ifdef DBG
+            fprintf(flog,"%d->infinite loop\n",run_index);
+    #endif
     insert_idel_irq();
     return false;
 }
@@ -359,7 +386,13 @@ void post_thread_exec(int exec_ret)
     #endif
 
     if(exec_ret == EXCP_HLT || exec_ret == EXCP_HALTED)
+    {
+        #ifdef DBG
+            fprintf(flog,"%d->wfi/wfe\n",run_index);
+        #endif
         insert_idel_irq();
+    }
+        
     else if(exec_ret == EXCP_INTERRUPT)
     {
         prepare_exit(EXIT_FUZZ_EXCP_INTERRUPT);
@@ -588,23 +621,29 @@ int run_config()
 
     org_snap = arm_take_snapshot();
 
-    irq_on_init();
+    
+    
 
     register_armm_ppb_default_read_hook(mmio_read_common);
     register_armm_ppb_default_write_hook(mmio_write_common);
     register_exec_bbl_hook(exec_bbl_snapshot);
     register_do_arm_interrupt_hook(arm_cpu_do_interrupt_hook);
     register_mem_access_log_hook(mem_access_log);
-    register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
+    
+    register_post_thread_exec_hook(post_thread_exec);
+    
+
+    #ifndef ROUND_ROBIN
+    irq_on_init();
     register_enable_arm_interrupt_hook(enable_arm_intc);
     register_enable_nvic_hook(enable_nvic);
     register_disable_nvic_hook(disenable_nvic);
-
-    register_post_thread_exec_hook(post_thread_exec);
+    register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
     if(model_infinite_loop)
         model_all_infinite_loop();
-
     irq_on_new_run();
+    #endif
+    
 
     exec_simulator(simulator);
     return 1;

@@ -73,7 +73,7 @@ def write_model_to_file(models,modelfilename):
 def get_and_insert_model(models,irq,isr):
     for model in models:
         if model.irq == irq and model.isr == isr:
-            return model
+            models.remove(model)
     tmp = IRQ_MODEL()
     tmp.irq = irq
     tmp.isr = isr
@@ -369,28 +369,28 @@ def call_before(state):
     try:
         state.solver.eval_one(state.regs.r0)
     except Exception as e:
-        if len(str(state.regs.r0)) > 150:
+        if len(str(state.regs.r0)) > 300:
             print("replace call argument r0",state.regs.r0)
             state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
 
     try:
         state.solver.eval_one(state.regs.r1)
     except Exception as e:
-        if len(str(state.regs.r1)) > 150:
+        if len(str(state.regs.r1)) > 300:
             print("replace call argument r1",state.regs.r1)
             state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
 
     try:
         state.solver.eval_one(state.regs.r2)
     except Exception as e:
-        if len(str(state.regs.r2)) > 150:
+        if len(str(state.regs.r2)) > 300:
             print("replace call argument r2",state.regs.r2)
             state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
 
     try:
         state.solver.eval_one(state.regs.r3)
     except Exception as e:
-        if len(str(state.regs.r3)) > 150:
+        if len(str(state.regs.r3)) > 300:
             print("replace call argument r3",state.regs.r3)
             state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
     
@@ -519,6 +519,7 @@ def get_memory_access(states,accessses):
 def main():
     global project
 
+    start_time = time.time()
     parser = argparse.ArgumentParser(description="irq dataflow modeling",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-s", "--state", help="irq state binary file")
@@ -612,7 +613,8 @@ def main():
         model.accesses.add(access)
 
     write_model_to_file(models,args.output)
-        
+    end_time = time.time()
+    print("irq total time: {}".format(end_time-start_time))
     
 
 if __name__ == '__main__':

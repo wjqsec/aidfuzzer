@@ -112,7 +112,7 @@ void model_all_infinite_loop()
     if(access(model_filename,F_OK) != 0)
     {
         state_filename = dump_state(0,LOOP_STATE_PREFIX,dump_dir);
-        sprintf(cmd,"python3  ../../script/dataflow_modelling/infinite_loop.py -s %s -o %s -c %s > /dev/null 2>&1",state_filename,model_filename,fuzzware_config_filename);
+        sprintf(cmd,"python3  ../../script/dataflow_modelling/infinite_loop.py -s %s -o %s -c %s >> /tmp/a.txt 2>&1",state_filename,model_filename,fuzzware_config_filename);
         puts(cmd);
         system(cmd);
         free(state_filename);
@@ -262,7 +262,7 @@ void dump_prcoess_load_model(int irq,hw_addr isr, map<irq_val,IRQ_N_MODEL*> *mod
     printf("%s",cmd);
     fprintf(f_irq_log,"%s",cmd);
 
-    sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s > /dev/null 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
+    sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s >> /tmp/a.txt 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
     puts(cmd);
 
     fprintf(f_irq_log,"%s\n",cmd);

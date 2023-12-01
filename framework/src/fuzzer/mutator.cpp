@@ -4,11 +4,11 @@
 #include "afl_utl.h"
 #include "stream.h"
 
-#define HAVOC_BLK_SMALL     64
-#define HAVOC_BLK_MEDIUM    128
-#define HAVOC_BLK_LARGE     256
-#define HAVOC_BLK_XL        512
-#define HAVOC_BLK_XXL        1024
+#define HAVOC_BLK_SMALL     16
+#define HAVOC_BLK_MEDIUM    64
+#define HAVOC_BLK_LARGE     128
+#define HAVOC_BLK_XL        256
+#define HAVOC_BLK_XXL        512
 
 #define HAVOC_BLK_HUGE        0x1000
 
@@ -494,19 +494,16 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
 
   ret = resize_stream(state,stream,stream->ptr->len);
   
-  // use_stacking = (1 << (1 + UR(6)));
+  use_stacking = (1 << (1 + UR(3)));
 
-  // for (i = 0; i < use_stacking; i++) 
-  // {
+  for (i = 0; i < use_stacking; i++) 
+  {
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
     
 
     ret = havoc_arrays[index](state,ret);
 
-    
-    
-    
-  // }
+  }
 
   return ret;
   
