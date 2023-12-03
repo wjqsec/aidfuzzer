@@ -9,7 +9,10 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <string>
+#include <clipp.h>
 #include <glib.h>
+#include <set>
 #include <string.h>
 #include <kk_ihex_write.h>
 #include <sys/time.h>
@@ -24,11 +27,14 @@
 #include "stream.h"
 #include "log.h"
 #include "simulator.h"
+#include "cov.h"
 
+using namespace std;
+using namespace clipp;
 //#define DBG
 #define CRASH_DBG
 
-//#define ROUND_ROBIN
+// #define ROUND_ROBIN
 
 int mode;
 
@@ -47,7 +53,7 @@ int fd_to_fuzzer, fd_from_fuzzer;
 FILE *flog;
 FILE *f_crash_log;
 FILE *f_irq_log;
-
+FILE *f_cov_log;
 
 uint64_t nommio_executed_bbls;
 uint64_t max_bbl_exec;
@@ -59,15 +65,18 @@ bool next_bbl_should_exit = false;
 
 uint32_t run_index;
 
-char *dump_dir;
-char *model_dir;
-char *log_dir;
-char *fuzzware_config_filename;
+string dump_dir;
+string model_dir;
+string log_dir;
+string fuzzware_config_filename;
+string cov_log;
+string cov_filter;
 
 bool use_fuzzware = true;
-bool model_infinite_loop = true;
+
 
 extern ARMM_SNAPSHOT *org_snap,*new_snap;
+
 
 
 #ifdef ROUND_ROBIN
@@ -84,6 +93,8 @@ bool exit_with_code_start()
 
     #ifdef DBG
     fprintf(flog,"%d->exit pc:%x %s\n",run_index,get_arm_pc(),get_fuzz_exit_name(exit_info.exit_code));
+    if (f_cov_log)
+        fprintf(f_cov_log,"\n-------------------------\n");
     #endif
 
     write(fd_to_fuzzer , &exit_info,sizeof(EXIT_INFO));   
@@ -185,7 +196,7 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
             {
                 stream->dumped = true;
                 if(use_fuzzware)
-                    dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir);
+                    dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir.c_str());
                 
             }
 
@@ -415,6 +426,7 @@ void post_thread_exec(int exec_ret)
     }
 
 }
+
 void mem_access_log(hw_addr vaddr,uint32_t val,uint32_t flag)
 {
     fprintf(flog,"%d->memory access pc:%x addr:%x value:%x flag:%d\n",run_index,get_arm_pc(),vaddr,val,flag);
@@ -508,63 +520,47 @@ void init_signal_handler(void)
 void init_log()
 {
     char path_buffer[PATH_MAX];
-    sprintf(path_buffer,"%s/simulator_log.txt",log_dir);
+    sprintf(path_buffer,"%s/simulator_log.txt",log_dir.c_str());
     flog = fopen(path_buffer,"w");
-    sprintf(path_buffer,"%s/simulator_crash.txt",log_dir);
+    sprintf(path_buffer,"%s/simulator_crash.txt",log_dir.c_str());
     f_crash_log = fopen(path_buffer,"w");
-    sprintf(path_buffer,"%s/simulator_irq.txt",log_dir);
+    sprintf(path_buffer,"%s/simulator_irq.txt",log_dir.c_str());
     f_irq_log = fopen(path_buffer,"w");
 
     setbuf(flog,0);
     setbuf(f_crash_log,0);
     setbuf(f_irq_log,0);
+
+    if(cov_log != "")
+    {
+        f_cov_log = fopen(cov_log.c_str(),"w");
+        setbuf(f_cov_log,0);
+
+    }
 }
+
 void init(int argc, char **argv)
 {
-    int opt;
-    while ((opt = getopt(argc, argv, "c:d:m:l:f:t:sb:a:nme")) != -1) 
-    {
-        switch (opt) {
-        case 'd':
-            dump_dir = optarg;
-            break;
-        case 'm':
-            model_dir = optarg;
-            break;
-        case 'l':
-            log_dir = optarg;
-            break;
-        case 'f':
-            fd_from_fuzzer = atoi(optarg);
-            break;
-        case 't':
-            fd_to_fuzzer = atoi(optarg);
-            break;
-        case 'c':
-            fuzzware_config_filename = strdup(optarg);
-            config = generate_xx_config(optarg);
-            break;
-        case 'b':
-            max_bbl_exec = atoi(optarg);
-            break;
-        case 'a':
-            mode = atoi(optarg);
-            break;
-        case 'n':
-            use_fuzzware = false;
-            break;
-        case 'e':
-            model_infinite_loop = false;
-            break;
+    auto cli = ( 
+    value("dump_dir",dump_dir),
+    value("model_dir",model_dir),
+    value("log_dir",log_dir),
+    
+    value("fd_from_fuzzer",fd_from_fuzzer),
+    value("fd_to_fuzzer",fd_to_fuzzer),
 
-            
+    value("layout",fuzzware_config_filename),
 
-            
-        default: /* '?' */
-            printf("Usage error\n");
-            terminate_simulation();
-        }
-    }
+    option("-max_bbl") & value("max bbl timeout",max_bbl_exec) ,
+    option("-mode") & value("mode",mode),
+    option("-cov") & value("cov",cov_log),
+    option("-filter") & value("filter",cov_filter),
+    option("-no_use_fuzzware").set(use_fuzzware,false)
+    
+    );
+    parse(argc, argv, cli);
+    config = generate_xx_config(fuzzware_config_filename.c_str());
+
     if(!config)
     {
         printf("generate config error\n");
@@ -573,6 +569,7 @@ void init(int argc, char **argv)
         
     
     init_log();
+    init_bbl_filter(&cov_filter);
     init_signal_handler();
     init_streams();
     __afl_map_shm();
@@ -629,7 +626,7 @@ int run_config()
     register_exec_bbl_hook(exec_bbl_snapshot);
     register_do_arm_interrupt_hook(arm_cpu_do_interrupt_hook);
     register_mem_access_log_hook(mem_access_log);
-    
+    register_translate_bbl_hook(translate_bbl);
     register_post_thread_exec_hook(post_thread_exec);
     
 
@@ -639,8 +636,7 @@ int run_config()
     register_enable_nvic_hook(enable_nvic);
     register_disable_nvic_hook(disenable_nvic);
     register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
-    if(model_infinite_loop)
-        model_all_infinite_loop();
+    model_all_infinite_loop();
     irq_on_new_run();
     #endif
     

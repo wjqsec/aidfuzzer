@@ -24,7 +24,7 @@ void *get_ram_ptr(hw_addr addr)
     }
     return 0;
 }
-SIMULATOR_CONFIG *generate_xx_config(char *fuzzware_config_filename)
+SIMULATOR_CONFIG *generate_xx_config(const char *fuzzware_config_filename)
 {
     char line[PATH_MAX];
     char *ptr;

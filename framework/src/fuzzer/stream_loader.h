@@ -13,14 +13,14 @@ void save_default_pool(FuzzState *state,char *queue_dir);
 
 void load_default_pool(FuzzState *state,char *queue_dir);
 void save_crash_pool(FuzzState *state,char *crash_dir, u32 id);
-void load_crash_pool(FuzzState *state,char *filename);
+void load_crash_pool(FuzzState *state,const char *filename);
 
 
 void save_queue(queue_entry *q,char *dir);
 
 void save_crash(queue_entry *q,char *crash_dir);
 
-queue_entry *load_queue(FuzzState *state,char *seedfile);
+queue_entry *load_queue(FuzzState *state,const char *seedfile);
 
 void save_queues(FuzzState *state,char *queue_dir);
 

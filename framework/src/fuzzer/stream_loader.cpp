@@ -7,7 +7,7 @@ void save_pool_file(FuzzState *state,char *filename)
   fwrite(state->shared_stream_data,state->shared_stream_used,1,f_pool);
   fclose(f_pool);
 }
-void load_pool_file(FuzzState *state,char *filename)
+void load_pool_file(FuzzState *state,const char *filename)
 {
   struct stat st;
   FILE *f_pool = fopen(filename,"rb");
@@ -42,7 +42,7 @@ void save_crash_pool(FuzzState *state,char *crash_dir, u32 id)
   sprintf(filename,"%s/pool_%x.bin",crash_dir,id);
   save_pool_file(state,filename);
 }
-void load_crash_pool(FuzzState *state,char *filename)
+void load_crash_pool(FuzzState *state,const char *filename)
 {
   load_pool_file(state,filename);
 }
@@ -65,7 +65,7 @@ void save_crash(queue_entry *q,char *crash_dir)
 {
   save_queue(q,crash_dir);
 }
-queue_entry *load_queue(FuzzState *state,char *seedfile)
+queue_entry *load_queue(FuzzState *state,const char *seedfile)
 {
   u32 priority;
   queue_entry *q = new_queue(state);

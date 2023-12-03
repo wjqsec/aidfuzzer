@@ -32,6 +32,7 @@ struct IRQ_N_MODEL
 {
     bool enabled;
     hw_addr current_isr;
+    hw_addr current_id;
     set<hw_addr> *vec_watchpoints;
     uint64_t idle_times;
     map<hw_addr,IRQ_N_STATE*> *state;

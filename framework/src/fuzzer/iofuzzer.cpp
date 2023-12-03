@@ -18,6 +18,7 @@
 #include <iostream>
 #include <iterator>
 #include <sys/shm.h>
+#include <clipp.h>
 #include <fcntl.h>              /* Definition of O_* constants */
 #include <sys/stat.h>
 #include <execinfo.h>
@@ -48,7 +49,7 @@ FuzzState global_state;
 bool terminate_next = false;
 
 
-char *project_dir;
+string project_dir;
 char  in_dir[PATH_MAX];
 char  out_dir[PATH_MAX];
 
@@ -65,10 +66,12 @@ char  model_dir[PATH_MAX];
 char  model_file[PATH_MAX];
 char  coverage_file[PATH_MAX];
 
-char *seed_file;
-char *pool_file;
-char *simulator_bin;
-bool fresh_run;
+string seed_file;
+string pool_file;
+string simulator_bin;
+string cov_log;
+string valid_bbl;
+
 bool use_fuzzware = true;
 bool model_infinite_loop = true;
 int max_bbl_exec = MAX_BBL_EXEC;
@@ -138,6 +141,7 @@ void fuzzer_init(FuzzState *state, u32 max_edge, u32 share_size)
     state->num_fds = 0;
     state->shared_stream_used = 0;
 
+    state->start_time = get_cur_time() / 1000;
 
     sprintf(shm_str,"%s/fuzzer_log.txt",log_dir);
     state->flog = fopen(shm_str,"w");
@@ -183,29 +187,19 @@ void sync_state(FuzzState *state)
 
 
   Simulator *simulator;
-  if(!fresh_run)
+
+  simulator = get_avaliable_simulator(state);
+  queue_entry *q = new_queue(state);
+  simulator_task(simulator,q,0,0);
+  fuzz_start(simulator);
+  fuzz_one_post(state,simulator);
+
+  if(q->streams->size() == 0)
   {
-    load_default_pool(state,queue_dir);
-    load_queues(state,queue_dir);
-    load_freed_streams(state,queue_dir);
+    printf("fuzz init run cannot find stream, sth wrong\n");
+    fuzzer_terminate(state);
   }
   
-
-  if(state->entries->size() == 0)
-  {
-
-    simulator = get_avaliable_simulator(state);
-    queue_entry *q = new_queue(state);
-    simulator_task(simulator,q,0,0);
-    fuzz_start(simulator);
-    fuzz_one_post(state,simulator);
-
-    if(q->streams->size() == 0)
-    {
-      printf("fuzz init run cannot find stream, sth wrong\n");
-      fuzzer_terminate(state);
-    }
-  }
 
   // else
   // {
@@ -269,7 +263,7 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 
 
 
-void init_entry_state(queue_entry*q, Simulator *simulator,u32 exit_reason)
+void init_entry_state(FuzzState *state,queue_entry*q, Simulator *simulator,u32 exit_reason)
 {
   q->edges = count_bytes(simulator->trace_bits, simulator->map_size);
   q->fuzztimes = 0;
@@ -278,7 +272,7 @@ void init_entry_state(queue_entry*q, Simulator *simulator,u32 exit_reason)
   q->priority = q->edges + 1;
   if(exit_reason == EXIT_FUZZ_TIMEOUT)
     q->priority = q->priority / 10 + 1;
-  q->create_time = get_cur_time() / 1000;
+  q->create_time = (get_cur_time() / 1000) - state->start_time;
 
   if(simulator->task.base_entry)
     q->depth = simulator->task.base_entry->depth + 1;
@@ -343,7 +337,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
         (*state->stream_schedule_info)[exit_info.stream_info.exit_stream_id]->interesting_times = 1;
       }
 
-      new_stream = allocate_enough_space_stream(state,exit_info.stream_info.exit_stream_id, 1 << (6 + UR(3)));
+      new_stream = allocate_enough_space_stream(state,exit_info.stream_info.exit_stream_id, 1 << 5);
       if(!stream_shouldnot_mutate(new_stream))
         rand_memset(new_stream->ptr->data,new_stream->ptr->len);
 
@@ -382,12 +376,12 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 
   if(unlikely(r))
   {
-    if(unlikely(r == 2))
+    if(unlikely(r == 2)) 
       save_coverage(state);
 
     trim_queue(state,fuzz_entry,simulator);
 
-    init_entry_state(fuzz_entry, simulator,exit_info.exit_code);
+    init_entry_state(state,fuzz_entry, simulator,exit_info.exit_code);
 
     insert_queue(state,fuzz_entry);
 
@@ -516,8 +510,8 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
       selected_streams = new set<u32>();
 
       copy_queue_streams(state,entry,fuzz_entry);
-    
-      use_stacking = (1 << (5 + UR(3)));
+      
+      use_stacking = (1 << (1 + UR(4)));
       for(int i = 0; i < use_stacking; i++)
       {
         fuzz_stream_id =  select_stream(state,entry,false);
@@ -541,23 +535,6 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   
       
   
-}
-
-void dump_queue_schedule_info(FuzzState *state,queue_entry* q)
-{
-  for(auto it = state->stream_schedule_info->begin(); it != state->stream_schedule_info->end(); it++)
-  {
-
-    if(it->second->schedule_times > 1)
-    {
-      printf("stream id:%x pc:%x mmio:%x times:%d interesting:%d\n",
-      it->first,
-      (*state->models)[it->first]->pc_addr,
-      (*state->models)[it->first]->mmio_addr,
-      it->second->schedule_times,
-      it->second->interesting_times);
-    }
-  }
 }
 
 inline queue_entry* select_entry(FuzzState *state)
@@ -638,7 +615,7 @@ void fuzz_runonce(FuzzState *state)
     show_stat(state);
   }
 }
-void fuzz_run_oneseed(FuzzState *state, char *pool_file, char *seed_file)
+void fuzz_run_oneseed(FuzzState *state,const char *pool_file,const char *seed_file)
 {
   bool found_new = false;
   EXIT_INFO exit_info;
@@ -657,9 +634,9 @@ void fuzz_run_oneseed(FuzzState *state, char *pool_file, char *seed_file)
 
 void init_dir(void)
 {
-  sprintf(in_dir,"%s/in",project_dir);
-  sprintf(out_dir,"%s/out",project_dir);
-  sprintf(config,"%s/config.yml",project_dir);
+  sprintf(in_dir,"%s/in",project_dir.c_str());
+  sprintf(out_dir,"%s/out",project_dir.c_str());
+  sprintf(config,"%s/config.yml",project_dir.c_str());
 
   sprintf(queue_dir,"%s/",in_dir);
   sprintf(crash_dir,"%s/crash/",out_dir);
@@ -724,62 +701,48 @@ int main(int argc, char **argv)
 {
   int status;
   Simulator *simulator;
-  
+  string mode_str;
   int opt;
-  int cores;
+  int cores = 1;
   init();
-  while ((opt = getopt(argc, argv, "d:m:p:e:s:ftnb:a")) != -1) 
-  {
-      switch (opt) {
-      case 'm':
-          if(strcmp(optarg, "fuzz") == 0)
-            mode = MODE_FUZZ;
-          if(strcmp(optarg, "debug") == 0)
-            mode = MODE_DEBUG;
-          if(strcmp(optarg, "run") == 0)
-            mode = MODE_RUN;
-          break;
-      case 'e':
-          cores = atoi(optarg);
-          break;
-      case 'd':
-          project_dir = optarg;
-          break;
-      case 'p':
-          pool_file = optarg;
-          break;
-      case 's':
-          seed_file = optarg;
-          break;
-      case 'f':
-          fresh_run = true;
-          break;
-      case 'n':
-          use_fuzzware = false;
-          break;
-      case 'a':
-          model_infinite_loop = false;
-          break;
+
+  auto fuzz_cli = ( 
+    clipp::command("fuzz").set(mode,MODE_FUZZ),
+    clipp::value("dir",project_dir),
+    clipp::value("bin",simulator_bin),
+
+    clipp::option("-no_use_fuzzware").set(use_fuzzware,false),
+    clipp::option("-max_bbl")& clipp::value("max",max_bbl_exec),
+    clipp::option("-core") & clipp::value("core",cores)
+    
+  );
+  auto run_cli = (
+    clipp::command("run").set(mode,MODE_RUN),
+    clipp::value("dir",project_dir),
+    clipp::value("bin",simulator_bin),
+    
+    clipp::option("-max_bbl")& clipp::value("max",max_bbl_exec),
+    clipp::option("-cov_log")& clipp::value("cov",cov_log),
+    clipp::option("-filter")& clipp::value("filter",valid_bbl)
+  );
+  auto debug_cli = (
+    clipp::command("debug").set(mode,MODE_DEBUG),
+    clipp::value("dir",project_dir),
+    clipp::value("bin",simulator_bin),
+    clipp::value("-queue",seed_file),
+    clipp::value("-pool",pool_file)
+  );
+  auto cli = ( 
+    (fuzz_cli | run_cli | debug_cli)
+  );
+  parse(argc, argv, cli);
 
 
-          
-      case 'b':
-          max_bbl_exec = atoi(optarg);
-          break;
-          
-      default: /* '?' */
-          printf("Usage error\n");
-          exit(0);
-      }
-  }
   if(mode == MODE_DEBUG || mode == MODE_RUN)
   {
     cores = 1;
-    fresh_run = false;
   }
     
-  
-  simulator_bin = argv[optind];
   init_dir();
   printf("queue_dir:%s\n"
           "crash_dir:%s\n"
@@ -789,18 +752,16 @@ int main(int argc, char **argv)
           "simulator_bin:%s\n"
           "cores:%d\n"
           "mode:%d\n"
-          "config:%s\n"
-          "fresh_run:%d\n",
+          "config:%s\n",
           queue_dir,
           crash_dir,
           log_dir,
           dump_dir,
           dump_backup_dir,
-          simulator_bin,
+          simulator_bin.c_str(),
           cores,
           mode,
-          config,
-          fresh_run);
+          config);
 
   
   fuzzer_init(&global_state,FUZZ_COVERAGE_SIZE, SHARE_FUZZDATA_SIZE);
@@ -822,7 +783,7 @@ int main(int argc, char **argv)
 
   else if(mode == MODE_DEBUG)
   {
-    fuzz_run_oneseed(&global_state, pool_file, seed_file);
+    fuzz_run_oneseed(&global_state, pool_file.c_str(), seed_file.c_str());
     
   }
   fuzzer_terminate(&global_state);

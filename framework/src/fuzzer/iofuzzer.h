@@ -4,6 +4,7 @@
 #include <map>
 #include <vector>
 #include <set>
+#include <string>
 #include <poll.h>
 #include <linux/limits.h>
 
@@ -135,6 +136,8 @@ struct FuzzState
 #define MAX_NUM_PIPES 100
     int num_fds;
     struct pollfd fds[MAX_NUM_PIPES];
+
+    u64 start_time;
  
 };
 
@@ -150,7 +153,7 @@ void clean_fuzzer_shm(FuzzState *state);
 
 extern bool terminate_next;
 
-extern char *project_dir;
+extern string project_dir;
 extern char  in_dir[PATH_MAX];
 extern char  out_dir[PATH_MAX];
 
@@ -167,9 +170,13 @@ extern char  model_dir[PATH_MAX];
 extern char  model_file[PATH_MAX];
 extern char  coverage_file[PATH_MAX];
 
-extern char *seed_file;
-extern char *pool_file;
-extern char *simulator_bin;
+extern string seed_file;
+extern string pool_file;
+extern string imulator_bin;
+extern string simulator_bin;
+extern string cov_log;
+extern string valid_bbl;
+
 extern bool fresh_run;
 extern bool model_systick;
 extern bool use_fuzzware;

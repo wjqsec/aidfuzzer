@@ -31,7 +31,7 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
     fputs(buffer,state_file);
 }
 
-char* dump_state(uint32_t mmio_id, const char * prefix, char *dir)
+char* dump_state(uint32_t mmio_id, const char * prefix, const char *dir)
 {
     int i;
     uint8_t *buf;
@@ -106,13 +106,13 @@ void model_all_infinite_loop()
     char model_filename[PATH_MAX];
     char line[PATH_MAX];
     char cmd[PATH_MAX];
-    sprintf(model_filename,"%s/%s",model_dir,LOOP_MODEL_FILENAME);
+    sprintf(model_filename,"%s/%s",model_dir.c_str(),LOOP_MODEL_FILENAME);
 
     
     if(access(model_filename,F_OK) != 0)
     {
-        state_filename = dump_state(0,LOOP_STATE_PREFIX,dump_dir);
-        sprintf(cmd,"python3  ../../script/dataflow_modelling/infinite_loop.py -s %s -o %s -c %s >> /tmp/a.txt 2>&1",state_filename,model_filename,fuzzware_config_filename);
+        state_filename = dump_state(0,LOOP_STATE_PREFIX,dump_dir.c_str());
+        sprintf(cmd,"python3  ../../script/dataflow_modelling/infinite_loop.py -s %s -o %s -c %s > /dev/null 2>&1",state_filename,model_filename,fuzzware_config_filename.c_str());
         puts(cmd);
         system(cmd);
         free(state_filename);
@@ -155,6 +155,7 @@ void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
     bool to_end;
     int irq;
     uint32_t isr;
+    uint32_t id;
     char *addr_size_ptr;
     IRQ_N_MODEL *model;
     IRQ_N_STATE *state;
@@ -164,12 +165,13 @@ void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
         {
             irq = strtol(strstr(line,"-") + 1,0,10);
             model = (*models)[irq];
-            isr = strtol(strstr(strstr(line,"-") + 1, "-") + 1,0,16);
-            if (model->state->find(isr) == model->state->end())
+            id = strtol(strstr(strstr(line,"-") + 1, "-") + 1,0,16);
+            isr = strtol(strstr(strstr(strstr(line,"-") + 1, "-") + 1 , "-") + 1 , 0 , 16);
+            if (model->state->find(id) == model->state->end())
             {
-                (*model->state)[isr] = get_void_state();
+                (*model->state)[id] = get_void_state();
             }
-            state = (*model->state)[isr];
+            state = (*model->state)[id];
             if(strstr(line,"y"))
                 state->toend = true;
             else
@@ -247,22 +249,22 @@ void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
 }
 
 
-void dump_prcoess_load_model(int irq,hw_addr isr, map<irq_val,IRQ_N_MODEL*> *models)
+void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, map<irq_val,IRQ_N_MODEL*> *models)
 {
     char *state_filename;
     char model_filename[PATH_MAX];
     char cmd[PATH_MAX];
     
     
-    sprintf(model_filename,"%s/%s",model_dir,IRQ_MODEL_FILENAME);
+    sprintf(model_filename,"%s/%s",model_dir.c_str(),IRQ_MODEL_FILENAME);
 
-    state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir);
+    state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir.c_str());
 
     sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),isr);
     printf("%s",cmd);
     fprintf(f_irq_log,"%s",cmd);
 
-    sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -o %s -c %s >> /tmp/a.txt 2>&1",state_filename,get_nvic_vecbase(), irq,model_filename,fuzzware_config_filename);
+    sprintf(cmd,"python3 ../../script/dataflow_modelling/irq_model.py -s %s -v 0x%x -i %d -d 0x%x -o %s -c %s > /dev/null 2>&1",state_filename,get_nvic_vecbase(), irq, id, model_filename,fuzzware_config_filename.c_str());
     puts(cmd);
 
     fprintf(f_irq_log,"%s\n",cmd);

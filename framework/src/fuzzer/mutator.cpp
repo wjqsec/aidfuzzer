@@ -103,8 +103,6 @@ static void locate_diffs(u8* ptr1, u8* ptr2, u32 len, s32* first, s32* last) {
 }
 
 
-
-
 inline input_stream* havoc_flip_bit(FuzzState *state,input_stream* stream)
 {
   u8 *data = stream->ptr->data;
@@ -300,7 +298,12 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
           memcpy(new_stream->ptr->data, data, clone_to);
 
           /* Inserted part */
-          rand_memset(new_stream->ptr->data + clone_to,clone_len);
+          if (!UR(5))
+            memset(new_stream->ptr->data + clone_to,0,clone_len);
+          else if (!UR(5))
+            memset(new_stream->ptr->data + clone_to,0xff,clone_len);
+          else
+            rand_memset(new_stream->ptr->data + clone_to,clone_len);
 
           /* Tail */
           memcpy(new_stream->ptr->data + clone_to + clone_len, data + clone_to,
@@ -311,25 +314,7 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
         }
     return ret;
 }
-inline input_stream* havoc_append_huge(FuzzState *state,input_stream* stream)
-{
-  u8 *data = stream->ptr->data;
-  s32 len = stream->ptr->len;
-  input_stream* ret = stream;
-  if (len + HAVOC_BLK_HUGE  < MAX_FILE) 
-  {
-    input_stream *new_stream;
-    new_stream = resize_stream(state,stream,len + HAVOC_BLK_HUGE);
-    rand_memset(new_stream->ptr->data + len,HAVOC_BLK_HUGE);
-    free_stream(state,stream);
-    
-    ret = new_stream;
-  }
-  return ret;
 
-
-
-}
 inline input_stream* havoc_delete(FuzzState *state,input_stream* stream)
 {
   u8 *data = stream->ptr->data;
@@ -337,7 +322,7 @@ inline input_stream* havoc_delete(FuzzState *state,input_stream* stream)
 
   u32 del_from, del_len;
   if (len <= stream->ptr->element_size) return stream;
-  del_len = choose_block_len(0x20,stream->ptr->element_size);
+  del_len = choose_block_len(len,stream->ptr->element_size);
   if(del_len == 0)  return stream;
   if (len < stream->ptr->element_size + del_len) return stream;
   del_from = UR(len - del_len + 1);
@@ -350,7 +335,32 @@ inline input_stream* havoc_revert(FuzzState *state,input_stream* stream)
 {
   u8 *data = stream->ptr->data;
   s32 len = stream->ptr->len;
-  data[UR(len)] ^= 0xff;
+  
+  switch(stream->ptr->element_size)
+  {
+    case 1:
+    case 3:
+    {
+      data[UR(len)] ^= 0xff;
+      break;
+    }
+    case 2:
+    {
+      s16* tmp = (s16*)(data + (UR(len - 1) & 0xfffffffe));
+      *tmp ^= 0xffff;
+      break;
+    }
+    case 4:
+    {
+      s32* tmp = (s32*)(data + (UR(len - 3) & 0xfffffffc));
+      *tmp ^= 0xffffffff;
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
   return stream;
 }
 inline input_stream* havoc_random(FuzzState *state,input_stream* stream)
@@ -475,7 +485,6 @@ static havoc_fuc havoc_arrays[] = {
                                     havoc_flip_bit, 
                                     havoc_interesting_value, 
                                     havoc_insert,
-                                    // havoc_append_huge,
                                     havoc_clone,
                                     havoc_delete,
                                     havoc_revert,
@@ -494,9 +503,9 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
 
   ret = resize_stream(state,stream,stream->ptr->len);
   
-  use_stacking = (1 << (1 + UR(3)));
+  // use_stacking = 1;(1 << (1 + UR(3)));
 
-  for (i = 0; i < use_stacking; i++) 
+  // for (i = 0; i < use_stacking; i++) 
   {
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
     
@@ -508,6 +517,32 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   return ret;
   
 }
+
+// void add_random(FuzzState *state, queue_entry *q)
+// {
+
+//   input_stream * new_stream;
+//   int len;
+//   for(auto it = q->streams->begin(); it != q->streams->end(); it++)
+//   {
+//     if (it->second->ptr->len < 0x10)
+//       continue;
+//     if (stream_shouldnot_mutate(it->second))
+//       continue;
+//     len = 1 << (3 + UR(4));
+
+//     new_stream = resize_stream(state,it->second,it->second->ptr->len + len);
+
+//     rand_memset(new_stream->ptr->data + it->second->ptr->len,len);
+
+//     replace_stream(state,q,it->second->ptr->stream_id,new_stream);
+    
+//   }
+
+ 
+    
+
+// }
 
 
 

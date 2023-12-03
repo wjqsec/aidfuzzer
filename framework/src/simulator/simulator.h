@@ -1,10 +1,12 @@
 #ifndef SIMULATOR_INCLUDED
 #define SIMULATOR_INCLUDED
 #include <stdio.h>
+#include <string>
 #include "xx.h"
 #include "fuzzer.h"
 #include "config.h"
 
+using namespace std;
 void nostop_watchpoint_exec_mem(hw_addr vaddr,hw_addr len,uint32_t val, void *data);
 void nostop_watchpoint_exec_unresolved_func_ptr(hw_addr vaddr,hw_addr len,uint32_t val,void *data);
 void nostop_watchpoint_exec_denpendency(hw_addr vaddr,hw_addr len,uint32_t val,void *data);
@@ -41,7 +43,7 @@ extern int fd_to_fuzzer, fd_from_fuzzer;
 extern FILE *flog;
 extern FILE *f_crash_log;
 extern FILE *f_irq_log;
-
+extern FILE *f_cov_log;
 
 extern uint64_t nommio_executed_bbls;
 extern uint64_t max_bbl_exec;
@@ -53,10 +55,11 @@ extern bool next_bbl_should_exit;
 
 extern uint32_t run_index;
 
-extern char *dump_dir;
-extern char *model_dir;
-extern char *log_dir;
-extern char *fuzzware_config_filename;
+extern string dump_dir;
+extern string model_dir;
+extern string log_dir;
+extern string fuzzware_config_filename;
+extern string cov_log;
 
 
 #endif

@@ -5,6 +5,6 @@
 input_stream* havoc(FuzzState *state,input_stream* stream);
 input_stream* splicing(FuzzState *state,input_stream* stream);
 input_stream* increase_stream(FuzzState *state,input_stream* stream);
-
+void add_random(FuzzState *state, queue_entry *q);
 
 #endif

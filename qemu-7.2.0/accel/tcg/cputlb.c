@@ -1364,14 +1364,14 @@ static uint64_t io_readx(CPUArchState *env, CPUTLBEntryFull *full,
     mr = section->mr;
     mr_offset = (full->xlat_section & TARGET_PAGE_MASK) + addr;
     cpu->mem_io_pc = retaddr;
-    if (!cpu->can_do_io) {
-        cpu_io_recompile(cpu, retaddr);
-    }
+    // if (!cpu->can_do_io) {
+    //     cpu_io_recompile(cpu, retaddr);
+    // }
 
-    if (!qemu_mutex_iothread_locked()) {
-        qemu_mutex_lock_iothread();
-        locked = true;
-    }
+    // if (!qemu_mutex_iothread_locked()) {
+    //     qemu_mutex_lock_iothread();
+    //     locked = true;
+    // }
     r = memory_region_dispatch_read(mr, mr_offset, &val, op, full->attrs);
     if (r != MEMTX_OK) {
         hwaddr physaddr = mr_offset +
@@ -1381,9 +1381,9 @@ static uint64_t io_readx(CPUArchState *env, CPUTLBEntryFull *full,
         cpu_transaction_failed(cpu, physaddr, addr, memop_size(op), access_type,
                                mmu_idx, full->attrs, r, retaddr);
     }
-    if (locked) {
-        qemu_mutex_unlock_iothread();
-    }
+    // if (locked) {
+    //     qemu_mutex_unlock_iothread();
+    // }
 
     return val;
 }
@@ -1417,9 +1417,9 @@ static void io_writex(CPUArchState *env, CPUTLBEntryFull *full,
     section = iotlb_to_section(cpu, full->xlat_section, full->attrs);
     mr = section->mr;
     mr_offset = (full->xlat_section & TARGET_PAGE_MASK) + addr;
-    if (!cpu->can_do_io) {
-        cpu_io_recompile(cpu, retaddr);
-    }
+    // if (!cpu->can_do_io) {
+    //     cpu_io_recompile(cpu, retaddr);
+    // }
     cpu->mem_io_pc = retaddr;
 
     /*
@@ -1428,10 +1428,10 @@ static void io_writex(CPUArchState *env, CPUTLBEntryFull *full,
      */
     save_iotlb_data(cpu, section, mr_offset);
 
-    if (!qemu_mutex_iothread_locked()) {
-        qemu_mutex_lock_iothread();
-        locked = true;
-    }
+    // if (!qemu_mutex_iothread_locked()) {
+    //     qemu_mutex_lock_iothread();
+    //     locked = true;
+    // }
     r = memory_region_dispatch_write(mr, mr_offset, val, op, full->attrs);
     if (r != MEMTX_OK) {
         hwaddr physaddr = mr_offset +
@@ -1442,9 +1442,9 @@ static void io_writex(CPUArchState *env, CPUTLBEntryFull *full,
                                MMU_DATA_STORE, mmu_idx, full->attrs, r,
                                retaddr);
     }
-    if (locked) {
-        qemu_mutex_unlock_iothread();
-    }
+    // if (locked) {
+    //     qemu_mutex_unlock_iothread();
+    // }
 }
 
 static inline target_ulong tlb_read_ofs(CPUTLBEntry *entry, size_t ofs)

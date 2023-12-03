@@ -56,13 +56,10 @@ typedef int64_t  s64;
 #define FREED_STREAMS_FILENAME "freed_streams"
 
 
-typedef enum MODE
-{
-    MODE_FUZZ = 1,
-    MODE_DEBUG,
-    MODE_RUN,
-}MODE;
 
+#define MODE_FUZZ 1
+#define MODE_RUN 2
+#define MODE_DEBUG 3
 
 // #define STREAM_MAGIC_CHECK
 

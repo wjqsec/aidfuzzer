@@ -278,7 +278,7 @@ void allocate_new_simulator(FuzzState *state)
   
 	char *child_arg[1000];
   i = 0;
-  child_arg[i++] = simulator_bin;
+  child_arg[i++] = strdup(simulator_bin.c_str());
 
   simulator->simulator_dump_dir = alloc_printf("%s/simulator_%d",dump_dir,cpu);
   simulator->simulator_model_dir =  alloc_printf("%s/simulator_%d",model_dir,cpu);
@@ -287,27 +287,40 @@ void allocate_new_simulator(FuzzState *state)
   mkdir(simulator->simulator_model_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(simulator->simulator_log_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 
-  child_arg[i++] = (char*)"-d";
+
   child_arg[i++] =  simulator->simulator_dump_dir;
-  child_arg[i++] = (char*)"-m";
+
   child_arg[i++] = simulator->simulator_model_dir;
-  child_arg[i++] = (char*)"-l";
+
   child_arg[i++] = simulator->simulator_log_dir;
-  child_arg[i++] = (char*)"-f";
+
   child_arg[i++] = alloc_printf("%d",start_fd);
-  child_arg[i++] = (char*)"-t";
+
   child_arg[i++] = alloc_printf("%d",start_fd + 1);
-  child_arg[i++] = (char*)"-c";
+
   child_arg[i++] =  config;
-  child_arg[i++] = (char*)"-b";
+  child_arg[i++] = (char*)"-max_bbl";
   child_arg[i++] =  alloc_printf("%d",max_bbl_exec);
-  child_arg[i++] = (char*)"-a";
+  child_arg[i++] = (char*)"-mode";
   child_arg[i++] =  alloc_printf("%d",mode);
 
   if(!use_fuzzware)
-    child_arg[i++] = (char*)"-n";
-  if(!model_infinite_loop)
-    child_arg[i++] = (char*)"-e";
+    child_arg[i++] = (char*)"-no_use_fuzzware";
+  if (cov_log != "")
+  {
+    child_arg[i++] = (char*)"-cov";
+    child_arg[i++] =  strdup(cov_log.c_str());
+  }
+
+  if (valid_bbl != "")
+  {
+    child_arg[i++] = (char*)"-filter";
+    child_arg[i++] =  strdup(valid_bbl.c_str());
+  }
+
+  
+   
+
 
   child_arg[i++] = NULL;
 

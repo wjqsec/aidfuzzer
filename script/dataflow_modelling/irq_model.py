@@ -35,6 +35,7 @@ class IRQ_MODEL:
     def __init__(self):
         self.irq = 0
         self.isr = 0
+        self.id = 0
         self.accesses = set()
         self.toend = "n"
         
@@ -51,8 +52,9 @@ def irq_model_from_file(modelfilename):
                     models.append(model)
                 model = IRQ_MODEL()
                 model.irq = int(line.split("-")[1],10)
-                model.isr = int(line.split("-")[2],16)
-                model.toend = line.split("-")[3].strip()
+                model.id = int(line.split("-")[2],16)
+                model.isr = int(line.split("-")[3],16)
+                model.toend = line.split("-")[4].strip()
             else:
                 accessinfo = ACCESS_INFO()
                 accessinfo.type = line.split(":")[0]
@@ -67,16 +69,17 @@ def irq_model_from_file(modelfilename):
 def write_model_to_file(models,modelfilename):
     with open(modelfilename, "w") as f:
         for model in models:
-            f.write("-{}-{}-{}\n".format(model.irq,hex(model.isr),model.toend))
+            f.write("-{}-{}-{}-{}\n".format(model.irq,hex(model.id),hex(model.isr),model.toend))
             f.write("".join(["{}:{} {}\n".format(access.type,hex(access.addr),hex(access.size)) for access in model.accesses]))
             
-def get_and_insert_model(models,irq,isr):
+def get_and_insert_model(models,irq,isr,irq_id):
     for model in models:
-        if model.irq == irq and model.isr == isr:
+        if model.irq == irq and model.isr == isr and model.id == irq_id:
             models.remove(model)
     tmp = IRQ_MODEL()
     tmp.irq = irq
     tmp.isr = isr
+    tmp.id = irq_id
     models.append(tmp)
     return tmp
 
@@ -525,6 +528,7 @@ def main():
     parser.add_argument("-s", "--state", help="irq state binary file")
     parser.add_argument("-i", "--irq",  help="irq number")
     parser.add_argument("-v", "--vecbase",  help="vecbase")
+    parser.add_argument("-d", "--id",  help="id")
     parser.add_argument("-o", "--output", help="output file name")
     parser.add_argument("-c","--config",  help="fuzzware config file")
 
@@ -545,7 +549,7 @@ def main():
     initial_state.regs.lr = fix_lr
 
     models = irq_model_from_file(args.output)
-    model = get_and_insert_model(models,int(args.irq,10),irq_val)
+    model = get_and_insert_model(models,int(args.irq,10),irq_val,int(args.id,16))
     
     print("start pc:  ",hex(irq_val))
 
