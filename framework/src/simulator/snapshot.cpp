@@ -75,9 +75,9 @@ void mmio_write_snapshot(void *opaque,hw_addr addr,uint64_t data,unsigned size){
 
 bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
 {
+    CMD_INFO cmd_info;
     int i;
     static bool returned = false;
-    bool pc_changed;
     if(snapshot_point == pc)
     {
         
@@ -93,9 +93,18 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
         new_snap = arm_take_snapshot();
 
         prepare_exit(EXIT_CTL_FORKSRV_UP);
-        pc_changed = exit_with_code_start();
+        cmd_info = exit_with_code_get_cmd();
+        if(cmd_info.cmd == CMD_FUZZ)
+        {
+            start_new();
+        }
+        else
+        {
+            printf("cmd %d after frk up not support\n",cmd_info.cmd);
+            terminate_simulation();
+        }
 
-        return pc_changed;
+        return true;
     }
     else if(snapshot_point && !returned)
     {

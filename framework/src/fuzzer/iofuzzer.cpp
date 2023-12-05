@@ -200,20 +200,6 @@ void sync_state(FuzzState *state)
     fuzzer_terminate(state);
   }
   
-
-  // else
-  // {
-  //   for(queue_entry *q : *state->entries)
-  //   {
-  //     simulator = get_avaliable_simulator(state);
-  //     simulator_task(simulator,q,0,0);
-  //     fuzz_start(simulator);
-  //     fuzz_exit(simulator,&exit_info);
-  //     simulator_classify_count(simulator);
-  //     has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-  
-  //   }
-  // }
   if(state->entries->size() == 0)
   {
     printf("fuzz entry not found\n");
@@ -225,18 +211,48 @@ void sync_state(FuzzState *state)
 
 }
 
+u32 run_input(FuzzState *state,queue_entry* fuzz_entry, int *r,Simulator **out_simulator)
+{
 
+  EXIT_INFO exit_info;
+  Simulator *simulator;
 
-void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
+  simulator = get_avaliable_simulator(state);  
+  simulator_task(simulator,fuzz_entry,0,0);
+  fuzz_start(simulator);
+  fuzz_exit(simulator,&exit_info);
+  simulator_classify_count(simulator);
+  if(r)
+    *r = has_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  if (out_simulator)
+    *out_simulator = simulator;
+
+  return exit_info.exit_code;
+}
+
+int get_fuzz_round_scale(u64 times)
+{
+  return times / 200;
+  // if(times < 10000) 
+  //   return 10;
+  // if(times < 100000)
+  //   return 100;
+  // if(times < 1000000)
+  //   return 1000;
+  // if(times < 5000000)
+  //   return 5000;
+  // return 10000;
+}
+void trim_unused_stream_data(FuzzState *state,queue_entry* entry)
 {
   int i;
   stream_metadata *stream;
   input_stream* new_stream;
   input_stream* old_stream;
-  
-  
-  
-  
+  Simulator *simulator;
+
+  run_input(state,entry, 0,&simulator);
+
   fuzz_queue *queue = (fuzz_queue *)simulator->shared_fuzz_queue_data;
 
 
@@ -261,6 +277,44 @@ void trim_queue(FuzzState *state,queue_entry* entry,Simulator *simulator)
 
 }
 
+void trim_mutation(FuzzState *state,queue_entry* base_entry,queue_entry* fuzz_entry,set<u32> *fuzz_streams, u32 ck_sum)
+{
+  if(!base_entry)
+    return;
+
+  set<u32> unused_mutations;
+  int r;
+  queue_entry* tmp_entry;
+  Simulator *simulator;
+
+  tmp_entry = new_queue(state);
+
+  copy_queue_streams(state,fuzz_entry,tmp_entry);
+  for (auto it = fuzz_streams->begin(); it != fuzz_streams->end(); it++)
+  {
+    replace_stream(state,tmp_entry,*it, (*base_entry->streams)[*it]);
+    u32 exit_code = run_input(state,tmp_entry, &r,&simulator);
+    
+    if (ck_sum == hash32(simulator->trace_bits,simulator->map_size))
+    {
+      unused_mutations.insert(*it);
+    }
+    else
+    {
+      replace_stream(state,tmp_entry,*it, (*fuzz_entry->streams)[*it]);      
+    }
+  }
+  free_queue(state,tmp_entry);
+
+  for (u32 stream_id : unused_mutations)
+  {
+    fuzz_streams->erase(stream_id);
+    replace_stream(state,fuzz_entry,stream_id, (*base_entry->streams)[stream_id]);
+  }
+
+
+
+}
 
 
 void init_entry_state(FuzzState *state,queue_entry*q, Simulator *simulator,u32 exit_reason)
@@ -286,8 +340,12 @@ void update_stream_schedule_info(FuzzState *state,set<u32> *fuzz_streams,int r)
   {
     (*state->stream_schedule_info)[*it]->schedule_times ++;
     if (unlikely(r)) 
-      (*state->stream_schedule_info)[*it]->interesting_times += 100;
-      // (*state->stream_schedule_info)[*it]->interesting_times += log10(state->total_exec) * 2000;
+    {
+      // (*state->stream_schedule_info)[*it]->interesting_times += 100;
+      // (*state->stream_schedule_info)[*it]->interesting_times += log10(state->total_exec) * 50;
+      (*state->stream_schedule_info)[*it]->interesting_times += get_fuzz_round_scale(state->total_exec);
+    }
+     
     else
     {
       if((*state->stream_schedule_info)[*it]->interesting_times > 1)
@@ -364,31 +422,37 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   
 
   simulator_classify_count(simulator);
-  int r = has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-    
+  int r = has_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   
-  if(base_entry)
-  {
-    update_stream_schedule_info(state,fuzz_streams,r);
-    base_entry->fuzztimes++;
-  }
-    
 
   if(unlikely(r))
   {
+    u32 ck_sum = hash32(simulator->trace_bits,simulator->map_size);
+    trim_mutation(state,base_entry,fuzz_entry,fuzz_streams,ck_sum);
+
+    trim_unused_stream_data(state,fuzz_entry);
+
+
+    Simulator *out_simulator;
+    u32 code = run_input(state,fuzz_entry,0,&out_simulator);
+    r = has_new_bits_update_virgin(state->virgin_bits, out_simulator->trace_bits, out_simulator->map_size); 
+
     if(unlikely(r == 2)) 
       save_coverage(state);
 
-    trim_queue(state,fuzz_entry,simulator);
+    init_entry_state(state,fuzz_entry, out_simulator,code);
 
-    init_entry_state(state,fuzz_entry, simulator,exit_info.exit_code);
+    
 
     insert_queue(state,fuzz_entry);
 
     ret = true;
   }
+  if(fuzz_streams)
+    update_stream_schedule_info(state,fuzz_streams,r);
 
-  if(exit_info.exit_code == EXIT_FUZZ_CRASH)
+
+  if(unlikely(exit_info.exit_code == EXIT_FUZZ_CRASH))
   {
     crash_info info;
     info.pc = exit_info.exit_pc;
@@ -403,13 +467,13 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 
   }
   
-  if(likely(r == 0))
+  if(likely(!r))
   {
     free_queue(state,fuzz_entry);
     ret = false;
   }
 
-  if(fuzz_streams)
+  if(likely(fuzz_streams))
     delete fuzz_streams;
   return ret;
   
@@ -450,114 +514,85 @@ u32 select_stream(FuzzState *state,queue_entry* entry, bool uniformly)
 
 inline void fuzz_queue(FuzzState *state,queue_entry* entry)
 {
-  
+
   Simulator *simulator = NULL;
   input_stream *fuzz_stream;
   set<u32> *selected_streams;
   queue_entry* fuzz_entry;
-  queue_entry* base_entry;
+
   u32 use_stacking;
   u32 fuzz_stream_id = 0;
   
-  base_entry = entry;
-  
+  entry->fuzztimes++;
 
-/*
+  fuzz_entry = new_queue(state);
+  selected_streams = new set<u32>();
+
+  copy_queue_streams(state,entry,fuzz_entry);
+ 
+
+  use_stacking = (1 << (1 + UR(4)));
   for(int i = 0; i < use_stacking; i++)
   {
+    fuzz_stream_id =  select_stream(state,entry,false);
 
-    fuzz_entry = new_queue(state);
+    selected_streams->insert(fuzz_stream_id);
+    
+    fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
 
-    copy_queue_streams(state,base_entry,fuzz_entry);
-    
-    fuzz_stream_id =  select_stream(state,entry);
-    
-    if(fuzz_stream_id != 0 )
-    { 
-      
-      fuzz_stream = havoc(state,(*base_entry->streams)[fuzz_stream_id]);
-      
-      selected_streams = new set<u32>();
-      selected_streams->insert(fuzz_stream_id);
-    
-      replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
- 
-      simulator = get_avaliable_simulator(state); 
-      
-      bool interesting =  fuzz_one_post(state,simulator);
-   
-      if(i != 0 && interesting)
-      {
-        free_queue(state,fuzz_entry);
-        delete selected_streams;
-        return;
-      }
-      simulator_task(simulator,fuzz_entry,entry,selected_streams);
-      fuzz_start(simulator);
-      base_entry = fuzz_entry;
-    }
-    else
-    {
-      free_queue(state,fuzz_entry);
-    }
-    if(terminate_next)
-      fuzzer_terminate(state);
+    replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
   }
-  */
- 
-
-      fuzz_entry = new_queue(state);
-      selected_streams = new set<u32>();
-
-      copy_queue_streams(state,entry,fuzz_entry);
-      
-      use_stacking = (1 << (1 + UR(4)));
-      for(int i = 0; i < use_stacking; i++)
-      {
-        fuzz_stream_id =  select_stream(state,entry,false);
-
-        selected_streams->insert(fuzz_stream_id);
-        
-        fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
-
-        replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
-      }
-      
-
-
-      simulator = get_avaliable_simulator(state);  
-      fuzz_one_post(state,simulator);
-      simulator_task(simulator,fuzz_entry,entry,selected_streams);
-      fuzz_start(simulator);
-      if(terminate_next)
-          fuzzer_terminate(state);
-
   
-      
-  
+
+
+  simulator = get_avaliable_simulator(state);  
+
+  fuzz_one_post(state,simulator);
+
+  simulator_task(simulator,fuzz_entry,entry,selected_streams);
+  fuzz_start(simulator);
+
+  if(terminate_next)
+      fuzzer_terminate(state);
+
 }
 
 inline queue_entry* select_entry(FuzzState *state)
 {
   static u32 last_num = 0;
-  if(last_num != state->entries->size())
-  {
-    last_num = state->entries->size();
-    return (*state->entries)[state->entries->size() - 1];
-  }
-  last_num = state->entries->size();   
+  static u32 repeat_times = 0;
 
-  s32 random_number =  UR(state->total_queue_priority);
-  s32 weight_sum = 0;
-  
-  for(int i = 0; i < state->entries->size(); i++)
+  if(UR(7))
   {
-    weight_sum += (*state->entries)[i]->priority;
-    if(random_number < weight_sum)
+    if(last_num != state->entries->size())
     {
-      return (*state->entries)[i];
+      repeat_times = 0x3ff;
+      last_num = state->entries->size();
+      return (*state->entries)[state->entries->size() - 1];
+    }
+    else if(repeat_times)
+    {
+      repeat_times--;
+      return (*state->entries)[state->entries->size() - 1];
+    }
+
+    s32 random_number =  UR(state->total_queue_priority);
+    s32 weight_sum = 0;
+    
+    for(int i = 0; i < state->entries->size(); i++)
+    {
+      weight_sum += (*state->entries)[i]->priority;
+      if(random_number < weight_sum)
+      {
+        return (*state->entries)[i];
+      }
     }
   }
+  else
+  {
+    return (*state->entries)[UR(state->entries->size())];
+  }
+  
   fatal("select entry error\n");
   //not reachable
 

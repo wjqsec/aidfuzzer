@@ -401,18 +401,18 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 
     cflags = curr_cflags(cpu);
-    if (check_for_breakpoints(cpu, pc, &cflags)) {
-        cpu_loop_exit(cpu);
-    }
+    // if (check_for_breakpoints(cpu, pc, &cflags)) {
+    //     cpu_loop_exit(cpu);
+    // }
 
     tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
 
-    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
-        log_cpu_exec(pc, cpu, tb);
-    }
+    // if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+    //     log_cpu_exec(pc, cpu, tb);
+    // }
 
     return tb->tc.ptr;
 }

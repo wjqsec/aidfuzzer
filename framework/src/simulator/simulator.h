@@ -19,10 +19,11 @@ void enable_nvic_hook(int irq);
 uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size);
 void mmio_write_common(void *opaque,hw_addr addr,uint64_t data,unsigned size);
 void prepare_exit(uint32_t exit_code,uint32_t exit_pc = 0, uint32_t exit_lr = 0, uint32_t exit_stream_id = 0, uint32_t exit_mmio_addr = 0,uint32_t mmio_len = 0);
-bool exit_with_code_start();
-void terminate_simulation();
+CMD_INFO exit_with_code_get_cmd();
+[[noreturn]] void terminate_simulation();
 void init(int argc, char **argv);
 int run_config();
+void start_new();
 
 
 

@@ -135,6 +135,26 @@ inline static void classify_counts(u64* mem, u32 size) {
   }
 
 }
+inline static int has_new_bits(u8* virgin_map, u8 *trace_bits, u32 size)
+{
+  u64* current = (u64*)trace_bits;
+  u64* virgin  = (u64*)virgin_map;
+
+  u32  i = (size >> 3);
+
+  u8   ret = 0;
+  while (i--) 
+  {
+    if (unlikely(*current) && unlikely(*current & *virgin)) 
+    {
+      return 1;
+    }
+    current++;
+    virgin++;
+  }
+  return 0;
+}
+
 inline static u8 has_new_bits_update_virgin(u8* virgin_map, u8 *trace_bits, u32 size) 
 {
   u64* current = (u64*)trace_bits;

@@ -15,11 +15,8 @@ using namespace std;
 #define MAX_NVIC_IRQ 250
 
 
+IRQ_N_MODEL* models[MAX_NVIC_IRQ];
 
-
-
-
-map<irq_val,IRQ_N_MODEL*> models;
 set<irq_val> enabled_irqs;
 uint64_t idle_count = 0;
 
@@ -145,7 +142,7 @@ void irq_set_isr(irq_val irq, hw_addr vec_addr)
 
     if(!is_isr_modeled(irq,isr))
     {
-        dump_prcoess_load_model(irq,isr,isr, &models);
+        dump_prcoess_load_model(irq,isr,isr, models);
     }
 
     switch_state(current_id,isr,isr, irq);  
@@ -161,11 +158,11 @@ void irq_on_set_new_vecbase(hw_addr addr)
     #ifdef DBG
     fprintf(flog,"%d->set vecbase %x\n",run_index,addr);
     #endif
-    for(auto it = models.begin(); it != models.end(); it++)
+    for(int i = 0 ; i < MAX_NVIC_IRQ ; i++)
     {
-        if(!it->second->enabled)
+        if(!models[i]->enabled)
             continue;
-        irq_set_isr(it->first,get_current_vec_addr(it->first));
+        irq_set_isr(i,get_current_vec_addr(i));
     }
 }
 
@@ -213,7 +210,7 @@ void irq_on_init()
     char model_filename[PATH_MAX];
     sprintf(model_filename,"%s/%s",model_dir.c_str(),IRQ_MODEL_FILENAME);
 
-    for(int irq = ARMV7M_EXCP_SYSTICK; irq < MAX_NVIC_IRQ; irq ++)
+    for(int irq = 0; irq < MAX_NVIC_IRQ; irq ++)
     {
         models[irq] = new IRQ_N_MODEL();
         models[irq]->enabled = false;
@@ -227,7 +224,7 @@ void irq_on_init()
     if (access(model_filename, F_OK) == 0) 
     {
         // remove(model_filename);
-        load_model(model_filename, &models);
+        load_model(model_filename, models);
     }
 
 }
@@ -312,7 +309,7 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
     IRQ_N_STATE *state = (*models[irq]->state)[get_current_id(irq)];
     if(state->func_resolved_ptrs->find(val) == state->func_resolved_ptrs->end())
     {
-        dump_prcoess_load_model(irq, get_current_id(irq) ^ val,get_current_isr(irq),&models);
+        dump_prcoess_load_model(irq, get_current_id(irq) ^ val,get_current_isr(irq), models);
         state->func_resolved_ptrs->insert(val);
     }
 

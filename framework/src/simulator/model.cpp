@@ -141,7 +141,7 @@ void model_all_infinite_loop()
     }
 }
 
-void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
+void load_model(char *model_filename, IRQ_N_MODEL **models)
 {
     char line[PATH_MAX];
     FILE *f = fopen(model_filename,"r");
@@ -164,7 +164,7 @@ void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
         if(strstr(line,"-"))
         {
             irq = strtol(strstr(line,"-") + 1,0,10);
-            model = (*models)[irq];
+            model = models[irq];
             id = strtol(strstr(strstr(line,"-") + 1, "-") + 1,0,16);
             isr = strtol(strstr(strstr(strstr(line,"-") + 1, "-") + 1 , "-") + 1 , 0 , 16);
             if (model->state->find(id) == model->state->end())
@@ -249,7 +249,7 @@ void load_model(char *model_filename, map<irq_val,IRQ_N_MODEL*> *models)
 }
 
 
-void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, map<irq_val,IRQ_N_MODEL*> *models)
+void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, IRQ_N_MODEL **models)
 {
     char *state_filename;
     char model_filename[PATH_MAX];

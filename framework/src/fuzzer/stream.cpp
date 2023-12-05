@@ -176,6 +176,7 @@ void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream)
 {
   stream->ref_count++;
   (*q->streams)[stream->ptr->stream_id] = stream;
+ 
 }
 void remove_stream(FuzzState *state,queue_entry* q,u32 id)
 {

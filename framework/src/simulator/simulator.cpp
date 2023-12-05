@@ -83,13 +83,10 @@ extern ARMM_SNAPSHOT *org_snap,*new_snap;
 uint64_t bbls;
 #endif
 
-bool exit_with_code_start()
+CMD_INFO exit_with_code_get_cmd()
 {
-    bool pc_changed;
     int bytes_received;
     CMD_INFO cmd_info;
-
-    
 
     #ifdef DBG
     fprintf(flog,"%d->exit pc:%x %s\n",run_index,get_arm_pc(),get_fuzz_exit_name(exit_info.exit_code));
@@ -112,48 +109,67 @@ bool exit_with_code_start()
     {
         printf("received terminate cmd from fuzzer\n");
         terminate_simulation();
-        pc_changed = true;
-    }   
-    else if(unlikely(cmd_info.cmd == CMD_CONTINUE_ADD_STREAM))
-    {
+    }
+
+    return cmd_info;
+
+    // else if(unlikely(cmd_info.cmd == CMD_CONTINUE_ADD_STREAM))
+    // {
        
-        add_stream(cmd_info.added_stream_index);
-        pc_changed = false;
-    }
-    else if(unlikely(cmd_info.cmd == CMD_CONTINUE_UPDATE_STREAM))
-    {
-        update_stream(cmd_info.updated_stream_index);
-        pc_changed = false;
-    }
-    else if(unlikely(cmd_info.cmd == CMD_FUZZ))
-    {
-        pc_changed = true;
-    }
-    else
-    {
-        printf("invlaid cmd %d\n",cmd_info.cmd);
-        terminate_simulation();
-        pc_changed = true;
-    }
-    if(pc_changed)
-    {
-        arm_restore_snapshot(new_snap);
-        nommio_executed_bbls = 0;
-        run_index++;
+    //     add_stream(cmd_info.added_stream_index);
+    //     pc_changed = false;
+    // }
+    // else if(unlikely(cmd_info.cmd == CMD_CONTINUE_UPDATE_STREAM))
+    // {
+    //     update_stream(cmd_info.updated_stream_index);
+    //     pc_changed = false;
+    // }
+    // else if(unlikely(cmd_info.cmd == CMD_FUZZ))
+    // {
+    //     pc_changed = true;
+    // }
+    // else
+    // {
+    //     printf("invlaid cmd %d\n",cmd_info.cmd);
+    //     terminate_simulation();
+    //     pc_changed = true;
+    // }
+    // if(pc_changed)
+    // {
+    //     arm_restore_snapshot(new_snap);
+    //     nommio_executed_bbls = 0;
+    //     run_index++;
         
-        collect_streams();
+    //     collect_streams();
 
-        #ifndef ROUND_ROBIN
-        irq_on_new_run();
-        #endif
+    //     #ifndef ROUND_ROBIN
+    //     irq_on_new_run();
+    //     #endif
 
-        #ifdef ROUND_ROBIN
-        bbls = 1;
-        #endif
-    }
-    return pc_changed;
+    //     #ifdef ROUND_ROBIN
+    //     bbls = 1;
+    //     #endif
+    // }
+    // return pc_changed;
      
 }
+void start_new()
+{
+    arm_restore_snapshot(new_snap);
+    nommio_executed_bbls = 0;
+    run_index++;
+    
+    collect_streams();
+
+    #ifndef ROUND_ROBIN
+    irq_on_new_run();
+    #endif
+
+    #ifdef ROUND_ROBIN
+    bbls = 1;
+    #endif
+}
+
 
 void prepare_exit(uint32_t exit_code,uint32_t exit_pc, uint32_t exit_lr, uint32_t exit_stream_id, uint32_t exit_mmio_addr ,uint32_t mmio_len)
 {
@@ -174,6 +190,7 @@ void prepare_exit(uint32_t exit_code,uint32_t exit_pc, uint32_t exit_lr, uint32_
 uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
 {
     uint64_t ret = 0;
+    CMD_INFO cmd_info;
     if(next_bbl_should_exit)
         return ret;
 
@@ -181,7 +198,6 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
     uint64_t precise_pc = get_arm_precise_pc();
     
     int stream_status;
-    bool pc_changed;
 
     uint32_t stream_id = hash_32_ext(addr) ^ hash_32_ext(precise_pc) ;
     
@@ -190,35 +206,36 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
 
     if(!stream->avaliable)
     {
-        if(mode == MODE_FUZZ)
+        
+        if(!stream->dumped && use_fuzzware)
         {
-            if(!stream->dumped)
-            {
-                stream->dumped = true;
-                if(use_fuzzware)
-                    dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir.c_str());
-                
-            }
+            stream->dumped = true;
+            dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir.c_str());
+            
+        }
 
-            prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,precise_pc,0,stream_id,addr,size);
-            
-            exit_with_code_start();
-            
+        prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,precise_pc,0,stream_id,addr,size);
+        cmd_info = exit_with_code_get_cmd();
+        if (cmd_info.cmd == CMD_CONTINUE_ADD_STREAM)
+        {
+            add_stream(cmd_info.added_stream_index);
             if(!stream->avaliable)
             {
                 printf("stream not added by fuzzer id:%x\n",stream_id);
-                exit(0);
+                terminate_simulation();
                 return ret;
             }
         }
-        else
+        else if(cmd_info.cmd == CMD_FUZZ)
         {
-            #ifdef DBG
-            fprintf(flog,"stream not added by fuzzer id:%x\n",stream_id);
-            #endif
             prepare_exit(EXIT_DBG_STREAM_NOTFOUND,precise_pc,0,stream_id,addr,size);
             next_bbl_should_exit = true;
             return ret;
+        }
+        else
+        {
+            printf("cmd %d after stream not found not support\n",cmd_info.cmd);
+            terminate_simulation();
         }
         
     }
@@ -232,11 +249,22 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
     else if(stream_status == STREAM_STATUS_OUTOF)
     {
         prepare_exit(EXIT_FUZZ_OUTOF_STREAM,precise_pc,0,stream_id,addr,size);
-        next_bbl_should_exit = true;
+        cmd_info = exit_with_code_get_cmd();
+        if (cmd_info.cmd == CMD_FUZZ)
+        {
+            next_bbl_should_exit = true;
+        }
+        else
+        {
+            printf("cmd %d after stream outof not support\n",cmd_info.cmd);
+            terminate_simulation();
+        }
+        
     }
     else
     {
-
+        printf("stream status %d not found\n",stream_status);
+        terminate_simulation();
     }
 
     #ifdef DBG
@@ -254,19 +282,29 @@ void mmio_write_common(void *opaque,hw_addr addr,uint64_t data,unsigned size)
 
 bool arm_exec_bbl(hw_addr pc,uint32_t id)
 {
-    bool pc_changed = false;
+    CMD_INFO cmd_info;
+
     if(unlikely(next_bbl_should_exit))
     {
         next_bbl_should_exit = false;
-        pc_changed = exit_with_code_start();
-        return pc_changed;
+        start_new();
+        return true;
     }
 
     if(unlikely(nommio_executed_bbls >= max_bbl_exec))
     {
         prepare_exit(EXIT_FUZZ_TIMEOUT);
-        pc_changed = exit_with_code_start();
-        return pc_changed;
+        cmd_info = exit_with_code_get_cmd();
+        if(cmd_info.cmd == CMD_FUZZ)
+        {
+            start_new();
+            return true;
+        }
+        else
+        {
+            printf("cmd %d after timeout not support\n",cmd_info.cmd);
+            terminate_simulation();
+        }
     }
     
     
@@ -299,7 +337,7 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
     __afl_area_ptr[id] ++;
     nommio_executed_bbls++;
 
-    return pc_changed;
+    return false;
 }
 
 void insert_idel_irq()
@@ -364,7 +402,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     append_full_ctx_string(flog);
     fprintf(flog,"\n");
     #endif
-
+    CMD_INFO cmd_info;
     if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP && exec_index != EXCP_BKPT)
     {
         return true;
@@ -372,7 +410,16 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     if(exec_index == EXCP_BKPT)
     {
         prepare_exit(EXIT_FUZZ_BKP,get_arm_pc(),get_arm_lr(),0,0,0);
-        exit_with_code_start();
+        cmd_info = exit_with_code_get_cmd();
+        if(cmd_info.cmd == CMD_FUZZ)
+        {
+            start_new();
+        }
+        else
+        {
+            printf("cmd %d after bkp not support\n",cmd_info.cmd);
+            terminate_simulation();
+        }
         return false;
     }
 
@@ -383,15 +430,22 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     #endif
 
     prepare_exit(EXIT_FUZZ_CRASH,get_arm_pc(),get_arm_lr(),0,0,0);
-    exit_with_code_start();
+    cmd_info = exit_with_code_get_cmd();
+    if(cmd_info.cmd == CMD_FUZZ)
+    {
+        start_new();
+    }
+    else
+    {
+        printf("cmd %d after crash not support\n",cmd_info.cmd);
+        terminate_simulation();
+    }
     
     return false;
 }
 void post_thread_exec(int exec_ret)
 {
-    
-    bool pc_changed;
-
+    CMD_INFO cmd_info;
     #ifdef DBG
     fprintf(flog,"%d->post_thread_exec pc:%x %s\n",run_index,get_arm_pc(),get_qemu_exit_name(exec_ret));
     #endif
@@ -407,22 +461,28 @@ void post_thread_exec(int exec_ret)
     else if(exec_ret == EXCP_INTERRUPT)
     {
         prepare_exit(EXIT_FUZZ_EXCP_INTERRUPT);
-        pc_changed = exit_with_code_start();
     }
     else if(exec_ret == EXCP_DEBUG)
     {
         prepare_exit(EXIT_FUZZ_EXCP_DEBUG);
-        pc_changed = exit_with_code_start();
     }
     else if(exec_ret == EXCP_YIELD)
     {
         prepare_exit(EXIT_FUZZ_EXCP_YIELD);
-        pc_changed = exit_with_code_start();
     }
     else if(exec_ret == EXCP_ATOMIC)
     {
         prepare_exit(EXIT_FUZZ_EXCP_ATOMIC);
-        pc_changed = exit_with_code_start();
+    }
+    cmd_info = exit_with_code_get_cmd();
+    if(cmd_info.cmd == CMD_FUZZ)
+    {
+        start_new();
+    }
+    else
+    {
+        printf("cmd %d after post run not support\n",cmd_info.cmd);
+        terminate_simulation();
     }
 
 }
