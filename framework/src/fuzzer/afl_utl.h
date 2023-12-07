@@ -155,6 +155,30 @@ inline static int has_new_bits(u8* virgin_map, u8 *trace_bits, u32 size)
   return 0;
 }
 
+inline static void get_new_bits(u8* virgin_map, u8 *trace_bits, u32 size, u8* out)
+{
+  u64 *ret = (u64 *)out;
+  u64* current = (u64*)trace_bits;
+  u64* virgin  = (u64*)virgin_map;
+
+  u32  j = (size >> 3);
+  for(u32 i = 0 ; i < j ; i++)
+  {
+    ret[i] = (current[i] & virgin[i]);
+  }
+}
+inline static bool a_contains_b(u8* a, u8* b, u32 size)
+{
+  u64* aa = (u64*)a;
+  u64* bb  = (u64*)b;
+  u32  j = (size >> 3);
+  for(u32 i = 0 ; i < j ; i++)
+  {
+    if((aa[i] | bb[i]) != aa[i])
+      return false;
+  }
+  return true;
+}
 inline static u8 has_new_bits_update_virgin(u8* virgin_map, u8 *trace_bits, u32 size) 
 {
   u64* current = (u64*)trace_bits;

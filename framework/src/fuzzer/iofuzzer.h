@@ -28,6 +28,7 @@ struct stream_schedule_info
 {
     u64 schedule_times;
     u64 interesting_times;
+    u64 weight;
 };
 
 struct queue_entry
