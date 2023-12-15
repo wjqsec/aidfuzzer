@@ -1,14 +1,20 @@
 
+#include <algorithm>
+#include <array>
+#include <random>
+#include <vector>
 #include "xx.h"
 #include "iofuzzer.h"
 #include "afl_utl.h"
 #include "stream.h"
 
-#define HAVOC_BLK_SMALL     16
-#define HAVOC_BLK_MEDIUM    64
-#define HAVOC_BLK_LARGE     128
-#define HAVOC_BLK_XL        256
-#define HAVOC_BLK_XXL        512
+
+std::vector<char *> dictionary;
+#define HAVOC_BLK_SMALL     64
+#define HAVOC_BLK_MEDIUM    128
+#define HAVOC_BLK_LARGE     256
+#define HAVOC_BLK_XL        512
+#define HAVOC_BLK_XXL        1024
 
 #define HAVOC_BLK_HUGE        0x1000
 
@@ -476,7 +482,80 @@ inline input_stream* havoc_state_value(FuzzState *state,input_stream* stream)
   }
   return stream;
 }
+inline input_stream* havoc_shuffle(FuzzState *state,input_stream* stream)
+{
+  u8 *data = stream->ptr->data;
+  s32 len = stream->ptr->len;
 
+  int i,j;
+  for (i = len - 1; i > 0; --i) 
+  {
+        j = UR(i + 1);
+        u8 temp = data[i];
+        data[i] = data[j];
+        data[j] = temp;
+  }
+  return stream;
+
+}
+inline input_stream* havoc_dictionary(FuzzState *state,input_stream* stream)
+{
+  if(dictionary.size() == 0)
+    return stream;
+  u8 *data = stream->ptr->data;
+  s32 len = stream->ptr->len;
+
+  int select_dic = UR(dictionary.size());
+  char *select_str = dictionary[select_dic];
+  int dic_str_len = strlen(select_str) + 1; // null end
+  
+
+  switch(stream->ptr->element_size)
+  {
+    case 1:
+    {
+      int pos = UR(len);
+      if(dic_str_len > (len - pos))
+        break;
+      memcpy(data + pos, select_str, dic_str_len);
+      break;
+    }
+    case 2:
+    {
+      int pos = UR(len - 1) & 0xfffffffe;
+      if(dic_str_len > ((len - pos) >> 1))
+        break;
+      s16* tmp = (s16*)(data + pos);
+      for(int j = 0 ; j < dic_str_len ; j++)
+      {
+        tmp[j] = select_str[j];
+      }
+      break;
+    }
+    case 3:
+    {
+      break;
+    }
+    case 4:
+    {
+      int pos = UR(len - 3) & 0xfffffffc;
+      if(dic_str_len > ((len - pos) >> 2))
+        break;
+      s32* tmp = (s32*)(data + pos);
+      for(int j = 0 ; j < dic_str_len ; j++)
+      {
+        tmp[j] = select_str[j];
+      }
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+  return stream;
+
+}
 
 
 typedef input_stream* (*havoc_fuc) (FuzzState *state,input_stream* stream);
@@ -491,7 +570,9 @@ static havoc_fuc havoc_arrays[] = {
                                     havoc_random,
                                     havoc_ascii,
                                     havoc_splicing_copy,
-                                    havoc_state_value
+                                    havoc_state_value,
+                                    havoc_shuffle,
+                                    havoc_dictionary
                                     };
 
 input_stream* havoc(FuzzState *state,input_stream* stream)
@@ -502,11 +583,12 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   
 
   ret = resize_stream(state,stream,stream->ptr->len);
-  
+
   // use_stacking = 1;(1 << (1 + UR(3)));
 
   // for (i = 0; i < use_stacking; i++) 
   {
+
     int index = UR(sizeof(havoc_arrays) / sizeof(havoc_arrays[0]));
     
 
@@ -518,26 +600,39 @@ input_stream* havoc(FuzzState *state,input_stream* stream)
   
 }
 
-// void add_random(FuzzState *state, queue_entry *q)
-// {
+void add_random(FuzzState *state, queue_entry *q)
+{
+  input_stream * new_stream;
+  int elements = 1 << (UR(5));
+  int len;
 
-//   input_stream * new_stream;
-//   int len;
-//   for(auto it = q->streams->begin(); it != q->streams->end(); it++)
-//   {
-//     if (it->second->ptr->len < 0x10)
-//       continue;
-//     if (stream_shouldnot_mutate(it->second))
-//       continue;
-//     len = 1 << (3 + UR(4));
+  map<u32,input_stream *> new_streams;
 
-//     new_stream = resize_stream(state,it->second,it->second->ptr->len + len);
 
-//     rand_memset(new_stream->ptr->data + it->second->ptr->len,len);
+  for(auto it = q->streams->begin(); it != q->streams->end(); it++)
+  {
+    if (stream_shouldnot_mutate(it->second))
+      continue;
+    len = elements * it->second->ptr->element_size;
 
-//     replace_stream(state,q,it->second->ptr->stream_id,new_stream);
+    new_stream = resize_stream(state,it->second,it->second->ptr->len + len);
+
+
+    if (!UR(5))
+      memset(new_stream->ptr->data + it->second->ptr->len,0,len);
+    else if (!UR(5))
+      memset(new_stream->ptr->data + it->second->ptr->len,0xff,len);
+    else
+      rand_memset(new_stream->ptr->data + it->second->ptr->len,len);
     
-//   }
+    new_streams[it->second->ptr->stream_id] = new_stream;
+    
+  }
+  for(auto it = new_streams.begin(); it != new_streams.end(); it++)
+  {
+    replace_stream(state,q,it->first,it->second);
+  }
+}
 
  
     

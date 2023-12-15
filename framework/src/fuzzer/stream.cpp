@@ -185,7 +185,6 @@ void remove_stream(FuzzState *state,queue_entry* q,u32 id)
 }
 void replace_stream(FuzzState *state,queue_entry* q,u32 id, input_stream *new_tream)
 {
-
   remove_stream(state,q,id);
   insert_stream(state,q,new_tream);
 }

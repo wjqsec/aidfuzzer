@@ -107,6 +107,7 @@ typedef void (*disable_nvic_cb)(irq_val irq);
 typedef void (*set_nvic_vecbase_cb)(hw_addr addr, int secure);
 typedef void (*enable_arm_interrupt_cb)(void);
 typedef void (*disable_arm_interrupt_cb)(void);
+typedef void (*wfie_cb)(void);
 
 #ifdef __cplusplus
 extern "C" {
@@ -131,6 +132,7 @@ extern "C" {
     void register_set_nvic_vecbase_hook(set_nvic_vecbase_cb cb);
     void register_enable_arm_interrupt_hook(enable_arm_interrupt_cb cb);
     void register_disable_arm_interrupt_hook(disable_arm_interrupt_cb cb);
+    void register_wfie_hook(wfie_cb cb);
     hw_addr get_nvic_vecbase(void);
     irq_val get_arm_v7m_is_handler_mode(void);
 #ifdef __cplusplus

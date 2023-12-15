@@ -467,7 +467,6 @@ static void set_prio(NVICState *s, unsigned irq, bool secure, uint8_t prio)
     } else {
         s->vectors[irq].prio = prio;
     }
-
     trace_nvic_set_prio(irq, secure, prio);
 }
 
@@ -2440,6 +2439,7 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
         for (i = 0; i < size && startvec + i < s->num_irq; i++) {
             if (attrs.secure || s->itns[startvec + i]) {
                 set_prio(s, startvec + i, false, (value >> (i * 8)) & 0xff);
+                set_prio(s,18,false,0x10);
             }
         }
         nvic_irq_update(s);

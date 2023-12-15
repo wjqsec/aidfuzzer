@@ -25,5 +25,17 @@ static void append_full_ctx_string(FILE *f)
     state.regs[13],
     state.regs[14]);
 }
+static void append_simple_ctx_string(FILE *f)
+{
+    ARM_CPU_STATE state;
+    get_arm_cpu_state(&state);
+    fprintf(f,"r0:%x, r1:%x, r2:%x, r3:%x, r4:%x r5:%x",
+    state.regs[0],
+    state.regs[1],
+    state.regs[2],
+    state.regs[3],
+    state.regs[4],
+    state.regs[5]);
+}
 
 #endif

@@ -24,9 +24,15 @@
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "cpregs.h"
+#include "xx.h"
 
 #define SIGNBIT (uint32_t)0x80000000
 #define SIGNBIT64 ((uint64_t)1 << 63)
+wfie_cb wfie_func;
+void register_wfie_hook(wfie_cb cb)
+{
+    wfie_func = cb;
+}
 
 int exception_target_el(CPUARMState *env)
 {
@@ -315,6 +321,8 @@ static inline int check_wfx_trap(CPUARMState *env, bool is_wfe)
 
 void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 {
+    if (wfie_func)
+        return wfie_func();
 #ifdef CONFIG_USER_ONLY
     /*
      * WFI in the user-mode emulator is technically permitted but not
@@ -367,6 +375,8 @@ void HELPER(wfe)(CPUARMState *env)
 
 void HELPER(yield)(CPUARMState *env)
 {
+    if (wfie_func)
+        return wfie_func();
     CPUState *cs = env_cpu(env);
 
     /* This is a non-trappable hint instruction that generally indicates

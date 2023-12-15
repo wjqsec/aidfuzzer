@@ -978,7 +978,6 @@ int cpu_exec(CPUState *cpu)
 
         assert_no_pages_locked();
     }
-
     /* if an exception is pending, we execute it here */
     while (!cpu_handle_exception(cpu, &ret)) {
         TranslationBlock *last_tb = NULL;

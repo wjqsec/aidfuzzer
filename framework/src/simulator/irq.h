@@ -18,23 +18,21 @@ struct WATCHPOINT
 struct IRQ_N_STATE
 {
     bool toend;
+    hw_addr isr;
+    int mem_access_trigger_irq_times_count;
 
     map<hw_addr,WATCHPOINT*> *mem_addr;
     set<void*> *dependency_nullptr;
     map<hw_addr,WATCHPOINT*> *func_nullptr;
     set<hw_addr> *func_resolved_ptrs;
-
-    int mem_access_trigger_irq_times_count;
 };
 
 
 struct IRQ_N_MODEL
 {
     bool enabled;
-    hw_addr current_isr;
     hw_addr current_id;
     set<hw_addr> *vec_watchpoints;
-    uint64_t idle_times;
     map<hw_addr,IRQ_N_STATE*> *state;
 };
 
@@ -48,6 +46,7 @@ void irq_on_disable_nvic_irq(int irq);
 void irq_on_idel();
 void irq_on_new_run();
 void irq_on_init();
+void irq_on_snapshot();
 IRQ_N_STATE *get_void_state();
 void add_memory_access_watchpoint(int irq, uint32_t addr, hw_addr isr);
 void add_unsolved_func_ptr(int irq, uint32_t addr, hw_addr isr);

@@ -206,6 +206,11 @@ def get_addr_for_null_value(ast):
             return addr
         ast = addr
 
+def get_ast_len(ast):
+    ret = 0
+    for leaf in ast.leaf_asts():
+        ret += 1
+    return ret
 
 
 
@@ -366,36 +371,48 @@ def mem_write_after(state):
     nullptr_data_access_check_mem_addr.add(state.addr)
 
 def call_before(state):
-    # return
+    return
     # to make the symbol expression simple, we replace the function arguments that contain more than 32 characters with a single symbol.
     # I believe it doesn't affect the evaluation retuslt, becase angr cannot handle too complicated symbols.
-    try:
-        state.solver.eval_one(state.regs.r0)
-    except Exception as e:
-        if len(str(state.regs.r0)) > 300:
-            print("replace call argument r0",state.regs.r0)
-            state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
 
-    try:
-        state.solver.eval_one(state.regs.r1)
-    except Exception as e:
-        if len(str(state.regs.r1)) > 300:
-            print("replace call argument r1",state.regs.r1)
-            state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
+    # if state.addr == 0x16b29:
+    #     print(state.regs.r0, get_ast_len(state.regs.r0))    
+    # if (get_ast_len(state.regs.r0) == 2):
+    # state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    # if (get_ast_len(state.regs.r1) == 2):
+    # state.regs.r1 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    # if (get_ast_len(state.regs.r2) == 2):
+    # state.regs.r2 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    # if (get_ast_len(state.regs.r3) == 2):
+    # state.regs.r3 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
 
-    try:
-        state.solver.eval_one(state.regs.r2)
-    except Exception as e:
-        if len(str(state.regs.r2)) > 300:
-            print("replace call argument r2",state.regs.r2)
-            state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
+    # try:
+    #     state.solver.eval_one(state.regs.r0)
+    # except Exception as e:
+    #     if len(str(state.regs.r0)) > 300:
+    #         print("replace call argument r0",state.regs.r0)
+    #         state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
 
-    try:
-        state.solver.eval_one(state.regs.r3)
-    except Exception as e:
-        if len(str(state.regs.r3)) > 300:
-            print("replace call argument r3",state.regs.r3)
-            state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
+    # try:
+    #     state.solver.eval_one(state.regs.r1)
+    # except Exception as e:
+    #     if len(str(state.regs.r1)) > 300:
+    #         print("replace call argument r1",state.regs.r1)
+    #         state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
+
+    # try:
+    #     state.solver.eval_one(state.regs.r2)
+    # except Exception as e:
+    #     if len(str(state.regs.r2)) > 300:
+    #         print("replace call argument r2",state.regs.r2)
+    #         state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
+
+    # try:
+    #     state.solver.eval_one(state.regs.r3)
+    # except Exception as e:
+    #     if len(str(state.regs.r3)) > 300:
+    #         print("replace call argument r3",state.regs.r3)
+    #         state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
     
 
 def call_statement_before(state):

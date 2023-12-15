@@ -372,7 +372,8 @@ void init_entry_state(FuzzState *state,queue_entry*q, Simulator *simulator,u32 e
   q->exit_reason = exit_reason;
   q->priority = q->edges + 1;
   if(exit_reason == EXIT_FUZZ_TIMEOUT)
-    q->priority = q->priority / 10 + 1;
+    q->priority = 1;
+    // q->priority = q->priority / 10 + 1;
   q->create_time = (get_cur_time() / 1000) - state->start_time;
 
   if(simulator->task.base_entry)
@@ -410,7 +411,7 @@ void calculate_stream_schedule_weight(FuzzState *state)
   {
     for(auto it = state->stream_schedule_info->begin(); it != state->stream_schedule_info->end(); it++)
     {
-      it->second->weight = (100000000 * it->second->interesting_times) / it->second->schedule_times;
+      it->second->weight = (state->total_exec * it->second->interesting_times) / it->second->schedule_times;
       if(!it->second->weight)
         it->second->weight = 1;
     }
@@ -478,10 +479,6 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     }
     break;
   }
-  
-  
-    
-  
   
 
   simulator_classify_count(simulator);
@@ -569,7 +566,7 @@ u32 select_stream(FuzzState *state,queue_entry* entry, bool uniformly)
       return it->first;
     }
   }
-  
+  printf("avaliable stream not found\n");
   return 0;
 }
 
@@ -586,24 +583,42 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   
   entry->fuzztimes++;
 
+  
   fuzz_entry = new_queue(state);
   selected_streams = new set<u32>();
 
   copy_queue_streams(state,entry,fuzz_entry);
- 
 
-  use_stacking = (1 << (1 + UR(4)));
+  
+  if (fuzz_entry->streams->size() <= 8)
+  {
+    use_stacking = (1 << (1 + UR(5)));   // afl ur(7) hoedur ur(5)
+  }
+  else if(fuzz_entry->streams->size() <= 32)
+  {
+    use_stacking = (1 << (1 + UR(6)));
+  }
+  else
+  {
+    use_stacking = (1 << (1 + UR(7)));
+  }
   for(int i = 0; i < use_stacking; i++)
   {
-    fuzz_stream_id =  select_stream(state,entry,false);
+
+    fuzz_stream_id =  select_stream(state,fuzz_entry,false);
 
     selected_streams->insert(fuzz_stream_id);
-    
+
     fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
 
     replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
+
   }
-  
+  if(!UR(5))
+  {
+    add_random(state, fuzz_entry);
+  }
+
 
 
   simulator = get_avaliable_simulator(state);  
@@ -666,15 +681,16 @@ void fuzz_loop(FuzzState *state)
     queue_entry* entry;
     sync_state(state);
     int times = 0;
+    
     while(1)
     {
-
+       
         entry = select_entry(state);
-        
+
         fuzz_queue(state,entry);
+
         
-        
-        
+
         if((times & 0xff) == 0)
         {
           show_stat(state);
@@ -683,7 +699,7 @@ void fuzz_loop(FuzzState *state)
         {
           calculate_stream_schedule_weight(state);
         }
-        
+         
           
         
         times++;
@@ -698,19 +714,13 @@ void fuzz_runonce(FuzzState *state)
   EXIT_INFO exit_info;
   load_default_pool(state,queue_dir);
   load_queues(state,queue_dir);
-  load_freed_streams(state,queue_dir);
   for(queue_entry *q : *state->entries)
   {
-    simulator = get_avaliable_simulator(state);
-    simulator_task(simulator,q,0,0);
-    fuzz_start(simulator);
-    fuzz_exit(simulator,&exit_info);
-    if(exit_info.exit_code == EXIT_DBG_STREAM_NOTFOUND)
+    u32 exit_code = run_input(state,q,&simulator);
+    if(exit_code == EXIT_DBG_STREAM_NOTFOUND)
     {
       printf("pc %x queue %x not found stream %x\n",exit_info.exit_pc,q->cksum,exit_info.stream_info.exit_stream_id);
     }
-
-    simulator_classify_count(simulator);
     has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
     show_stat(state);
   }
@@ -722,11 +732,7 @@ void fuzz_run_oneseed(FuzzState *state,const char *pool_file,const char *seed_fi
   Simulator *simulator;
   load_crash_pool(state,pool_file);
   queue_entry *q = load_queue(&global_state,seed_file);
-  simulator = get_avaliable_simulator(&global_state);
-  simulator_task(simulator,q,0,0);
-  fuzz_start(simulator);
-  fuzz_exit(simulator,&exit_info);
-  simulator_classify_count(simulator);
+  run_input(state,q,&simulator);
   has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   show_stat(state);
 }
@@ -770,10 +776,17 @@ void prepare_terminate(int signal)
   terminate_next = true;
   if(signal == SIGSEGV)
   {
-    printf("segv\n");
+    void* callstack[128];
+    int frames = backtrace(callstack, 128);
+    char** strs = backtrace_symbols(callstack, frames);
+
+    puts("Stack Trace:");
+    for (int i = 0; i < frames; ++i) 
+    {
+      puts(strs[i]);
+    }
     fuzzer_terminate(&global_state);
     exit(0);
-    
   }
 }
 

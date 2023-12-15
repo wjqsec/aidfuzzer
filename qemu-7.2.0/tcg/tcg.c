@@ -3649,7 +3649,6 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op)
             }
             i_preferred_regs = o_preferred_regs;
         }
-
         temp_load(s, ts, arg_ct->regs, i_allocated_regs, i_preferred_regs);
         reg = ts->reg;
 

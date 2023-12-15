@@ -2916,18 +2916,18 @@ static void plugin_gen_mem_callbacks_(TCGv vaddr, MemOpIdx oi,TCGv_i32 val,
 
     #endif
 }
+
 static void plugin_gen_mem_callbacks_32(TCGv vaddr, MemOpIdx oi,TCGv_i32 val,
                                      enum qemu_plugin_mem_rw rw)
 {
     #ifdef MEMORY_ACCESS_CALLBACK
 
+
     TCGv_i32 arg2_flag = tcg_const_i32(rw);
     gen_helper_xx_nostop_watchpoint(vaddr,val,arg2_flag);
-    
-
-    tcg_temp_free(vaddr);
     tcg_temp_free_i32(arg2_flag);
-
+    tcg_temp_free(vaddr);
+    
 
     #endif
 }

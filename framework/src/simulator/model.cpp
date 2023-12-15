@@ -170,6 +170,7 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
             if (model->state->find(id) == model->state->end())
             {
                 (*model->state)[id] = get_void_state();
+
             }
             state = (*model->state)[id];
             if(strstr(line,"y"))
@@ -178,6 +179,7 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
             {
                 state->toend = false;   
             }
+            state->isr = isr;
             continue;
         }
 
@@ -258,7 +260,7 @@ void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, IRQ_N_MODEL **mode
     
     sprintf(model_filename,"%s/%s",model_dir.c_str(),IRQ_MODEL_FILENAME);
 
-    state_filename = dump_state(irq,IRQ_STATE_PREFIX,dump_dir.c_str());
+    state_filename = dump_state(id,IRQ_STATE_PREFIX,dump_dir.c_str());
 
     sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),isr);
     printf("%s",cmd);

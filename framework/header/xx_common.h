@@ -3,9 +3,13 @@
 #define XX_COMMON_INCLUDED
 #include <glib.h>
 
-// #define PRECISE_PC_EACH_INS
 #define MEMORY_ACCESS_CALLBACK
 // #define MEMORY_ACCESS_LOG
+
+
+#ifdef MEMORY_ACCESS_LOG
+#define PRECISE_PC_EACH_INS
+#endif 
 
 #define MAX_NUM_MEM_REGION 255
 

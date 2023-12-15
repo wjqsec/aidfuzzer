@@ -771,7 +771,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
-    
+
     if(translate_bbl_func)
         translate_bbl_func(pc,id);
     for (int i = 0; i < func_hooks->len; ++i) 

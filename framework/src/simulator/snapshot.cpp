@@ -1,6 +1,7 @@
 #include "config.h"
 #include "snapshot.h"
 #include "simulator.h"
+#include "irq.h"
 
 ARMM_SNAPSHOT *org_snap,*new_snap;
 
@@ -81,7 +82,7 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
     if(snapshot_point == pc)
     {
         
-        
+        irq_on_snapshot();
         register_exec_bbl_hook(arm_exec_bbl);
         
         for(auto it = config->segs->begin(); it != config->segs->end(); it++)

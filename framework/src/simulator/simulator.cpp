@@ -112,45 +112,6 @@ CMD_INFO exit_with_code_get_cmd()
     }
 
     return cmd_info;
-
-    // else if(unlikely(cmd_info.cmd == CMD_CONTINUE_ADD_STREAM))
-    // {
-       
-    //     add_stream(cmd_info.added_stream_index);
-    //     pc_changed = false;
-    // }
-    // else if(unlikely(cmd_info.cmd == CMD_CONTINUE_UPDATE_STREAM))
-    // {
-    //     update_stream(cmd_info.updated_stream_index);
-    //     pc_changed = false;
-    // }
-    // else if(unlikely(cmd_info.cmd == CMD_FUZZ))
-    // {
-    //     pc_changed = true;
-    // }
-    // else
-    // {
-    //     printf("invlaid cmd %d\n",cmd_info.cmd);
-    //     terminate_simulation();
-    //     pc_changed = true;
-    // }
-    // if(pc_changed)
-    // {
-    //     arm_restore_snapshot(new_snap);
-    //     nommio_executed_bbls = 0;
-    //     run_index++;
-        
-    //     collect_streams();
-
-    //     #ifndef ROUND_ROBIN
-    //     irq_on_new_run();
-    //     #endif
-
-    //     #ifdef ROUND_ROBIN
-    //     bbls = 1;
-    //     #endif
-    // }
-    // return pc_changed;
      
 }
 void start_new()
@@ -330,9 +291,11 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
 
     // __afl_area_ptr[id ^ __afl_prev_loc] ++;
     // __afl_prev_loc = id >> 1;
-    
+
     #ifdef DBG
-    fprintf(flog,"%d->bbl pc:%x\n",run_index,pc);
+    fprintf(flog,"%d->bbl pc:%x  handle:%d  ",run_index,pc,get_arm_v7m_is_handler_mode());
+    append_simple_ctx_string(flog);
+    fprintf(flog,"\n");
     #endif
     __afl_area_ptr[id] ++;
     nommio_executed_bbls++;
@@ -344,6 +307,14 @@ void insert_idel_irq()
 {
     irq_on_idel();
 
+}
+void wfie_ins()
+{
+    #ifdef DBG
+    fprintf(flog,"%d->wfi/wfe\n",run_index);
+    #endif
+    insert_idel_irq();
+    return;
 }
 void enable_arm_intc()
 {
@@ -456,6 +427,7 @@ void post_thread_exec(int exec_ret)
             fprintf(flog,"%d->wfi/wfe\n",run_index);
         #endif
         insert_idel_irq();
+        return;
     }
         
     else if(exec_ret == EXCP_INTERRUPT)
@@ -481,7 +453,7 @@ void post_thread_exec(int exec_ret)
     }
     else
     {
-        printf("cmd %d after post run not support\n",cmd_info.cmd);
+        printf("cmd %d after %s not support\n",cmd_info.cmd,QEMU_EXIT_NAMES[exec_ret - EXCP_INTERRUPT]);
         terminate_simulation();
     }
 
@@ -489,7 +461,7 @@ void post_thread_exec(int exec_ret)
 
 void mem_access_log(hw_addr vaddr,uint32_t val,uint32_t flag)
 {
-    fprintf(flog,"%d->memory access pc:%x addr:%x value:%x flag:%d\n",run_index,get_arm_pc(),vaddr,val,flag);
+    fprintf(flog,"%d->memory access pc:%x addr:%x value:%x flag:%d\n",run_index,get_arm_precise_pc(),vaddr,val,flag);
 }
 
 //-----------------------------------------------------------
@@ -696,8 +668,9 @@ int run_config()
     register_enable_nvic_hook(enable_nvic);
     register_disable_nvic_hook(disenable_nvic);
     register_set_nvic_vecbase_hook(on_set_nvic_vecbase);
+    register_wfie_hook(wfie_ins);
     model_all_infinite_loop();
-    irq_on_new_run();
+
     #endif
     
 

@@ -1,6 +1,7 @@
 #include <map>
 #include <vector>
 #include <set>
+#include <algorithm>
 #include <unistd.h>
 #include "irq.h"
 
@@ -17,28 +18,32 @@ using namespace std;
 
 IRQ_N_MODEL* models[MAX_NVIC_IRQ];
 
-set<irq_val> enabled_irqs;
+vector<irq_val> enabled_irqs;
 uint64_t idle_count = 0;
+
+map<irq_val,uint32_t> snapshot_enabled_irq;
 
 IRQ_N_STATE *get_void_state()
 {
     IRQ_N_STATE* state = new IRQ_N_STATE();
+    state->isr = 0;
+    state->toend = false;
+    state->mem_access_trigger_irq_times_count = 0;
     state->mem_addr = new map<hw_addr,WATCHPOINT*>();
     state->dependency_nullptr = new set<void*>();
     state->func_nullptr = new map<hw_addr,WATCHPOINT*>();
-    state->func_resolved_ptrs = new set<hw_addr>();
-    state->mem_access_trigger_irq_times_count = 0;
     return state;
 }
-__attribute__((always_inline)) hw_addr get_current_isr(irq_val irq)
-{
-    return models[irq]->current_isr;
-}
+
 __attribute__((always_inline)) hw_addr get_current_id(irq_val irq)
 {
     return models[irq]->current_id;
 }
 
+__attribute__((always_inline)) hw_addr get_current_isr(irq_val irq)
+{
+    return (*models[irq]->state)[get_current_id(irq)]->isr;
+}
 __attribute__((always_inline)) bool is_isr_modeled(irq_val irq,hw_addr id)
 {
     return models[irq]->state->find(id) != models[irq]->state->end();
@@ -109,7 +114,7 @@ __attribute__((always_inline)) bool is_irq_access_memory(IRQ_N_STATE *state)
 }
 
 
-void switch_state(hw_addr old_id,hw_addr new_id, hw_addr new_isr, irq_val irq)
+void switch_state(hw_addr old_id,hw_addr new_id, irq_val irq)
 {
     if (old_id == new_id)
         return;
@@ -119,7 +124,6 @@ void switch_state(hw_addr old_id,hw_addr new_id, hw_addr new_isr, irq_val irq)
     IRQ_N_STATE *new_state = (*models[irq]->state)[new_id];
     set_state(new_state,irq);
 
-    models[irq]->current_isr = new_isr;
     models[irq]->current_id = new_id;
 
     #ifdef DBG
@@ -145,7 +149,7 @@ void irq_set_isr(irq_val irq, hw_addr vec_addr)
         dump_prcoess_load_model(irq,isr,isr, models);
     }
 
-    switch_state(current_id,isr,isr, irq);  
+    switch_state(current_id,isr, irq);  
 }
 hw_addr get_current_vec_addr(irq_val irq)
 {
@@ -177,7 +181,7 @@ void irq_on_enable_nvic_irq(int irq)
     fprintf(flog,"%d->enable irq %d\n",run_index,irq);
     #endif
     models[irq]->enabled = true;
-    enabled_irqs.insert(irq);
+    enabled_irqs.push_back(irq);
     irq_set_isr(irq,get_current_vec_addr(irq));
     
 }
@@ -190,20 +194,40 @@ void irq_on_disable_nvic_irq(int irq)
         fprintf(flog,"%d->disable irq %d\n",run_index,irq);
         #endif
         models[irq]->enabled = false;
-        enabled_irqs.erase(irq);
+        enabled_irqs.erase(std::remove(enabled_irqs.begin(), enabled_irqs.end(), irq), enabled_irqs.end());
+
         irq_set_isr(irq, INVALID_VECADDR);
     }
     
 }
+
 void irq_on_new_run()
 {
-    set<irq_val> tmp(enabled_irqs);
+    #ifdef DBG
+        fprintf(flog,"%d->irq new run\n",run_index);
+    #endif
+    vector<irq_val> tmp(enabled_irqs);
     for(auto it = tmp.begin(); it != tmp.end(); it++)
     {
         irq_on_disable_nvic_irq(*it);
     }
-    irq_on_enable_nvic_irq(ARMV7M_EXCP_SYSTICK);
-    idle_count = 1;
+    
+    idle_count = 0;
+    for(auto it = snapshot_enabled_irq.begin(); it != snapshot_enabled_irq.end(); it++)
+    {
+        models[it->first]->enabled = true;
+        enabled_irqs.push_back(it->first);
+        switch_state(0,it->second, it->first);
+    }
+}
+void irq_on_snapshot()
+{
+    for(int i = 0 ; i < MAX_NVIC_IRQ ; i++)
+    {
+        if(!models[i]->enabled)
+            continue;
+        snapshot_enabled_irq[i] = get_current_id(i);
+    }
 }
 void irq_on_init()
 {
@@ -214,7 +238,6 @@ void irq_on_init()
     {
         models[irq] = new IRQ_N_MODEL();
         models[irq]->enabled = false;
-        models[irq]->current_isr = 0;
         models[irq]->current_id = 0;
         models[irq]->state = new map<hw_addr,IRQ_N_STATE*>();
         (*models[irq]->state)[models[irq]->current_id] = get_void_state();
@@ -223,9 +246,9 @@ void irq_on_init()
 
     if (access(model_filename, F_OK) == 0) 
     {
-        // remove(model_filename);
         load_model(model_filename, models);
     }
+    irq_on_enable_nvic_irq(ARMV7M_EXCP_SYSTICK);
 
 }
 
@@ -263,55 +286,47 @@ void irq_on_mem_access(int irq,hw_addr addr)
 
 void irq_on_idel()
 {   
-    
-    if(
-       get_arm_v7m_is_handler_mode() != ARMV7M_EXCP_PENDSV && 
-       get_arm_v7m_is_handler_mode() != ARMV7M_EXCP_SVC && 
-       get_arm_v7m_is_handler_mode() != 0)
+    int irq;
+    if(get_arm_v7m_is_handler_mode() != 0)
         return;
 
-    if((idle_count & 7) != 0)
+    for(int i = 0 ; i < enabled_irqs.size(); i++)
     {
-        idle_count++;
-        return;
-    }
-    idle_count++;
-    
-    for(auto it = enabled_irqs.begin(); it != enabled_irqs.end(); it++)
-    {
-        irq_val irq = *it;
-
+        irq = enabled_irqs[(idle_count) % enabled_irqs.size()];
         IRQ_N_STATE *state = (*models[irq]->state)[get_current_id(irq)];
+        idle_count++;
         if(!is_irq_access_memory(state))
             continue;
+            
+
         if(!state->toend)
             continue;
+
         if(!is_irq_ready(state))
             continue;
-       
-        
         bool insert_irq = insert_nvic_intc(irq);
+        
         #ifdef DBG
         
         if(insert_irq)
             fprintf(flog,"%d->insert idel irq %d\n",run_index,irq);
         #endif
+        break;
     }
-   
+    
+
     
 }
 void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
 {
-    if(val == 0)
-        return;
-    if(!models[irq]->enabled)
-        return;
-    IRQ_N_STATE *state = (*models[irq]->state)[get_current_id(irq)];
-    if(state->func_resolved_ptrs->find(val) == state->func_resolved_ptrs->end())
+    u32 old_id = get_current_id(irq);
+    u32 new_id = old_id ^ val;
+    u32 isr = get_current_isr(irq);
+    if(models[irq]->state->find(new_id) == models[irq]->state->end())
     {
-        dump_prcoess_load_model(irq, get_current_id(irq) ^ val,get_current_isr(irq), models);
-        state->func_resolved_ptrs->insert(val);
+        dump_prcoess_load_model(irq, new_id ,isr , models);
     }
+    switch_state(old_id,new_id, irq);
 
 }
 
