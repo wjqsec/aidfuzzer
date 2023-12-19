@@ -12,7 +12,9 @@ from angr import exploration_techniques
 import pyvex.lifting.gym.arm_spotter
 import logging
 
-# logging.getLogger('angr').setLevel('ERROR')
+
+logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger('angr').setLevel('ERROR')
 
 config = Configs()
 stack_size = 0x4000
@@ -348,7 +350,7 @@ def mem_read_after(state):
     if len(state.solver.constraints) > 5:
         return
 
-    print("add mem_read_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+    logging.debug("add mem_read_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
     nullptr_data_access_check_mem_addr.add(state.addr)
@@ -365,54 +367,30 @@ def mem_write_after(state):
         return
     if len(state.solver.constraints) > 5:
         return
-    print("add mem_write_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+    logging.debug("add mem_write_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
     nullptr_data_access_check_mem_addr.add(state.addr)
 
 def call_before(state):
-    return
-    # to make the symbol expression simple, we replace the function arguments that contain more than 32 characters with a single symbol.
-    # I believe it doesn't affect the evaluation retuslt, becase angr cannot handle too complicated symbols.
 
-    # if state.addr == 0x16b29:
-    #     print(state.regs.r0, get_ast_len(state.regs.r0))    
-    # if (get_ast_len(state.regs.r0) == 2):
-    # state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
-    # if (get_ast_len(state.regs.r1) == 2):
-    # state.regs.r1 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
-    # if (get_ast_len(state.regs.r2) == 2):
-    # state.regs.r2 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
-    # if (get_ast_len(state.regs.r3) == 2):
-    # state.regs.r3 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    tmpr0 = state.regs.r0
+    state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    state.solver.add(tmpr0 == state.regs.r0)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r0)
-    # except Exception as e:
-    #     if len(str(state.regs.r0)) > 300:
-    #         print("replace call argument r0",state.regs.r0)
-    #         state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    tmpr1 = state.regs.r1
+    state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
+    state.solver.add(tmpr1 == state.regs.r1)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r1)
-    # except Exception as e:
-    #     if len(str(state.regs.r1)) > 300:
-    #         print("replace call argument r1",state.regs.r1)
-    #         state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
+    tmpr2 = state.regs.r2
+    state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
+    state.solver.add(tmpr2 == state.regs.r2)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r2)
-    # except Exception as e:
-    #     if len(str(state.regs.r2)) > 300:
-    #         print("replace call argument r2",state.regs.r2)
-    #         state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
+    tmpr3 = state.regs.r3
+    state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
+    state.solver.add(tmpr3 == state.regs.r3)
 
-    # try:
-    #     state.solver.eval_one(state.regs.r3)
-    # except Exception as e:
-    #     if len(str(state.regs.r3)) > 300:
-    #         print("replace call argument r3",state.regs.r3)
-    #         state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
+
     
 
 def call_statement_before(state):
@@ -433,7 +411,7 @@ def call_statement_before(state):
                 if not addr.symbolic:
                     break
                 if addr in value_concrete_value_map and value_concrete_value_map[addr] != 0:
-                    print("resolve a function at ",hex(pc_addr), "to pointer ",hex(value_concrete_value_map[addr]))
+                    logging.debug("resolve a function at ",hex(pc_addr), "to pointer ",hex(value_concrete_value_map[addr]))
                     state.add_constraints(addr == value_concrete_value_map[addr])
                     setattr(state.regs,ins.op_str,value_concrete_value_map[addr])
                     state.solver.reload_solver()
@@ -446,13 +424,13 @@ def call_statement_before(state):
                 if state.addr not in  nullptr_func_check_mem_addr:
                     nullptr_func_check_mem.add(get_addr_for_null_value(nullptr_ast))
                     nullptr_func_check_mem_addr.add(state.addr)
-                    print("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(get_addr_for_null_value(nullptr_ast)))
+                    logging.debug("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(get_addr_for_null_value(nullptr_ast)))
                 if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr or len(state.solver.constraints) > 5:
                     break
                 
                 nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
                 nullptr_data_access_check_mem_addr.add(state.addr)
-                print("add call dependency pc ",hex(pc_addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+                logging.debug("add call dependency pc ",hex(pc_addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
     
     except Exception as e:
         pass
@@ -530,7 +508,7 @@ def get_memory_access(states,accessses):
                 info.type = "mem"
                 accessses.add(info)
                 mem_access_addr.add(info.ins_addr)
-                print("watchpoint",hex(info.ins_addr),hex(info.addr))
+                logging.debug("watchpoint",hex(info.ins_addr),hex(info.addr))
 
                 
         
@@ -568,7 +546,7 @@ def main():
     models = irq_model_from_file(args.output)
     model = get_and_insert_model(models,int(args.irq,10),irq_val,int(args.id,16))
     
-    print("start pc:  ",hex(irq_val))
+    logging.debug("start pc:  ",hex(irq_val))
 
     initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
@@ -577,9 +555,6 @@ def main():
     # initial_state.inspect.b("instruction",when=angr.BP_BEFORE, action=call_ins_before)
     initial_state.inspect.b("statement",when=angr.BP_BEFORE, action=call_statement_before)
     
-    
-
-
 
     simgr = project.factory.simgr(initial_state)
 
@@ -587,7 +562,7 @@ def main():
     # simgr.use_technique(suggest)
     # simgr.use_technique(loopser)
     
-
+    
     for i in range(50):
         get_memory_access(simgr.active,model.accesses)
         to_remove = []
@@ -613,10 +588,9 @@ def main():
         simgr.unconstrained.clear()
         simgr.pruned.clear()
         simgr.unsat.clear()
-        # print("--------------------------",simgr.spill_stage)    
 
     
-    print(model.toend)
+    logging.debug(model.toend)
     for ptr in nullptr_func_check_mem:
         access = ACCESS_INFO()
         access.ins_addr = 0
@@ -635,7 +609,7 @@ def main():
 
     write_model_to_file(models,args.output)
     end_time = time.time()
-    print("irq total time: {}".format(end_time-start_time))
+    logging.debug("irq total time: {}".format(end_time-start_time))
     
 
 if __name__ == '__main__':

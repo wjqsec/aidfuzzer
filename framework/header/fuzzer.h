@@ -41,7 +41,29 @@ typedef int64_t  s64;
 #define NUM_QUEUE_STREAMS 0x1000000
 #define SHARE_FUZZDATA_SIZE 1 << 30
 #define SHARE_FUZZQUEUE_SIZE 10 << 20
-#define FUZZ_COVERAGE_SIZE (1 << 16)
+
+// #define ONEBYTE_COVERAGE
+#define TWOBYTES_COVERAGE
+
+#if defined(ONEBYTE_COVERAGE) && defined(TWOBYTES_COVERAGE)
+#error "Only one size is supported"
+#endif 
+
+
+
+#define FUZZ_COVERAGE_NUM (1 << 16)
+
+#ifdef ONEBYTE_COVERAGE
+#define FUZZ_COVERAGE_ELEMENT_TYPE uint8_t
+#endif
+
+#ifdef TWOBYTES_COVERAGE
+#define FUZZ_COVERAGE_ELEMENT_TYPE uint16_t
+#endif
+
+
+#define FUZZ_COVERAGE_ELEMENT_SIZE sizeof(FUZZ_COVERAGE_ELEMENT_TYPE)
+#define FUZZ_COVERAGE_SIZE (FUZZ_COVERAGE_NUM * FUZZ_COVERAGE_ELEMENT_SIZE)
 
 
 #define MMIO_STATE_PREFIX "state_mmio_"

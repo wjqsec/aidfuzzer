@@ -35,7 +35,7 @@ extern SIMULATOR_CONFIG* config;
 
 extern uint8_t *__afl_share_fuzz_queue_data;
 extern uint8_t *__afl_share_stream_data;
-extern uint8_t *__afl_area_ptr;
+extern FUZZ_COVERAGE_ELEMENT_TYPE *__afl_area_ptr;
 // uint32_t __afl_prev_loc;
 
 

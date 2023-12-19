@@ -44,7 +44,7 @@ SIMULATOR_CONFIG* config;
 
 uint8_t *__afl_share_fuzz_queue_data;
 uint8_t *__afl_share_stream_data;
-uint8_t *__afl_area_ptr;
+FUZZ_COVERAGE_ELEMENT_TYPE *__afl_area_ptr;
 // uint32_t __afl_prev_loc;
 
 
@@ -470,7 +470,7 @@ void __afl_map_shm(void) {
     char *id_str = getenv(SHM_ENV_VAR);
     if (id_str) {
     uint32_t shm_id = atoi(id_str);
-    __afl_area_ptr = (uint8_t *)shmat(shm_id, NULL, 0);
+    __afl_area_ptr = (FUZZ_COVERAGE_ELEMENT_TYPE *)shmat(shm_id, NULL, 0);
     if (__afl_area_ptr == (void *)-1) _exit(1);
     }
 

@@ -292,9 +292,9 @@ void irq_on_idel()
 
     for(int i = 0 ; i < enabled_irqs.size(); i++)
     {
-        irq = enabled_irqs[(idle_count) % enabled_irqs.size()];
+        irq = enabled_irqs[i];
         IRQ_N_STATE *state = (*models[irq]->state)[get_current_id(irq)];
-        idle_count++;
+        // idle_count++;
         if(!is_irq_access_memory(state))
             continue;
             
@@ -311,7 +311,7 @@ void irq_on_idel()
         if(insert_irq)
             fprintf(flog,"%d->insert idel irq %d\n",run_index,irq);
         #endif
-        break;
+        // break;
     }
     
 

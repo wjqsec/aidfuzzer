@@ -35,6 +35,7 @@
 #include <time.h>
 #include <stdio.h>
 
+
 #include "model.h"
 void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<u32> *fuzz_streams)
 {
@@ -229,7 +230,7 @@ void cleanup_simulator(FuzzState *state,int pid)
     clean_simualtor_shm(simulator);
   }
 }
-void allocate_new_simulator(FuzzState *state)
+void allocate_new_simulator(FuzzState *state, int affinity)
 {
   static int start_fd = 100;
   static int cpu = 0;
@@ -253,7 +254,6 @@ void allocate_new_simulator(FuzzState *state)
   simulator->trace_bits = (u8*)shmat(simulator->shm_id_trace_bit, NULL, 0);
   if (simulator->trace_bits == (void *)-1) 
       fatal("shmat() failed");
-  memset(simulator->trace_bits,0,simulator->map_size);
 
   simulator->shm_id_fuzz_queue = shmget(IPC_PRIVATE, SHARE_FUZZQUEUE_SIZE, IPC_CREAT | IPC_EXCL | 0600);
   if (simulator->shm_id_fuzz_queue < 0) 
@@ -324,13 +324,23 @@ void allocate_new_simulator(FuzzState *state)
 
   child_arg[i++] = NULL;
 
+  cpu_set_t parentMask;
+  if(affinity != -1)
+  {
+    CPU_ZERO(&parentMask);
+    CPU_SET(affinity, &parentMask);
+    sched_setaffinity(0, sizeof(parentMask), &parentMask);
+  }
+
   pid = fork();
 	if (pid < 0) fatal("fork error\n");
 	else if(!pid)
 	{
-
+    if(affinity != -1)
+      sched_setaffinity(0, sizeof(parentMask), &parentMask);
 		execv(child_arg[0],child_arg);
 	}
+  
   simulator->pid = pid;
   simulator->cpu = cpu;
   simulator->status = STATUS_FREE;
@@ -351,7 +361,7 @@ void allocate_new_simulator(FuzzState *state)
   }
   printf("pid:%d fork server is up\n",simulator->pid);
   simulator_classify_count(simulator);
-  has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   sync_models(state,simulator);
   
   start_fd += 2;

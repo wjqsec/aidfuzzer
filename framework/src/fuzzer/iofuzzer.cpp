@@ -109,10 +109,10 @@ void fuzzer_terminate(FuzzState *state)
 
 
 
-void fuzzer_init(FuzzState *state, u32 max_edge, u32 share_size) 
+void fuzzer_init(FuzzState *state, u32 coverage_size, u32 share_size) 
 {
     char shm_str[PATH_MAX];
-    state->map_size = max_edge;
+    state->map_size = coverage_size;
     state->share_size = share_size;
     state->virgin_bits = (u8*)malloc(state->map_size);
     memset(state->virgin_bits, 0xff, state->map_size);
@@ -155,7 +155,7 @@ void show_stat(FuzzState *state)
 {
   char output[PATH_MAX];
 
-  u32 edges = count_non_255_bytes(state->virgin_bits, state->map_size);
+  u32 edges = count_covered_bbl(state->virgin_bits, state->map_size);
   sprintf(output,"[%lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu\n",
   get_cur_time() / 1000,
   state->total_exec,
@@ -366,7 +366,7 @@ void trim_mutation(FuzzState *state,queue_entry* base_entry,queue_entry* fuzz_en
 
 void init_entry_state(FuzzState *state,queue_entry*q, Simulator *simulator,u32 exit_reason)
 {
-  q->edges = count_bytes(simulator->trace_bits, simulator->map_size);
+  q->edges = count_trace_covered_bbl(simulator->trace_bits, simulator->map_size);
   q->fuzztimes = 0;
   q->cksum = hash32(simulator->trace_bits,simulator->map_size);
   q->exit_reason = exit_reason;
@@ -487,7 +487,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   if(fuzz_streams)
     increase_schedule_times(state,fuzz_streams);
 
-  if(unlikely(r))
+  if(unlikely(r && exit_info.exit_code != EXIT_FUZZ_CRASH))
   {
     u8 * new_bits = (u8 *)malloc(simulator->map_size);
     get_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size, new_bits);
@@ -501,7 +501,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
 
     Simulator *out_simulator;
     u32 code = run_input(state,fuzz_entry,&out_simulator);
-    r = has_new_bits_update_virgin(state->virgin_bits, out_simulator->trace_bits, out_simulator->map_size); 
+    update_virgin(state->virgin_bits, out_simulator->trace_bits, out_simulator->map_size); 
 
     if(unlikely(r == 2)) 
       save_coverage(state);
@@ -689,8 +689,6 @@ void fuzz_loop(FuzzState *state)
 
         fuzz_queue(state,entry);
 
-        
-
         if((times & 0xff) == 0)
         {
           show_stat(state);
@@ -721,7 +719,7 @@ void fuzz_runonce(FuzzState *state)
     {
       printf("pc %x queue %x not found stream %x\n",exit_info.exit_pc,q->cksum,exit_info.stream_info.exit_stream_id);
     }
-    has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+    update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
     show_stat(state);
   }
 }
@@ -733,7 +731,7 @@ void fuzz_run_oneseed(FuzzState *state,const char *pool_file,const char *seed_fi
   load_crash_pool(state,pool_file);
   queue_entry *q = load_queue(&global_state,seed_file);
   run_input(state,q,&simulator);
-  has_new_bits_update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   show_stat(state);
 }
 
@@ -812,6 +810,7 @@ void init()
 }
 int main(int argc, char **argv)
 {
+  int affinity = -1;
   int status;
   Simulator *simulator;
   string mode_str;
@@ -826,7 +825,8 @@ int main(int argc, char **argv)
 
     clipp::option("-no_use_fuzzware").set(use_fuzzware,false),
     clipp::option("-max_bbl")& clipp::value("max",max_bbl_exec),
-    clipp::option("-core") & clipp::value("core",cores)
+    clipp::option("-core") & clipp::value("core",cores) ,
+    clipp::option("-affinity") & clipp::value("affinity",affinity)
     
   );
   auto run_cli = (
@@ -882,7 +882,7 @@ int main(int argc, char **argv)
   for(int i = 0; i < cores; i++)
   {
 
-    allocate_new_simulator(&global_state);
+    allocate_new_simulator(&global_state,affinity);
 
   }
   if(mode == MODE_FUZZ)
