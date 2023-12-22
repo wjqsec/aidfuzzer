@@ -65,6 +65,8 @@ bool next_bbl_should_exit = false;
 
 uint32_t run_index;
 
+std::set<hw_addr> total_unique_bbls;
+
 string dump_dir;
 string model_dir;
 string log_dir;
@@ -94,6 +96,7 @@ CMD_INFO exit_with_code_get_cmd()
         fprintf(f_cov_log,"\n-------------------------\n");
     #endif
 
+    exit_info.unique_bbls = total_unique_bbls.size();
     write(fd_to_fuzzer , &exit_info,sizeof(EXIT_INFO));   
     do
     {

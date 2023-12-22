@@ -139,7 +139,7 @@ struct FuzzState
     struct pollfd fds[MAX_NUM_PIPES];
 
     u64 start_time;
- 
+    u32 total_unique_bbls;
 };
 
 

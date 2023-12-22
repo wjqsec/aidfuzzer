@@ -26,6 +26,7 @@
 #include <signal.h>
 #include <assert.h>
 #include <unistd.h>
+#include <set>
 #include <sys/wait.h>
 #include <linux/limits.h>
 #include <time.h>
@@ -141,6 +142,7 @@ void fuzzer_init(FuzzState *state, u32 coverage_size, u32 share_size)
     state->num_fds = 0;
     state->shared_stream_used = 0;
 
+    state->total_unique_bbls = 0;
     state->start_time = get_cur_time() / 1000;
 
     sprintf(shm_str,"%s/fuzzer_log.txt",log_dir);
@@ -155,11 +157,12 @@ void show_stat(FuzzState *state)
 {
   char output[PATH_MAX];
 
-  u32 edges = count_covered_bbl(state->virgin_bits, state->map_size);
+  // u32 edges = count_covered_bbl(state->virgin_bits, state->map_size);
   sprintf(output,"[%lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu\n",
   get_cur_time() / 1000,
   state->total_exec,
-  edges,
+  // edges,
+  state->total_unique_bbls,
   state->entries->size(),
   state->shared_stream_used,
   state->exit_reason[EXIT_FUZZ_TIMEOUT],
@@ -211,7 +214,7 @@ void sync_state(FuzzState *state)
 
 }
 
-u32 run_input(FuzzState *state,queue_entry* fuzz_entry,Simulator **out_simulator)
+EXIT_INFO run_input(FuzzState *state,queue_entry* fuzz_entry,Simulator **out_simulator)
 {
 
   EXIT_INFO exit_info;
@@ -224,7 +227,7 @@ u32 run_input(FuzzState *state,queue_entry* fuzz_entry,Simulator **out_simulator
   simulator_classify_count(simulator);
   if (out_simulator)
     *out_simulator = simulator;
-  return exit_info.exit_code;
+  return exit_info;
 }
 
 u64 get_fuzz_round_scale(u64 times)
@@ -273,9 +276,9 @@ void trim_stream_data(FuzzState *state,queue_entry* fuzz_entry,u8 *new_bits,u32 
       }
 
       old_stream->ptr->len -= trim_len;
-      u32 exit_code = run_input(state,fuzz_entry,&simulator);
+      EXIT_INFO exit_info = run_input(state,fuzz_entry,&simulator);
       get_new_bits(state->virgin_bits, simulator->trace_bits, size, bits);
-      if (a_contains_b(bits,new_bits,size) && exit_code == EXIT_FUZZ_OUTOF_STREAM)
+      if (a_contains_b(bits,new_bits,size) && exit_info.exit_code == EXIT_FUZZ_OUTOF_STREAM)
       {
         // we can trim it
       }
@@ -340,9 +343,9 @@ void trim_mutation(FuzzState *state,queue_entry* base_entry,queue_entry* fuzz_en
   for (auto it = fuzz_streams->begin(); it != fuzz_streams->end(); it++)
   {
     replace_stream(state,tmp_entry,*it, (*base_entry->streams)[*it]);
-    u32 exit_code = run_input(state,tmp_entry,&simulator);
+    EXIT_INFO exit_info = run_input(state,tmp_entry,&simulator);
     get_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size, bits);
-    if (a_contains_b(bits,new_bits,size) && exit_code == EXIT_FUZZ_OUTOF_STREAM)
+    if (a_contains_b(bits,new_bits,size) && exit_info.exit_code == EXIT_FUZZ_OUTOF_STREAM)
     {
       unused_mutations.insert(*it);
     }
@@ -500,13 +503,13 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     free(new_bits);
 
     Simulator *out_simulator;
-    u32 code = run_input(state,fuzz_entry,&out_simulator);
+    EXIT_INFO exit_info2 = run_input(state,fuzz_entry,&out_simulator);
     update_virgin(state->virgin_bits, out_simulator->trace_bits, out_simulator->map_size); 
 
-    if(unlikely(r == 2)) 
-      save_coverage(state);
-
-    init_entry_state(state,fuzz_entry, out_simulator,code);
+    save_coverage(state);
+    state->total_unique_bbls = exit_info2.unique_bbls;
+    
+    init_entry_state(state,fuzz_entry, out_simulator,exit_info2.exit_code);
 
     
 
@@ -709,17 +712,17 @@ void fuzz_runonce(FuzzState *state)
 {
   bool found_new = false;
   Simulator *simulator;
-  EXIT_INFO exit_info;
   load_default_pool(state,queue_dir);
   load_queues(state,queue_dir);
   for(queue_entry *q : *state->entries)
   {
-    u32 exit_code = run_input(state,q,&simulator);
-    if(exit_code == EXIT_DBG_STREAM_NOTFOUND)
+    EXIT_INFO exit_info = run_input(state,q,&simulator);
+    state->total_unique_bbls = exit_info.unique_bbls;
+    if(exit_info.exit_code == EXIT_DBG_STREAM_NOTFOUND)
     {
       printf("pc %x queue %x not found stream %x\n",exit_info.exit_pc,q->cksum,exit_info.stream_info.exit_stream_id);
     }
-    update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+    // update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
     show_stat(state);
   }
 }
@@ -730,8 +733,9 @@ void fuzz_run_oneseed(FuzzState *state,const char *pool_file,const char *seed_fi
   Simulator *simulator;
   load_crash_pool(state,pool_file);
   queue_entry *q = load_queue(&global_state,seed_file);
-  run_input(state,q,&simulator);
-  update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  exit_info = run_input(state,q,&simulator);
+  state->total_unique_bbls = exit_info.unique_bbls;
+  // update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
   show_stat(state);
 }
 

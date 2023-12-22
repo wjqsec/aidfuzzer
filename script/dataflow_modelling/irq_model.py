@@ -5,16 +5,18 @@ import re
 import sys
 import capstone
 import time
+from termcolor import colored
 from pathlib import Path
 import argparse
 from config import *
 from angr import exploration_techniques
 import pyvex.lifting.gym.arm_spotter
 import logging
+import traceback
 
 
-logging.getLogger().setLevel(logging.DEBUG)
-logging.getLogger('angr').setLevel('ERROR')
+# logging.getLogger().setLevel(logging.ERROR)
+# logging.getLogger('angr').setLevel('ERROR')
 
 config = Configs()
 stack_size = 0x4000
@@ -84,22 +86,6 @@ def get_and_insert_model(models,irq,isr,irq_id):
     tmp.id = irq_id
     models.append(tmp)
     return tmp
-
-
-
-nullptr_addresses = set()
-null_values = set()
-value_addr_map = dict()
-value_concrete_value_map = dict()
-
-
-nullptr_func_check_mem = set()
-nullptr_func_check_mem_addr = set()
-
-nullptr_data_access_check_mem = set()
-nullptr_data_access_check_mem_addr = set()
-
-mem_access_addr = set()
 
 def is_mmio_address(state, addr):
     for mem in config.mems:
@@ -182,87 +168,143 @@ def is_ast_only_eval_one_value(state,ast):
         return True
     except Exception as e:
         return False
-
-def get_addr_ast_in_ast(ast):
-    for leaf in ast.leaf_asts():
-        if leaf in value_concrete_value_map:
-            return leaf
-    return None
-
-def get_nullptr_ast_in_ast(ast):
-    if ast in null_values:
-        return ast
-    ret = None
-    for leaf in ast.leaf_asts():    
-        if leaf in null_values:
-            ret = leaf
-        elif leaf.symbolic:
-            return None
-    
-    return ret
-
-def get_addr_for_null_value(ast):
-    while True:
-        addr = value_addr_map[ast]
-        if addr in nullptr_addresses:
-            return addr
-        ast = addr
-
-def get_ast_len(ast):
-    ret = 0
-    for leaf in ast.leaf_asts():
-        ret += 1
-    return ret
-
-
-
 def ast_cannot_be_zero(state,ast):
-    state_backup = state.copy()
+    tmp_state = state.copy()
 
-    state_backup.add_constraints(ast == 0)
-    ret = state_backup.satisfiable()
-    state_backup.solver.constraints.pop()
-    state_backup.solver.reload_solver()
+    tmp_state.add_constraints(ast == 0)
+    ret = tmp_state.satisfiable()
+    tmp_state.solver.constraints.pop()
+    tmp_state.solver.reload_solver()
     return not ret
 
-def ast_can_be_zero(state,ast):
-    return not ast_cannot_be_zero(state,ast)
 
-def ast_condition_hold(state,con):
-    state_backup = state.copy()
-    state_backup.add_constraints(con)
-    ret = state_backup.satisfiable()
 
-    state_backup.solver.constraints.pop()
-    state_backup.solver.reload_solver()
-    return ret
+
+
+
+
+
+
+
+
+
+class SymState:
+    def __init__(self):
+        self.nullptr_addresses = set()
+        self.null_values = set()
+        self.value_addr_map = dict()
+        self.value_concrete_value_map = dict()
+
+        self.initialized_addrs = set()
+    def copy_self(self):
+        ret = SymState()
+        ret.nullptr_addresses = self.nullptr_addresses.copy()
+        ret.null_values = self.null_values.copy()
+        ret.value_addr_map = self.value_addr_map.copy()
+        ret.value_concrete_value_map = self.value_concrete_value_map.copy()
+
+        ret.initialized_addrs = self.initialized_addrs.copy()
+        return ret
+    
+    def get_concrete_value_for_pointers(self,ast):
+        ret = []
+        for leaf in ast.leaf_asts():
+            if leaf in self.value_concrete_value_map:
+                ret.append((leaf,self.value_concrete_value_map[leaf]))
+        return ret
+    
+    def addr_already_init(self,addr):
+        return addr in self.initialized_addrs
+    def init_addr(self,addr):
+        self.initialized_addrs.add(addr)
+
+    def get_nullptr_ast_in_ast(self,ast):
+        if ast in self.null_values:
+            return ast
+        ret = None
+        for leaf in ast.leaf_asts():    
+            if leaf in self.null_values:
+                ret = leaf
+            elif leaf.symbolic:
+                return None
+        
+        return ret
+
+    def get_addr_for_null_value(self,ast):
+        return self.value_addr_map[ast]
+        # while True:
+        #     addr = self.value_addr_map[ast]
+        #     if addr in self.nullptr_addresses:
+        #         return addr
+        #     ast = addr
+
+#####
+
+
+nullptr_func_check_mem = set()
+
+nullptr_data_access_check_mem = set()
+nullptr_data_access_check_mem_addr = set()
+
+mem_access_addr = set()
+
+class SymPreservePlugin(angr.SimStatePlugin):
+    def __init__(self, symstate):
+        super(SymPreservePlugin, self).__init__()
+        self.syms = symstate.copy_self()
+
+    @angr.SimStatePlugin.memo
+    def copy(self, memo):
+        return SymPreservePlugin(self.syms)
+
+def try_get_null_access(state,ast,nullptr_ast):
+    if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
+        return
+    
+    # if len(state.solver.constraints) > 5:
+    #     return
+
+    logging.info("add mem_read_after dependency pc ",hex(state.addr), " ast ",ast," addr ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
+    # print("add mem_read_after dependency pc ",hex(state.addr), " ast ",ast," addr ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
+    
+    nullptr_data_access_check_mem.add(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast))
+    nullptr_data_access_check_mem_addr.add(state.addr)
+
 
 def mem_read_before(state):
-
+    
+   
     addr = state.inspect.mem_read_address
     if type(addr) is tuple:
             addr = addr[1]
-    root_ast = get_addr_ast_in_ast(addr)
+    concrete_pointers = state.irqplugin.syms.get_concrete_value_for_pointers(addr)
     
-    if root_ast != None and value_concrete_value_map[root_ast] != 0:
-        state.add_constraints(root_ast == value_concrete_value_map[root_ast])
+    for concrete_pointer in concrete_pointers:
+        state.add_constraints(concrete_pointer[0] == concrete_pointer[1])
         state.solver.reload_solver()
-        
+
+    
     try:
         address = state.solver.eval_one(addr)
     except Exception as e:
         return
     
+
+    
+
+    if state.irqplugin.syms.addr_already_init(address):
+        return
+    
     if not is_ast_pointer(state,address):
         return
-    
+   
     if is_ast_stack_address(state,address):
         return
-    
+    # print("access  ",hex(state.addr),addr,hex(address),state.solver.constraints)
     if is_ast_readonly(state,address):
         return
     
-    
+   
 
     if is_ast_mmio_address(state, address):
         state.memory.store(address, state.solver.BVS(f"mmio_sym_{hex(address)}", state.inspect.mem_read_length * 8) ,disable_actions=True,inspect=False,endness='Iend_LE')
@@ -276,33 +318,35 @@ def mem_read_before(state):
     if is_ast_stack_address(state,value) or is_ast_mmio_address(state, value):
         return
 
-    
     tmp = state.solver.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
 
     state.memory.store(address,tmp,disable_actions=True,inspect=False,endness='Iend_LE')
     
+    # print(hex(state.addr)," replace ",hex(address),value,state.solver.constraints)
+    
     # if is_ast_zero(state,value) and state.inspect.mem_read_length == 4:
     if state.inspect.mem_read_length == 4 and value == 0:
-        nullptr_addresses.add(address)
-        null_values.add(tmp)
-        value_addr_map[tmp] = address
-    value_concrete_value_map[tmp] = value
+        state.irqplugin.syms.nullptr_addresses.add(address)
+        state.irqplugin.syms.null_values.add(tmp)
+        state.irqplugin.syms.value_addr_map[tmp] = address
+    state.irqplugin.syms.value_concrete_value_map[tmp] = value
     
 
 
    
 
 def mem_read_after(state):
-    
+
     addr = state,state.inspect.mem_read_address
     value = state,state.inspect.mem_read_expr
 
+    
     if type(addr) is tuple:
         addr = addr[1]
     if type(value) is tuple:
         value = value[1]
 
-
+    
     assign_value = state.solver.BVS(f"assign_sym_{hex(state.addr)}", state.inspect.mem_read_length * 8)
     disassembly_block = project.factory.block(state.addr, size=4).bytes
     md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
@@ -315,62 +359,43 @@ def mem_read_after(state):
             return
         if "[" not in ins.op_str:
             return
+        
         base_addr_reg = ins.op_str.split("[")[1].split("]")[0]
         if "," in base_addr_reg:
             base_addr_reg = base_addr_reg.split(",")[0]
         if base_addr_reg == "pc":
             return
-        # # addr = getattr(state.regs,base_addr_reg)
-        # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
-        # print(base_addr_reg)
-        # print(addr)
-        # print(getattr(state.regs,base_addr_reg))
         
-
-        # nullptr_ast = get_nullptr_ast_in_ast(addr)
-        # if nullptr_ast == None:
-        #     return
+        # addr = getattr(state.regs,base_addr_reg)
+        
+        nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(addr)
+        if nullptr_ast == None:
+            return
+        
         # setattr(state.regs,ins.op_str.split(",")[0],assign_value)
+        # print(hex(state.addr),ins.op_str.split(",")[0])
+        state.inspect.mem_read_expr = assign_value
         break
-    nullptr_ast = get_nullptr_ast_in_ast(addr)
-    if nullptr_ast == None:
-        return
-
-    null_values.add(addr)
-    value_addr_map[addr] = get_addr_for_null_value(nullptr_ast)
-    # angr read zero from symbolic memory, this is not what we want, replace it with a symbolic value
     
-    # state.add_constraints(assign_value == 0)
-    null_values.add(assign_value)
-    value_addr_map[assign_value] = addr
-        
-    if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
-        return
     
-    if len(state.solver.constraints) > 5:
-        return
-
-    logging.debug("add mem_read_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+    state.irqplugin.syms.null_values.add(assign_value)
+    state.irqplugin.syms.value_addr_map[assign_value] = state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)
     
-    nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
-    nullptr_data_access_check_mem_addr.add(state.addr)
+    try_get_null_access(state,addr,nullptr_ast)
 
         
 def mem_write_after(state):
-    addr = state,state.inspect.mem_write_address
+    addr = state.inspect.mem_write_address
     if type(addr) is tuple:
         addr = addr[1]
-    nullptr_ast = get_nullptr_ast_in_ast(addr)
+    nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(addr)
     if nullptr_ast == None:
         return
-    if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
+    try_get_null_access(state,addr,nullptr_ast)
+    if not is_ast_only_eval_one_value(state,addr):
         return
-    if len(state.solver.constraints) > 5:
-        return
-    logging.debug("add mem_write_after dependency pc ",hex(state.addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
-    
-    nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
-    nullptr_data_access_check_mem_addr.add(state.addr)
+    state.irqplugin.syms.init_addr(state.solver.eval_one(addr))
+
 
 def call_before(state):
 
@@ -394,6 +419,7 @@ def call_before(state):
     
 
 def call_statement_before(state):
+    
     global project
     len_ = 4
     try:
@@ -406,31 +432,29 @@ def call_statement_before(state):
                 # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
                 if ins.address != pc_addr:
                     break
-
+                
                 addr = getattr(state.regs,ins.op_str)
+                
                 if not addr.symbolic:
                     break
-                if addr in value_concrete_value_map and value_concrete_value_map[addr] != 0:
-                    logging.debug("resolve a function at ",hex(pc_addr), "to pointer ",hex(value_concrete_value_map[addr]))
-                    state.add_constraints(addr == value_concrete_value_map[addr])
-                    setattr(state.regs,ins.op_str,value_concrete_value_map[addr])
+                
+                if addr in state.irqplugin.syms.value_concrete_value_map and state.irqplugin.syms.value_concrete_value_map[addr] != 0:
+                    
+                    logging.info("resolve a function at ",hex(pc_addr), "to pointer ",hex(state.irqplugin.syms.value_concrete_value_map[addr]))
+                    print("resolve a function at ",hex(pc_addr), "to pointer ",hex(state.irqplugin.syms.value_concrete_value_map[addr]))
+                    
+                    state.add_constraints(addr == state.irqplugin.syms.value_concrete_value_map[addr])
                     state.solver.reload_solver()
                     break
-
-                nullptr_ast = get_nullptr_ast_in_ast(addr)
+                nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(addr)
                 if nullptr_ast == None:
                     break
                 
-                if state.addr not in  nullptr_func_check_mem_addr:
-                    nullptr_func_check_mem.add(get_addr_for_null_value(nullptr_ast))
-                    nullptr_func_check_mem_addr.add(state.addr)
-                    logging.debug("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(get_addr_for_null_value(nullptr_ast)))
-                if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr or len(state.solver.constraints) > 5:
-                    break
+                nullptr_func_check_mem.add(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast))
+                logging.info("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
+                # print("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
                 
-                nullptr_data_access_check_mem.add(get_addr_for_null_value(nullptr_ast))
-                nullptr_data_access_check_mem_addr.add(state.addr)
-                logging.debug("add call dependency pc ",hex(pc_addr), " ast ",addr," addr ",hex(get_addr_for_null_value(nullptr_ast)))
+                try_get_null_access(state,addr,nullptr_ast)
     
     except Exception as e:
         pass
@@ -455,6 +479,9 @@ def mrs_write_after(state):
     except Exception as e:
         pass
 
+def new_cons(state):
+    pass
+    # print(hex(state.addr),state.inspect.added_constraints)
 
 def is_memory_action(action):
     return isinstance(action, angr.state_plugins.sim_action.SimActionData) and action.type == 'mem'
@@ -508,7 +535,8 @@ def get_memory_access(states,accessses):
                 info.type = "mem"
                 accessses.add(info)
                 mem_access_addr.add(info.ins_addr)
-                logging.debug("watchpoint",hex(info.ins_addr),hex(info.addr))
+                # logging.info("watchpoint",hex(info.ins_addr),hex(info.addr))
+                # print("watchpoint",hex(info.ins_addr),hex(info.addr))
 
                 
         
@@ -533,8 +561,8 @@ def main():
     config.from_fuzzware_config_file(args.config)
 
     spiller = angr.exploration_techniques.Spiller(max=50)
-    suggest = angr.exploration_techniques.Suggestions()
-    loopser = angr.exploration_techniques.LocalLoopSeer(bound=1)       
+    # suggest = angr.exploration_techniques.Suggestions()
+    # loopser = angr.exploration_techniques.LocalLoopSeer(bound=1)       
     project, initial_state = from_state_file(args.state)
 
     start_addr = int(args.vecbase,16) + 4 * int(args.irq,10)
@@ -546,15 +574,17 @@ def main():
     models = irq_model_from_file(args.output)
     model = get_and_insert_model(models,int(args.irq,10),irq_val,int(args.id,16))
     
-    logging.debug("start pc:  ",hex(irq_val))
+    logging.info("start pc:  ",hex(irq_val))
 
     initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
     initial_state.inspect.b("instruction",when=angr.BP_AFTER, action=mrs_write_after)
-    # initial_state.inspect.b("instruction",when=angr.BP_BEFORE, action=call_ins_before)
     initial_state.inspect.b("statement",when=angr.BP_BEFORE, action=call_statement_before)
     
+    initial_state.inspect.b("constraints",when=angr.BP_BEFORE, action=new_cons)
+    
+    initial_state.register_plugin('irqplugin', SymPreservePlugin(SymState()))
 
     simgr = project.factory.simgr(initial_state)
 
@@ -562,7 +592,8 @@ def main():
     # simgr.use_technique(suggest)
     # simgr.use_technique(loopser)
     
-    
+
+
     for i in range(50):
         get_memory_access(simgr.active,model.accesses)
         to_remove = []
@@ -570,6 +601,7 @@ def main():
             try:
                 pc_addr = active_state.solver.eval_one(active_state.regs.pc)
                 # for zephyr, a very complex operation happened
+
                 if pc_addr == 0x4105Bb:
                     to_remove.append(active_state)
                 if pc_addr == fix_lr:
@@ -580,17 +612,14 @@ def main():
         for r in to_remove:
             simgr.active.remove(r)
         
-        # print(simgr.active)
+        print(simgr.active)
         
         
         simgr.step(thumb=True)
-        simgr.deadended.clear()
-        simgr.unconstrained.clear()
-        simgr.pruned.clear()
-        simgr.unsat.clear()
+
 
     
-    logging.debug(model.toend)
+    logging.info(model.toend)
     for ptr in nullptr_func_check_mem:
         access = ACCESS_INFO()
         access.ins_addr = 0
@@ -609,7 +638,7 @@ def main():
 
     write_model_to_file(models,args.output)
     end_time = time.time()
-    logging.debug("irq total time: {}".format(end_time-start_time))
+    logging.info("irq total time: {}".format(end_time-start_time))
     
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@
 #define SIMULATOR_INCLUDED
 #include <stdio.h>
 #include <string>
+#include <set>
 #include "xx.h"
 #include "fuzzer.h"
 #include "config.h"
@@ -49,6 +50,7 @@ extern FILE *f_cov_log;
 extern uint64_t nommio_executed_bbls;
 extern uint64_t max_bbl_exec;
 
+extern std::set<hw_addr> total_unique_bbls;
 
 extern EXIT_INFO exit_info;
 extern bool next_bbl_should_exit;

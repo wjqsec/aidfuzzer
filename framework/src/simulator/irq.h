@@ -24,7 +24,7 @@ struct IRQ_N_STATE
     map<hw_addr,WATCHPOINT*> *mem_addr;
     set<void*> *dependency_nullptr;
     map<hw_addr,WATCHPOINT*> *func_nullptr;
-    set<hw_addr> *func_resolved_ptrs;
+    map<hw_addr,hw_addr> *func_resolved_ptrs;
 };
 
 
