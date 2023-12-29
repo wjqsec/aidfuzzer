@@ -63,6 +63,13 @@ def from_state_file(statefile):
         initial_state = project.factory.call_state(addr=0,add_options=angr.options.refs)
         # initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_REGISTERS)
         initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY)
+        initial_state.options.add(angr.options.AVOID_MULTIVALUED_READS)
+        initial_state.options.add(angr.options.AVOID_MULTIVALUED_WRITES)
+        # initial_state.options.add(angr.options.CONSERVATIVE_READ_STRATEGY)
+        
+        
+
+
         # initial_state.options.add(angr.options.LAZY_SOLVES)
         
         # arm_thumb_quirks.add_special_initstate_reg_vals(initial_state, regs) maybe later

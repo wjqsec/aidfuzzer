@@ -17,6 +17,20 @@ import traceback
 
 # logging.getLogger().setLevel(logging.ERROR)
 # logging.getLogger('angr').setLevel('ERROR')
+class TextColor:
+    BLACK = '\033[30m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+
+# Function to print colorful text with different foreground and background colors
+def print_colorful_text(text, foreground_color=''):
+    full_text = foreground_color + text + '\033[0m'  # Reset color to default
+    print(full_text)
 
 config = Configs()
 stack_size = 0x4000
@@ -177,7 +191,8 @@ def ast_cannot_be_zero(state,ast):
     tmp_state.solver.reload_solver()
     return not ret
 
-
+def get_leaf_ast(ast):
+    return [leaf for leaf in ast.leaf_asts()]
 
 
 
@@ -190,7 +205,6 @@ def ast_cannot_be_zero(state,ast):
 
 class SymState:
     def __init__(self):
-        self.nullptr_addresses = set()
         self.null_values = set()
         self.value_addr_map = dict()
         self.value_concrete_value_map = dict()
@@ -198,7 +212,6 @@ class SymState:
         self.initialized_addrs = set()
     def copy_self(self):
         ret = SymState()
-        ret.nullptr_addresses = self.nullptr_addresses.copy()
         ret.null_values = self.null_values.copy()
         ret.value_addr_map = self.value_addr_map.copy()
         ret.value_concrete_value_map = self.value_concrete_value_map.copy()
@@ -232,21 +245,38 @@ class SymState:
 
     def get_addr_for_null_value(self,ast):
         return self.value_addr_map[ast]
-        # while True:
-        #     addr = self.value_addr_map[ast]
-        #     if addr in self.nullptr_addresses:
-        #         return addr
-        #     ast = addr
 
 #####
 
+def is_valid_read(state):
+    disassembly_block = project.factory.block(state.addr, size=4).bytes
+    md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
+    md.detail = True
+    inses = md.disasm(disassembly_block, state.addr)
+    for ins in inses:
+        if "ldr" not in ins.mnemonic:
+            return False
+        if len(ins.operands) < 2 :
+            return False
+        if "[" not in ins.op_str:
+            return False
+        if "pc" in ins.op_str:
+            return False
+        break
+    return True
 
 nullptr_func_check_mem = set()
 
 nullptr_data_access_check_mem = set()
-nullptr_data_access_check_mem_addr = set()
 
+mem_access = set()
 mem_access_addr = set()
+
+unsolved_func_ptr_addr = set()
+
+
+
+
 
 class SymPreservePlugin(angr.SimStatePlugin):
     def __init__(self, symstate):
@@ -258,136 +288,102 @@ class SymPreservePlugin(angr.SimStatePlugin):
         return SymPreservePlugin(self.syms)
 
 def try_get_null_access(state,ast,nullptr_ast):
-    if ast_cannot_be_zero(state,nullptr_ast) or state.addr in nullptr_data_access_check_mem_addr:
+    if ast_cannot_be_zero(state,nullptr_ast):
         return
     
     # if len(state.solver.constraints) > 5:
     #     return
 
-    logging.info("add mem_read_after dependency pc ",hex(state.addr), " ast ",ast," addr ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
+    if state.irqplugin.syms.get_addr_for_null_value(nullptr_ast) not in nullptr_data_access_check_mem:
+        print_colorful_text("add mem_read_after dependency pc " + hex(state.addr) + " ast "+ str(ast) + " addr " + hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)),foreground_color=TextColor.GREEN)
     # print("add mem_read_after dependency pc ",hex(state.addr), " ast ",ast," addr ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
     
     nullptr_data_access_check_mem.add(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast))
-    nullptr_data_access_check_mem_addr.add(state.addr)
 
 
 def mem_read_before(state):
-    
+    pass
    
-    addr = state.inspect.mem_read_address
-    if type(addr) is tuple:
-            addr = addr[1]
-    concrete_pointers = state.irqplugin.syms.get_concrete_value_for_pointers(addr)
+
+def mem_read_after(state):
     
+    if not is_valid_read(state):
+        return
+    
+    addr = state,state.inspect.mem_read_address
+    value = state,state.inspect.mem_read_expr
+
+    if type(addr) is tuple:
+        addr = addr[1]
+    if type(value) is tuple:
+        value = value[1]
+    
+    nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(addr)
+    if nullptr_ast != None:
+        assign_value = state.solver.BVS(f"assign_sym_{hex(state.addr)}", state.inspect.mem_read_length * 8)
+        state.inspect.mem_read_expr = assign_value
+        state.irqplugin.syms.null_values.add(assign_value)
+        state.irqplugin.syms.value_addr_map[assign_value] = state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)
+        try_get_null_access(state,addr,nullptr_ast)
+        return
+
+
+    try:
+        address = state.solver.eval_one(addr)
+        
+    except Exception as e:
+        pass
+    
+
+    concrete_pointers = state.irqplugin.syms.get_concrete_value_for_pointers(addr)
+
     for concrete_pointer in concrete_pointers:
         state.add_constraints(concrete_pointer[0] == concrete_pointer[1])
         state.solver.reload_solver()
-
     
     try:
         address = state.solver.eval_one(addr)
     except Exception as e:
         return
     
-
-    
-
-    if state.irqplugin.syms.addr_already_init(address):
+    if not is_ast_pointer(state,address) or is_ast_stack_address(state,address) or is_ast_readonly(state,address) or state.irqplugin.syms.addr_already_init(address):
+        state.inspect.mem_read_expr = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
         return
     
-    if not is_ast_pointer(state,address):
-        return
-   
-    if is_ast_stack_address(state,address):
-        return
-    # print("access  ",hex(state.addr),addr,hex(address),state.solver.constraints)
-    if is_ast_readonly(state,address):
-        return
-    
-   
-
     if is_ast_mmio_address(state, address):
-        state.memory.store(address, state.solver.BVS(f"mmio_sym_{hex(address)}", state.inspect.mem_read_length * 8) ,disable_actions=True,inspect=False,endness='Iend_LE')
+        state.inspect.mem_read_expr = state.solver.BVS(f"mmio_sym_{hex(address)}", state.inspect.mem_read_length * 8)
         return
+
     value = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
+
+    
     try:
-        value = state.solver.eval_one(value)
+        concrete_value = state.solver.eval_one(value)
+        if is_ast_stack_address(state,concrete_value) or is_ast_mmio_address(state, concrete_value):
+            return
+        state.inspect.mem_read_expr = state.solver.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
+        state.irqplugin.syms.value_concrete_value_map[state.inspect.mem_read_expr] = concrete_value
+        if state.inspect.mem_read_length == 4 and concrete_value == 0:
+            state.irqplugin.syms.null_values.add(state.inspect.mem_read_expr)
+            state.irqplugin.syms.value_addr_map[state.inspect.mem_read_expr] = address
     except Exception as e:
-        return
+        pass
     
-    if is_ast_stack_address(state,value) or is_ast_mmio_address(state, value):
-        return
-
-    tmp = state.solver.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
-
-    state.memory.store(address,tmp,disable_actions=True,inspect=False,endness='Iend_LE')
     
-    # print(hex(state.addr)," replace ",hex(address),value,state.solver.constraints)
     
-    # if is_ast_zero(state,value) and state.inspect.mem_read_length == 4:
-    if state.inspect.mem_read_length == 4 and value == 0:
-        state.irqplugin.syms.nullptr_addresses.add(address)
-        state.irqplugin.syms.null_values.add(tmp)
-        state.irqplugin.syms.value_addr_map[tmp] = address
-    state.irqplugin.syms.value_concrete_value_map[tmp] = value
     
-
-
-   
-
-def mem_read_after(state):
-
-    addr = state,state.inspect.mem_read_address
-    value = state,state.inspect.mem_read_expr
+    
+    
+    return
 
     
-    if type(addr) is tuple:
-        addr = addr[1]
-    if type(value) is tuple:
-        value = value[1]
-
-    
-    assign_value = state.solver.BVS(f"assign_sym_{hex(state.addr)}", state.inspect.mem_read_length * 8)
-    disassembly_block = project.factory.block(state.addr, size=4).bytes
-    md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
-    md.detail = True
-    inses = md.disasm(disassembly_block, state.addr)
-    for ins in inses:
-        if "ldr" not in ins.mnemonic:
-            return
-        if len(ins.operands) < 2 :
-            return
-        if "[" not in ins.op_str:
-            return
-        
-        base_addr_reg = ins.op_str.split("[")[1].split("]")[0]
-        if "," in base_addr_reg:
-            base_addr_reg = base_addr_reg.split(",")[0]
-        if base_addr_reg == "pc":
-            return
-        
-        # addr = getattr(state.regs,base_addr_reg)
-        
-        nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(addr)
-        if nullptr_ast == None:
-            return
-        
-        # setattr(state.regs,ins.op_str.split(",")[0],assign_value)
-        # print(hex(state.addr),ins.op_str.split(",")[0])
-        state.inspect.mem_read_expr = assign_value
-        break
-    
-    
-    state.irqplugin.syms.null_values.add(assign_value)
-    state.irqplugin.syms.value_addr_map[assign_value] = state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)
-    
-    try_get_null_access(state,addr,nullptr_ast)
 
         
 def mem_write_after(state):
     addr = state.inspect.mem_write_address
     if type(addr) is tuple:
         addr = addr[1]
+    get_memory_access(state,state.addr,addr,state.inspect.mem_read_length)
     nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(addr)
     if nullptr_ast == None:
         return
@@ -402,18 +398,40 @@ def call_before(state):
     tmpr0 = state.regs.r0
     state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
     state.solver.add(tmpr0 == state.regs.r0)
+    if tmpr0 in state.irqplugin.syms.value_concrete_value_map:
+        state.irqplugin.syms.value_concrete_value_map[state.regs.r0] = state.irqplugin.syms.value_concrete_value_map[tmpr0]
+    if tmpr0 in  state.irqplugin.syms.null_values:
+        state.irqplugin.syms.null_values.add(state.regs.r0)
+        state.irqplugin.syms.value_addr_map[state.regs.r0] = state.irqplugin.syms.value_addr_map[tmpr0]
+
 
     tmpr1 = state.regs.r1
     state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
     state.solver.add(tmpr1 == state.regs.r1)
+    if tmpr1 in state.irqplugin.syms.value_concrete_value_map:
+        state.irqplugin.syms.value_concrete_value_map[state.regs.r1] = state.irqplugin.syms.value_concrete_value_map[tmpr1]
+    if tmpr1 in  state.irqplugin.syms.null_values:
+        state.irqplugin.syms.null_values.add(state.regs.r1)
+        state.irqplugin.syms.value_addr_map[state.regs.r1] = state.irqplugin.syms.value_addr_map[tmpr1]
 
     tmpr2 = state.regs.r2
     state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
     state.solver.add(tmpr2 == state.regs.r2)
+    if tmpr2 in state.irqplugin.syms.value_concrete_value_map:
+        state.irqplugin.syms.value_concrete_value_map[state.regs.r2] = state.irqplugin.syms.value_concrete_value_map[tmpr2]
+    if tmpr2 in  state.irqplugin.syms.null_values:
+        state.irqplugin.syms.null_values.add(state.regs.r2)
+        state.irqplugin.syms.value_addr_map[state.regs.r2] = state.irqplugin.syms.value_addr_map[tmpr2]
 
     tmpr3 = state.regs.r3
     state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
     state.solver.add(tmpr3 == state.regs.r3)
+    if tmpr3 in state.irqplugin.syms.value_concrete_value_map:
+        state.irqplugin.syms.value_concrete_value_map[state.regs.r3] = state.irqplugin.syms.value_concrete_value_map[tmpr3]
+    if tmpr3 in  state.irqplugin.syms.null_values:
+        state.irqplugin.syms.null_values.add(state.regs.r3)
+        state.irqplugin.syms.value_addr_map[state.regs.r3] = state.irqplugin.syms.value_addr_map[tmpr3]
+
 
 
     
@@ -440,9 +458,10 @@ def call_statement_before(state):
                 
                 if addr in state.irqplugin.syms.value_concrete_value_map and state.irqplugin.syms.value_concrete_value_map[addr] != 0:
                     
-                    logging.info("resolve a function at ",hex(pc_addr), "to pointer ",hex(state.irqplugin.syms.value_concrete_value_map[addr]))
-                    print("resolve a function at ",hex(pc_addr), "to pointer ",hex(state.irqplugin.syms.value_concrete_value_map[addr]))
-                    
+
+                    if pc_addr not in  unsolved_func_ptr_addr:
+                        unsolved_func_ptr_addr.add(pc_addr)
+                        print_colorful_text("resolve a function at " + hex(pc_addr) + "  to pointer " + hex(state.irqplugin.syms.value_concrete_value_map[addr]), foreground_color = TextColor.YELLOW)
                     state.add_constraints(addr == state.irqplugin.syms.value_concrete_value_map[addr])
                     state.solver.reload_solver()
                     break
@@ -450,9 +469,11 @@ def call_statement_before(state):
                 if nullptr_ast == None:
                     break
                 
-                nullptr_func_check_mem.add(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast))
-                logging.info("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
-                # print("add nullptr  pc  ",hex(pc_addr),"  ast  ", nullptr_ast, "  addr   ",hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)))
+                if state.irqplugin.syms.get_addr_for_null_value(nullptr_ast) not in nullptr_func_check_mem:
+                    nullptr_func_check_mem.add(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast))
+                    print_colorful_text("add nullptr  pc  " + hex(pc_addr) + "  ast  "+ str(nullptr_ast) + "  addr   " + hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)),foreground_color = TextColor.BLUE)
+                
+                
                 
                 try_get_null_access(state,addr,nullptr_ast)
     
@@ -470,10 +491,7 @@ def mrs_write_after(state):
         inses = md.disasm(disassembly_block, pc_addr)
         for ins in inses:
             if ins.mnemonic == "mrs" and "ipsr" not in ins.op_str:
-                # setattr(state, name, ast)
-                # print( getattr(state.regs, ins.op_str.split(",")[0]))
                 setattr(state.regs,ins.op_str.split(",")[0],state.solver.BVS(f"mrs", 32))
-                # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
             break
 
     except Exception as e:
@@ -495,48 +513,26 @@ def is_memory_write_action(action):
 
 
 
-def get_memory_access(states,accessses):
-    for state in states:
-        for action in state.history.actions:
-            
-            if not is_memory_action(action):
-                continue
-
-            
-            if is_ast_stack_address(state,action.addr):
-                continue
-
-            # if is_memory_read_action(action) and not is_ast_mmio_address(state,action.addr):
-            # print(action)
-            # print(state.solver.constraints)
-            if is_ast_readonly(state,action.addr):
-                continue
-            
-            if is_memory_read_action(action):
-                continue
-            if is_ast_zero(state,action.addr):
-                continue
-            if not is_ast_only_eval_one_value(state,action.addr):
-                continue
-
-
-            if is_ast_mmio_address(state,action.addr):
-                info = ACCESS_INFO()
-                info.ins_addr = state.solver.eval_one(action.ins_addr)
-                info.addr = state.solver.min(action.addr)
-                info.size = int((action.size + 0)/8)
-                info.type = "mmio"
-                accessses.add(info)
-            if is_ast_pointer(state,action.addr) and is_memory_write_action(action) and action.ins_addr not in  mem_access_addr:
-                info = ACCESS_INFO()
-                info.ins_addr = state.solver.eval_one(action.ins_addr)
-                info.addr = state.solver.min(action.addr)
-                info.size = int((action.size + 0)/8)
-                info.type = "mem"
-                accessses.add(info)
-                mem_access_addr.add(info.ins_addr)
-                # logging.info("watchpoint",hex(info.ins_addr),hex(info.addr))
-                # print("watchpoint",hex(info.ins_addr),hex(info.addr))
+def get_memory_access(state,ins_addr,addr,size):
+    if not is_ast_pointer(state,addr):
+        return
+    if is_ast_stack_address(state,addr):
+        return
+    if is_ast_readonly(state,addr):
+        return
+    if is_ast_zero(state,addr):
+        return
+    if not is_ast_only_eval_one_value(state,addr):
+        return
+    if is_ast_mmio_address(state,addr):
+        return
+    if ins_addr in  mem_access_addr:
+        return
+    addr = state.solver.min(addr)
+    if addr in mem_access:
+        return
+    mem_access.add(addr)
+    print_colorful_text("watchpoint " + hex(ins_addr) + "  " + hex(addr),foreground_color=TextColor.RED)
 
                 
         
@@ -576,13 +572,14 @@ def main():
     
     logging.info("start pc:  ",hex(irq_val))
 
-    initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
+    # initial_state.inspect.b("mem_read",when=angr.BP_BEFORE, action=mem_read_before)
     initial_state.inspect.b("mem_read",when=angr.BP_AFTER, action=mem_read_after)
+    initial_state.inspect.b("mem_write",when=angr.BP_AFTER, action=mem_write_after)
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
     initial_state.inspect.b("instruction",when=angr.BP_AFTER, action=mrs_write_after)
     initial_state.inspect.b("statement",when=angr.BP_BEFORE, action=call_statement_before)
     
-    initial_state.inspect.b("constraints",when=angr.BP_BEFORE, action=new_cons)
+    
     
     initial_state.register_plugin('irqplugin', SymPreservePlugin(SymState()))
 
@@ -593,9 +590,8 @@ def main():
     # simgr.use_technique(loopser)
     
 
-
-    for i in range(50):
-        get_memory_access(simgr.active,model.accesses)
+    active_state_addr = set()
+    for i in range(60):
         to_remove = []
         for active_state in simgr.active:
             try:
@@ -612,14 +608,24 @@ def main():
         for r in to_remove:
             simgr.active.remove(r)
         
-        print(simgr.active)
+        if active_state.addr not in active_state_addr:
+            active_state_addr.add(active_state.addr)
+            print(simgr.active)
         
         
         simgr.step(thumb=True)
 
 
     
-    logging.info(model.toend)
+    print(model.toend)
+    for ptr in mem_access:
+        access = ACCESS_INFO()
+        access.ins_addr = 0
+        access.addr = ptr
+        access.size = 4
+        access.type = "mem"
+        model.accesses.add(access)
+
     for ptr in nullptr_func_check_mem:
         access = ACCESS_INFO()
         access.ins_addr = 0

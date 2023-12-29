@@ -99,7 +99,6 @@ void clear_state(IRQ_N_STATE *state)
 
 __attribute__((always_inline)) bool is_irq_ready(IRQ_N_STATE *state)
 {
-    
     set<void*> *dependency_nullptr = state->dependency_nullptr;
     
     for(auto it = dependency_nullptr->begin(); it != dependency_nullptr->end(); it++)
@@ -322,7 +321,8 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
 {
     if(val == 0)
         return;
-
+    if(get_arm_v7m_is_handler_mode() != 0)
+        return;
     u32 isr = get_current_isr(irq);
     u32 old_id = get_current_id(irq);
     
@@ -340,6 +340,7 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
 
     if(models[irq]->state->find(new_id) == models[irq]->state->end())
     {
+        printf("resolved irq %d addr %x value %x\n",irq,addr,val);
         dump_prcoess_load_model(irq, new_id ,isr , models);
     }
     IRQ_N_STATE *new_state = (*models[irq]->state)[new_id];
@@ -347,7 +348,9 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
     new_state->func_resolved_ptrs->clear();
     new_state->func_resolved_ptrs->insert(tmp_func_resolved_ptrs.begin(), tmp_func_resolved_ptrs.end());
 
-    for(auto it = old_state->func_nullptr->begin(); it != old_state->func_nullptr->end(); it++)
+    IRQ_N_STATE *init_state = (*models[irq]->state)[isr];
+
+    for(auto it = init_state->func_nullptr->begin(); it != init_state->func_nullptr->end(); it++)
     {
         if(new_state->func_nullptr->find(it->first) == new_state->func_nullptr->end())
         {
@@ -357,6 +360,8 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
             (*new_state->func_nullptr)[it->first] = watchpoint;
         }
     }
+    
+    
     
 
     switch_state(old_id,new_id, irq);

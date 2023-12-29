@@ -7,8 +7,9 @@ HEADER_DIR=../header
 LIB_DIR=../lib
 OUTPUT_DIR=../bin
 
+CXX=clang++
 
-clang++ -I$HEADER_DIR \
+$CXX -I$HEADER_DIR \
 $SIMULATOR_SRC_DIR/config.cpp \
 $SIMULATOR_SRC_DIR/irq.cpp \
 $SIMULATOR_SRC_DIR/model.cpp \
@@ -20,7 +21,7 @@ $SIMULATOR_SRC_DIR/main.cpp \
 $QEMU_FRAMEWORK_SRC_DIR/xx.cpp \
 -g -Wl,-rpath,$SIMULATOR_BIN_DIR -ldl -O3 `pkg-config --cflags --libs glib-2.0` -I$LIB_DIR/ihex -I$QEMU_FRAMEWORK_SRC_DIR/  -L$LIB_DIR/ihex  -fPIE -o $OUTPUT_DIR/simulator -lkk_ihex $SIMULATOR_BIN_DIR/libqemu-system-arm.so
 
-clang++ -I$HEADER_DIR -D DBG \
+$CXX -I$HEADER_DIR -D DBG \
 $SIMULATOR_SRC_DIR/config.cpp \
 $SIMULATOR_SRC_DIR/irq.cpp \
 $SIMULATOR_SRC_DIR/model.cpp \
@@ -32,7 +33,7 @@ $SIMULATOR_SRC_DIR/main.cpp \
 $QEMU_FRAMEWORK_SRC_DIR/xx.cpp \
 -g -Wl,-rpath,$SIMULATOR_BIN_DIR -ldl -O3 `pkg-config --cflags --libs glib-2.0` -I$LIB_DIR/ihex -I$QEMU_FRAMEWORK_SRC_DIR/  -L$LIB_DIR/ihex  -fPIE -o $OUTPUT_DIR/simulator_dbg -lkk_ihex $SIMULATOR_BIN_DIR/libqemu-system-arm.so
 
-clang++ -I$HEADER_DIR \
+$CXX -I$HEADER_DIR \
 $FUZZER_SRC_DIR/iofuzzer.cpp \
 $FUZZER_SRC_DIR/queue_entry.cpp \
 $FUZZER_SRC_DIR/simulator.cpp \
