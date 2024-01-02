@@ -131,42 +131,43 @@ inline static void init_count_class16(void) {
     count_class_lookup16[i] = 1 << 5;
   for(i = 32;i <= 63; i++)
     count_class_lookup16[i] = 1 << 6;
-  // for(i = 64;i <= 127; i++)
-  //   count_class_lookup16[i] = 1 << 7;
-  // for(i = 128;i <= 191; i++)
-  //   count_class_lookup16[i] = 1 << 8;
-  // for(i = 192;i <= 255; i++)
-  //   count_class_lookup16[i] = 1 << 9;
-  // for(i = 256;i <= 319; i++)
-  //   count_class_lookup16[i] = 1 << 10;
-  // for(i = 320;i <= 383; i++)
-  //   count_class_lookup16[i] = 1 << 11;
-  // for(i = 384;i <= 447; i++)
-  //   count_class_lookup16[i] = 1 << 12;
-  // for(i = 448;i <= 511; i++)
-  //   count_class_lookup16[i] = 1 << 13;
-  // for(i = 512;i <= 575; i++)
-  //   count_class_lookup16[i] = 1 << 14;
-  // for(i = 576;i <= 65535; i++)
-  //   count_class_lookup16[i] = 1 << 15;
-  for(i = 64;i <= 95; i++)
+  for(i = 64;i <= 127; i++)
     count_class_lookup16[i] = 1 << 7;
-  for(i = 96;i <= 127; i++)
+  for(i = 128;i <= 191; i++)
     count_class_lookup16[i] = 1 << 8;
-  for(i = 128;i <= 159; i++)
+  for(i = 192;i <= 255; i++)
     count_class_lookup16[i] = 1 << 9;
-  for(i = 160;i <= 191; i++)
+  for(i = 256;i <= 319; i++)
     count_class_lookup16[i] = 1 << 10;
-  for(i = 192;i <= 223; i++)
+  for(i = 320;i <= 383; i++)
     count_class_lookup16[i] = 1 << 11;
-  for(i = 224;i <= 255; i++)
+  for(i = 384;i <= 447; i++)
     count_class_lookup16[i] = 1 << 12;
-  for(i = 256;i <= 287; i++)
+  for(i = 448;i <= 511; i++)
     count_class_lookup16[i] = 1 << 13;
-  for(i = 288;i <= 319; i++)
+  for(i = 512;i <= 575; i++)
     count_class_lookup16[i] = 1 << 14;
-  for(i = 320;i <= 65535; i++)
+  for(i = 576;i <= 65535; i++)
     count_class_lookup16[i] = 1 << 15;
+
+  // for(i = 64;i <= 95; i++)
+  //   count_class_lookup16[i] = 1 << 7;
+  // for(i = 96;i <= 127; i++)
+  //   count_class_lookup16[i] = 1 << 8;
+  // for(i = 128;i <= 159; i++)
+  //   count_class_lookup16[i] = 1 << 9;
+  // for(i = 160;i <= 191; i++)
+  //   count_class_lookup16[i] = 1 << 10;
+  // for(i = 192;i <= 223; i++)
+  //   count_class_lookup16[i] = 1 << 11;
+  // for(i = 224;i <= 255; i++)
+  //   count_class_lookup16[i] = 1 << 12;
+  // for(i = 256;i <= 287; i++)
+  //   count_class_lookup16[i] = 1 << 13;
+  // for(i = 288;i <= 319; i++)
+  //   count_class_lookup16[i] = 1 << 14;
+  // for(i = 320;i <= 65535; i++)
+  //   count_class_lookup16[i] = 1 << 15;
 
 }
 inline static u32 count_trace_covered_bbl(u8* mem, u32 size) {

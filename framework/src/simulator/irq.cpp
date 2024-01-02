@@ -290,11 +290,19 @@ void irq_on_idel()
     if(get_arm_v7m_is_handler_mode() != 0)
         return;
 
+    // if (use_count)
+    // {
+    //     idle_count++;
+    //     if ((idle_count & 0x7) != 0)
+    //         return;
+    // }
+    
+
+        
     for(int i = 0 ; i < enabled_irqs.size(); i++)
     {
         irq = enabled_irqs[i];
         IRQ_N_STATE *state = (*models[irq]->state)[get_current_id(irq)];
-        // idle_count++;
         if(!is_irq_access_memory(state))
             continue;
             
@@ -306,17 +314,21 @@ void irq_on_idel()
             continue;
         bool insert_irq = insert_nvic_intc(irq);
         
-        #ifdef DBG
-        
         if(insert_irq)
+        {
+            state->mem_access_trigger_irq_times_count = 0;
+            #ifdef DBG
+        
+        
             fprintf(flog,"%d->insert idel irq %d\n",run_index,irq);
-        #endif
+            #endif
+        }
+        
         // break;
     }
-    
-
-    
 }
+
+
 void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
 {
     if(val == 0)
@@ -342,6 +354,11 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
     {
         printf("resolved irq %d addr %x value %x\n",irq,addr,val);
         dump_prcoess_load_model(irq, new_id ,isr , models);
+    }
+    if(models[irq]->state->find(new_id) == models[irq]->state->end())
+    {
+        printf("unable to find irq model for id %x\n",new_id);
+        terminate_simulation();
     }
     IRQ_N_STATE *new_state = (*models[irq]->state)[new_id];
     

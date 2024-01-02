@@ -159,6 +159,8 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
     char *addr_size_ptr;
     IRQ_N_MODEL *model;
     IRQ_N_STATE *state;
+
+
     while(fgets(line, PATH_MAX, f))
     {
         if(strstr(line,"-"))
@@ -170,7 +172,11 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
             if (model->state->find(id) == model->state->end())
             {
                 (*model->state)[id] = get_void_state();
-
+                printf("log irq %d\n",irq);
+            }
+            else
+            {
+                continue;
             }
             state = (*model->state)[id];
             if(strstr(line,"y"))
@@ -180,72 +186,73 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
                 state->toend = false;   
             }
             state->isr = isr;
-            continue;
         }
-
-        if(strstr(line,"mem:"))
+        else
         {
-            type = STOPWATCH_TYPE_MEM;
-            addr_size_ptr = line + strlen("mem:");
-        }
-        else if(strstr(line,"mmio:"))
-        {
-            type = STOPWATCH_TYPE_MMIO;
-            addr_size_ptr = line + strlen("mmio:");
-        }
-        else if(strstr(line,"func:"))
-        {
-            type = STOPWATCH_TYPE_FUNC_POINTER;
-            addr_size_ptr = line + strlen("func:");
-        }
-        else if(strstr(line,"dependency:"))
-        {
-            type = STOPWATCH_TYPE_DEPENDENCY;
-            addr_size_ptr = line + strlen("dependency:");
-        }
-
-        uint32_t addr = strtol(addr_size_ptr, 0, 16);
-        uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
-
-        if(type == STOPWATCH_TYPE_MEM)
-        {
-            if(state->mem_addr->find(addr) == state->mem_addr->end())
+            if(strstr(line,"mem:"))
             {
-                WATCHPOINT *watchpoint = new WATCHPOINT();
-                watchpoint->addr = addr;
-                watchpoint->point = 0;
-                (*state->mem_addr)[addr] = watchpoint;
-                printf("add memory access watchpoint irq %d addr %x\n",irq,addr);
+                type = STOPWATCH_TYPE_MEM;
+                addr_size_ptr = line + strlen("mem:");
             }
-            
-        }
-        else if(type == STOPWATCH_TYPE_MMIO)
-        {
-                       
-        }
-        else if(type == STOPWATCH_TYPE_FUNC_POINTER)
-        {
-            if(state->func_nullptr->find(addr) == state->func_nullptr->end())
+            else if(strstr(line,"mmio:"))
             {
-                WATCHPOINT *watchpoint = new WATCHPOINT();
-                watchpoint->addr = addr;
-                watchpoint->point = 0;
-                (*state->func_nullptr)[addr] = watchpoint;
-                printf("add unsolved func ptr irq %d addr %x\n",irq,addr);
+                type = STOPWATCH_TYPE_MMIO;
+                addr_size_ptr = line + strlen("mmio:");
             }
-        }
-        else if(type == STOPWATCH_TYPE_DEPENDENCY)
-        {
-            void *ramptr = get_ram_ptr(addr);
-            if(state->dependency_nullptr->find(ramptr) == state->dependency_nullptr->end())
+            else if(strstr(line,"func:"))
             {
-                state->dependency_nullptr->insert(ramptr);
-                printf("add dependency ptr irq %d addr %x\n",irq,addr);
+                type = STOPWATCH_TYPE_FUNC_POINTER;
+                addr_size_ptr = line + strlen("func:");
             }
-            
+            else if(strstr(line,"dependency:"))
+            {
+                type = STOPWATCH_TYPE_DEPENDENCY;
+                addr_size_ptr = line + strlen("dependency:");
+            }
+
+            uint32_t addr = strtol(addr_size_ptr, 0, 16);
+            uint32_t len = strtol(strstr(addr_size_ptr," ") + 1, 0, 16);
+
+            if(type == STOPWATCH_TYPE_MEM)
+            {
+                if(state->mem_addr->find(addr) == state->mem_addr->end())
+                {
+                    WATCHPOINT *watchpoint = new WATCHPOINT();
+                    watchpoint->addr = addr;
+                    watchpoint->point = 0;
+                    (*state->mem_addr)[addr] = watchpoint;
+                    printf("add memory access watchpoint irq %d addr %x\n",irq,addr);
+                }
+                
+            }
+            else if(type == STOPWATCH_TYPE_MMIO)
+            {
+                        
+            }
+            else if(type == STOPWATCH_TYPE_FUNC_POINTER)
+            {
+                if(state->func_nullptr->find(addr) == state->func_nullptr->end())
+                {
+                    WATCHPOINT *watchpoint = new WATCHPOINT();
+                    watchpoint->addr = addr;
+                    watchpoint->point = 0;
+                    (*state->func_nullptr)[addr] = watchpoint;
+                    printf("add unsolved func ptr irq %d addr %x\n",irq,addr);
+                }
+            }
+            else if(type == STOPWATCH_TYPE_DEPENDENCY)
+            {
+                void *ramptr = get_ram_ptr(addr);
+                if(state->dependency_nullptr->find(ramptr) == state->dependency_nullptr->end())
+                {
+                    state->dependency_nullptr->insert(ramptr);
+                    printf("add dependency ptr irq %d addr %x\n",irq,addr);
+                }
+                
+            }
         }
     }
-        
+
     fclose(f);
     
 }
@@ -256,7 +263,6 @@ void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, IRQ_N_MODEL **mode
     char *state_filename;
     char model_filename[PATH_MAX];
     char cmd[PATH_MAX];
-    
     
     sprintf(model_filename,"%s/%s",model_dir.c_str(),IRQ_MODEL_FILENAME);
 
@@ -274,4 +280,5 @@ void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, IRQ_N_MODEL **mode
     free(state_filename);
 
     load_model(model_filename, models);
+
 }
