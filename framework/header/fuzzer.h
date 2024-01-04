@@ -42,8 +42,8 @@ typedef int64_t  s64;
 #define SHARE_FUZZDATA_SIZE 1 << 30
 #define SHARE_FUZZQUEUE_SIZE 10 << 20
 
-// #define ONEBYTE_COVERAGE
-#define TWOBYTES_COVERAGE
+#define ONEBYTE_COVERAGE
+// #define TWOBYTES_COVERAGE
 
 #if defined(ONEBYTE_COVERAGE) && defined(TWOBYTES_COVERAGE)
 #error "Only one size is supported"

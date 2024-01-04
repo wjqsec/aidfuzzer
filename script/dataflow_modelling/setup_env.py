@@ -60,7 +60,8 @@ def from_state_file(statefile,config):
         # We need the following option in order for CBZ to not screw us over
         project.factory.default_engine.default_strict_block_end = True
 
-        initial_state = project.factory.call_state(addr=0,add_options=angr.options.refs,mode ="symbolic_approximating")
+        initial_state = project.factory.call_state(addr=0,mode ="symbolic")
+        # initial_state = project.factory.call_state(addr=0,add_options=angr.options.refs,mode ="static")
         # initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_REGISTERS)
         initial_state.options.add(angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY)
         initial_state.options.add(angr.options.AVOID_MULTIVALUED_READS)

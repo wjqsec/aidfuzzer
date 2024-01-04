@@ -13,24 +13,10 @@ from angr import exploration_techniques
 import pyvex.lifting.gym.arm_spotter
 import logging
 import traceback
+from colorful_print import *
 
 
-# logging.getLogger().setLevel(logging.ERROR)
-# logging.getLogger('angr').setLevel('ERROR')
-class TextColor:
-    BLACK = '\033[30m'
-    RED = '\033[31m'
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    BLUE = '\033[34m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    WHITE = '\033[37m'
-
-# Function to print colorful text with different foreground and background colors
-def print_colorful_text(text, foreground_color=''):
-    full_text = foreground_color + text + '\033[0m'  # Reset color to default
-    print(full_text)
+MAX_LOOP_TIMES = 0x20
 
 config = Configs()
 stack_size = 0x4000
@@ -103,11 +89,10 @@ def get_and_insert_model(models,irq,isr,irq_id):
 
 def is_mmio_address(state, addr):
     for mem in config.mems:
+        if not mem.ismmio:
+            continue
         if addr >= mem.start and addr <= mem.start + mem.size:
-            if mem.ismmio:
-                return True
-            else:
-                return False
+            return True
     return False
 
 def is_ast_mmio_address(state, ast):
@@ -118,6 +103,12 @@ def is_ast_mmio_address(state, ast):
 
     return is_mmio_address(state, addr)
 
+def is_ast_concrete_mmio_address(state,ast):
+    if claripy.is_true(ast.symbolic):
+        return False
+    else:
+        return is_mmio_address(state,state.solver.eval(ast))
+    
 def is_stack_address(state,addr):
     stack_end = state.regs.sp - stack_size
     stack_base = state.solver.eval_one(state.regs.sp)
@@ -135,19 +126,28 @@ def is_ast_stack_address(state,ast):
 
 def is_pointer(addr):
     for mem in config.mems:
+        if mem.ismmio:
+            continue
+        if mem.name == "text":
+            continue
         if addr >= mem.start and addr <= mem.start + mem.size:
-            if mem.ismmio:
-                return False
-            else:
-                return True
+            return True
     return False
-                
+
+
+
 def is_ast_pointer(state,ast):
     try:
         data = state.solver.eval_one(ast)
     except Exception as e:
         return False
     return is_pointer(data)
+
+def is_ast_concrete_pointer(state,ast):
+    if claripy.is_true(ast.symbolic):
+        return False
+    else:
+        return is_pointer(state.solver.eval(ast))
 
 def is_readonly(state,addr):
     for mem in config.mems:
@@ -206,17 +206,21 @@ def get_leaf_ast(ast):
 class SymState:
     def __init__(self):
         self.null_values = set()
+        self.addr_value_map = dict()
         self.value_addr_map = dict()
         self.value_concrete_value_map = dict()
-        self.pc_addrs = set()
         self.initialized_addrs = set()
+        self.return_state = False
+        self.bbl_hit_counts = dict()
     def copy_self(self):
         ret = SymState()
         ret.null_values = self.null_values.copy()
+        ret.addr_value_map = self.addr_value_map.copy()
         ret.value_addr_map = self.value_addr_map.copy()
         ret.value_concrete_value_map = self.value_concrete_value_map.copy()
-        self.pc_addrs = self.pc_addrs.copy()
         ret.initialized_addrs = self.initialized_addrs.copy()
+        ret.return_state = self.return_state
+        ret.bbl_hit_counts = self.bbl_hit_counts.copy()
         return ret
     
     def get_concrete_value_for_pointers(self,ast):
@@ -230,21 +234,15 @@ class SymState:
         return addr in self.initialized_addrs
     def init_addr(self,addr):
         self.initialized_addrs.add(addr)
-    def has_pc_addr(self,ast):
-        for leaf in ast.leaf_asts(): 
-            if leaf in self.pc_addrs:
-                return True
-        return False
-    def get_nullptr_ast_in_ast(self,ast):
-        if self.has_pc_addr(ast):
-            return None
-        if ast in self.null_values:
-            return ast
+
+    def get_nullptr_ast_in_ast(self,state,ast):
         ret = None
         for leaf in ast.leaf_asts():    
             if leaf in self.null_values:
                 ret = leaf
             elif leaf.symbolic:
+                return None
+            elif is_ast_concrete_pointer(state,leaf) or is_ast_concrete_mmio_address(state,leaf):
                 return None
         
         return ret
@@ -294,7 +292,8 @@ class SymPreservePlugin(angr.SimStatePlugin):
         return SymPreservePlugin(self.syms)
 
 def try_get_null_access(state,ast):
-    nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(ast)
+
+    nullptr_ast = state.irqplugin.syms.get_nullptr_ast_in_ast(state,ast)
     if nullptr_ast == None:
         return nullptr_ast
     if ast_cannot_be_zero(state,nullptr_ast):
@@ -306,6 +305,7 @@ def try_get_null_access(state,ast):
         print_colorful_text("add dependency pc " + hex(state.addr) + " ast "+ str(ast) + " addr " + hex(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast)),foreground_color=TextColor.GREEN)
     
     nullptr_data_access_check_mem.add(state.irqplugin.syms.get_addr_for_null_value(nullptr_ast))
+
     return nullptr_ast
 
 
@@ -320,20 +320,6 @@ def mem_read_after(state):
     if type(value) is tuple:
         value = value[1]
     
-    # read_type = get_read_type(state)
-    
-    # if read_type == None:
-    #     return
-    # elif read_type == "pc":
-    #     address = state.solver.eval_one(addr)
-    #     if state.irqplugin.syms.addr_already_init(address):
-    #         return
-    #     state.irqplugin.syms.init_addr(address)
-    #     state.inspect.mem_read_expr = state.solver.BVS(f"pc_sym_{hex(state.addr)}", state.inspect.mem_read_length * 8)
-    #     state.add_constraints(state.inspect.mem_read_expr == value)
-    #     state.solver.reload_solver()
-    #     state.irqplugin.syms.pc_addrs.add(state.inspect.mem_read_expr)
-    #     return 
 
     nullptr_ast = try_get_null_access(state,addr)
     if nullptr_ast != None:
@@ -353,17 +339,17 @@ def mem_read_after(state):
     except Exception as e:
         return
     
+    if is_ast_mmio_address(state, address):
+        state.irqplugin.syms.init_addr(address)
+        state.inspect.mem_read_expr = state.solver.BVS(f"mmio_sym_{hex(address)}", state.inspect.mem_read_length * 8)
+        return
     
-
     if not is_ast_pointer(state,address) or is_ast_stack_address(state,address) or is_ast_readonly(state,address) or state.irqplugin.syms.addr_already_init(address):
         state.inspect.mem_read_expr = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
         return
     
     
-    if is_ast_mmio_address(state, address):
-        state.irqplugin.syms.init_addr(address)
-        state.inspect.mem_read_expr = state.solver.BVS(f"mmio_sym_{hex(address)}", state.inspect.mem_read_length * 8)
-        return
+    
 
     
     value = state.memory.load(address, state.inspect.mem_read_length,disable_actions=True,inspect=False, endness='Iend_LE')
@@ -376,12 +362,15 @@ def mem_read_after(state):
     if is_ast_stack_address(state,concrete_value) or is_ast_mmio_address(state, concrete_value):
         state.inspect.mem_read_expr = concrete_value
         return
-    state.irqplugin.syms.init_addr(address)
-    state.inspect.mem_read_expr = state.solver.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
-    state.irqplugin.syms.value_concrete_value_map[state.inspect.mem_read_expr] = concrete_value
-    if state.inspect.mem_read_length == 4 and concrete_value == 0:
-        state.irqplugin.syms.null_values.add(state.inspect.mem_read_expr)
-        state.irqplugin.syms.value_addr_map[state.inspect.mem_read_expr] = address
+    if address in state.irqplugin.syms.addr_value_map:
+        state.inspect.mem_read_expr = state.irqplugin.syms.addr_value_map[address]
+    else:
+        state.inspect.mem_read_expr = state.solver.BVS(f"mem_sym_{hex(address)}", state.inspect.mem_read_length * 8)
+        state.irqplugin.syms.addr_value_map[address] = state.inspect.mem_read_expr
+        state.irqplugin.syms.value_concrete_value_map[state.inspect.mem_read_expr] = concrete_value
+        if state.inspect.mem_read_length == 4 and concrete_value == 0:
+            state.irqplugin.syms.null_values.add(state.inspect.mem_read_expr)
+            state.irqplugin.syms.value_addr_map[state.inspect.mem_read_expr] = address
     
 
         
@@ -392,12 +381,12 @@ def mem_write_after(state):
         addr = addr[1]
     if type(value) is tuple:
         value = value[1]
-
     
     if addr in state.irqplugin.syms.null_values:
         return
     if not is_ast_only_eval_one_value(state,addr):
         return
+
     get_memory_access(state,state.addr,addr,state.inspect.mem_read_length)
 
     state.irqplugin.syms.init_addr(state.solver.eval_one(addr))
@@ -432,9 +421,6 @@ def call_statement_before(state):
                         nullptr_func_check_mem.add(state.irqplugin.syms.value_addr_map[addr])
                     try_get_null_access(state,addr)
                     break
-                # if try_get_null_access(state,addr) != None:
-                #     print(addr,addr in state.irqplugin.syms.null_values)
-                #     break
                 if addr in state.irqplugin.syms.value_concrete_value_map and state.irqplugin.syms.value_concrete_value_map[addr] != 0:
                     if pc_addr not in  unsolved_func_ptr_addr:
                         unsolved_func_ptr_addr.add(pc_addr)
@@ -449,9 +435,12 @@ def call_statement_before(state):
 
 
 def call_before(state):
-
+    if not is_ast_only_eval_one_value(state,state.inspect.function_address):
+        return
+    address = state.solver.eval_one(state.inspect.function_address)
+    
     tmpr0 = state.regs.r0
-    state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(state.addr)}", 32)
+    state.regs.r0 = state.solver.BVS(f"callr0_sym_{hex(address)}", 32)
     state.solver.add(tmpr0 == state.regs.r0)
     if tmpr0 in state.irqplugin.syms.value_concrete_value_map:
         state.irqplugin.syms.value_concrete_value_map[state.regs.r0] = state.irqplugin.syms.value_concrete_value_map[tmpr0]
@@ -461,7 +450,7 @@ def call_before(state):
 
 
     tmpr1 = state.regs.r1
-    state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(state.addr)}", 32)
+    state.regs.r1 = state.solver.BVS(f"callr1_sym_{hex(address)}", 32)
     state.solver.add(tmpr1 == state.regs.r1)
     if tmpr1 in state.irqplugin.syms.value_concrete_value_map:
         state.irqplugin.syms.value_concrete_value_map[state.regs.r1] = state.irqplugin.syms.value_concrete_value_map[tmpr1]
@@ -470,7 +459,7 @@ def call_before(state):
         state.irqplugin.syms.value_addr_map[state.regs.r1] = state.irqplugin.syms.value_addr_map[tmpr1]
 
     tmpr2 = state.regs.r2
-    state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(state.addr)}", 32)
+    state.regs.r2 = state.solver.BVS(f"callr2_sym_{hex(address)}", 32)
     state.solver.add(tmpr2 == state.regs.r2)
     if tmpr2 in state.irqplugin.syms.value_concrete_value_map:
         state.irqplugin.syms.value_concrete_value_map[state.regs.r2] = state.irqplugin.syms.value_concrete_value_map[tmpr2]
@@ -479,7 +468,7 @@ def call_before(state):
         state.irqplugin.syms.value_addr_map[state.regs.r2] = state.irqplugin.syms.value_addr_map[tmpr2]
 
     tmpr3 = state.regs.r3
-    state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(state.addr)}", 32)
+    state.regs.r3 = state.solver.BVS(f"callr3_sym_{hex(address)}", 32)
     state.solver.add(tmpr3 == state.regs.r3)
     if tmpr3 in state.irqplugin.syms.value_concrete_value_map:
         state.irqplugin.syms.value_concrete_value_map[state.regs.r3] = state.irqplugin.syms.value_concrete_value_map[tmpr3]
@@ -490,8 +479,11 @@ def call_before(state):
 not_mrs_ins = set()
 def mrs_write_after(state):
     global project
+    if not is_ast_only_eval_one_value(state,state.regs.pc):
+        return
+    address = state.solver.eval_one(state.regs.pc)
     len_ = 4
-    if state.addr == fix_lr or state.addr in not_mrs_ins:
+    if address == fix_lr or address in not_mrs_ins:
         return
     try:
         pc_addr = state.solver.eval_one(state.regs.pc)
@@ -502,14 +494,15 @@ def mrs_write_after(state):
             if ins.mnemonic == "mrs" and "ipsr" not in ins.op_str:
                 setattr(state.regs,ins.op_str.split(",")[0],state.solver.BVS(f"mrs", 32))
             else:
-                not_mrs_ins.add(state.addr)
+                not_mrs_ins.add(address)
             break
 
     except Exception as e:
-        print(hex(state.addr))
+        print(hex(address))
 
 def ins_ret(state):
     state.regs.r0 = state.solver.BVS(f"ret_sym_{hex(state.addr)}", 32)
+    state.irqplugin.syms.return_state = True
 
 def new_cons(state):
     pass
@@ -549,25 +542,10 @@ def get_memory_access(state,ins_addr,addr,size):
     print_colorful_text("watchpoint " + hex(ins_addr) + "  " + hex(addr),foreground_color=TextColor.RED)
 
                 
-def trim_state(active_state, visited_state):
-    new_state = []
-    old_state = []
-    for state in active_state:
-        if state.addr not in visited_state:
-            new_state.append(state)
-        else:
-            old_state.append(state)
-    active_state.clear()
-    if len(new_state) > 50:
-        for state in new_state:
-            active_state.append(state)
-    else:
-        for state in new_state:
-            active_state.append(state)
-        extra_len = min(len(old_state), 50 - len(new_state))
-        for i in range(0, extra_len):
-            active_state.append(old_state[i])
-        
+
+
+    
+
     
     
 
@@ -591,7 +569,7 @@ def main():
 
     spiller = angr.exploration_techniques.Spiller(max=50)
     # suggest = angr.exploration_techniques.Suggestions()
-    # loopser = angr.exploration_techniques.LocalLoopSeer(bound=1)       
+    loopser = angr.exploration_techniques.LocalLoopSeer(bound=0x20)       
     project, initial_state = from_state_file(args.state,config)
 
     start_addr = int(args.vecbase,16) + 4 * int(args.irq,10)
@@ -611,7 +589,7 @@ def main():
     initial_state.inspect.b("call",when=angr.BP_BEFORE, action=call_before)
     initial_state.inspect.b("instruction",when=angr.BP_AFTER, action=mrs_write_after)
     initial_state.inspect.b("statement",when=angr.BP_BEFORE, action=call_statement_before)
-    # initial_state.inspect.b("return",when=angr.BP_AFTER, action=ins_ret)
+    initial_state.inspect.b("return",when=angr.BP_AFTER, action=ins_ret)
     
     
     
@@ -624,22 +602,93 @@ def main():
     # simgr.use_technique(loopser)
     
 
-    visited_addr = set()
-    for i in range(70):
-        # trim_state(simgr.active, visited_addr)
+
+    visited_ret_addrs = set()
+    while True:
+        states_to_add = []
         for state in simgr.active:
-            visited_addr.add(state.addr)
-            # for zephyr, a very complex operation happened
-            # if state.addr == 0xc7ef:
-            #     print(state.regs.r0)
             if state.addr == fix_lr:
                 model.toend = "y"
-            
+                continue
+            if state.addr not in state.irqplugin.syms.bbl_hit_counts:
+                state.irqplugin.syms.bbl_hit_counts[state.addr] = 1
+            else:
+                state.irqplugin.syms.bbl_hit_counts[state.addr] += 1
+            if state.irqplugin.syms.bbl_hit_counts[state.addr] > MAX_LOOP_TIMES:
+                continue
+            if state.irqplugin.syms.return_state:
+                if state.addr in visited_ret_addrs:
+                    continue
+                else: 
+                    state.irqplugin.syms.bbl_hit_counts.clear()
+                    visited_ret_addrs.add(state.addr)
+                    state.irqplugin.syms.return_state = False
+            succ = state.step()
+
+            if len(succ.successors) == 0:
+                pass
+            elif len(succ.successors) == 1:
+                # print(state,state,succ.successors[0])
+                states_to_add.append(succ.successors[0])
+                continue
+            elif len(succ.successors) == 2:
+                succ1 = succ.successors[0]
+                succ2 = succ.successors[1]
+                
+                visit_addr1 = set()
+                visit_addr2 = set()
+                
+                # print(state,succ1,succ2)
+                # if succ1.addr not in visited_addrs:
+                #     states_to_add.append(succ1)
+                # else:
+                tmp_simgr = project.factory.simgr(succ1)
+                for i in range(3):
+                    for state2 in tmp_simgr.active:
+                        visit_addr1.add(state2.addr)
+                    if state.addr in visit_addr1:
+                        break
+                    tmp_simgr.step(thumb=True)
+                if succ2.addr in visit_addr1:
+                    
+                    states_to_add.append(succ1)
+                    continue
+
+                # if succ2.addr not in visited_addrs:
+                #     states_to_add.append(succ2)
+                # else:
+                tmp_simgr = project.factory.simgr(succ2)
+                for i in range(3):
+                    for state2 in tmp_simgr.active:
+                        visit_addr2.add(state2.addr)
+                    if state.addr in visit_addr1:
+                        break
+                    tmp_simgr.step(thumb=True)
+                if succ1.addr in visit_addr2:
+                    states_to_add.append(succ2)
+                    continue
+
+                if succ1.addr != state.addr:
+                    states_to_add.append(succ1)
+                if succ2.addr != state.addr:
+                    states_to_add.append(succ2)
+            else:
+                print("why more than 2 successors, exit")
+                exit(0)
+
+        # print(simgr.active)        
+
+                    
+        simgr.active.clear()
+        for state in states_to_add:
+            # print("add",state)
+            simgr.active.append(state)
+        if len(simgr.active) == 0:
+            break
+    
         
-        # print(simgr.active)
         
         
-        simgr.step(thumb=True)
 
 
     
