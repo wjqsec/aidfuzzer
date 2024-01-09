@@ -19,7 +19,7 @@ struct IRQ_N_STATE
 {
     bool toend;
     hw_addr isr;
-    int mem_access_trigger_irq_times_count;
+    map<hw_addr,int> *mem_access_trigger_irq_times_count;
 
     map<hw_addr,WATCHPOINT*> *mem_addr;
     set<void*> *dependency_nullptr;

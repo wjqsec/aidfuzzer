@@ -157,9 +157,16 @@ void show_stat(FuzzState *state)
 {
   char output[PATH_MAX];
 
+  uint64_t time_fuzzed = (get_cur_time() / 1000) - state->start_time;
+  uint64_t hour = time_fuzzed / 3600;
+  uint64_t minutes = (time_fuzzed - hour * 3600) / 60;
+  uint64_t seconds = time_fuzzed - hour * 3600 - minutes * 60;
+
   // u32 edges = count_covered_bbl(state->virgin_bits, state->map_size);
-  sprintf(output,"[%lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu\n",
-  get_cur_time() / 1000,
+  sprintf(output,"[%02lu:%02lu:%02lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu\n",
+  hour,
+  minutes,
+  seconds,
   state->total_exec,
   // edges,
   state->total_unique_bbls,

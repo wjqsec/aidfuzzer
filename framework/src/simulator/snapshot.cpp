@@ -2,7 +2,7 @@
 #include "snapshot.h"
 #include "simulator.h"
 #include "irq.h"
-
+#include "log.h"
 ARMM_SNAPSHOT *org_snap,*new_snap;
 
 
@@ -115,7 +115,9 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
         return true;
     }
     #ifdef DBG
-    fprintf(flog,"%d->bbl pc:%x\n",run_index,pc);
+    fprintf(flog,"%d->bbl pc:%x  handle:%d  ",run_index,pc,get_arm_v7m_is_handler_mode());
+    append_simple_ctx_string(flog);
+    fprintf(flog,"\n");
     #endif
 
 

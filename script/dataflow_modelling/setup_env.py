@@ -37,7 +37,7 @@ def from_elf_file(elf_file):
     project = angr.Project(elf_file)
     initial_state = project.factory.blank_state() 
 
-def from_state_file(statefile,config):
+def from_state_file(statefile):
         
         with open(statefile, "r") as state_file:
             regs = {}
@@ -68,7 +68,7 @@ def from_state_file(statefile,config):
         initial_state.options.add(angr.options.AVOID_MULTIVALUED_WRITES)
         initial_state.options.add(angr.options.DOWNSIZE_Z3)
         initial_state.options.add(angr.options.FAST_MEMORY)
-        # initial_state.options.add(angr.options.SYMBOLIC_INITIAL_VALUES)
+        initial_state.options.add(angr.options.SYMBOLIC_INITIAL_VALUES)
 
         
 
@@ -89,7 +89,7 @@ def from_state_file(statefile,config):
         for name, val in regs.items():
             ast = claripy.BVS(f"initstate_{name}", 32)  
             if name == "sp":
-                setattr(initial_state.regs, name, 0x70000000)
+                setattr(initial_state.regs, name, 0xc0000000)
                 continue
             setattr(initial_state.regs, name, ast)
             

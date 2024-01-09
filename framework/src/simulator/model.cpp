@@ -160,7 +160,7 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
     IRQ_N_MODEL *model;
     IRQ_N_STATE *state;
 
-
+   
     while(fgets(line, PATH_MAX, f))
     {
         if(strstr(line,"-"))
@@ -172,10 +172,10 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
             if (model->state->find(id) == model->state->end())
             {
                 (*model->state)[id] = get_void_state();
-                printf("log irq %d\n",irq);
             }
             else
             {
+                state = nullptr;
                 continue;
             }
             state = (*model->state)[id];
@@ -189,6 +189,8 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
         }
         else
         {
+            if(!state)
+                continue;
             if(strstr(line,"mem:"))
             {
                 type = STOPWATCH_TYPE_MEM;
@@ -221,6 +223,8 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
                     watchpoint->addr = addr;
                     watchpoint->point = 0;
                     (*state->mem_addr)[addr] = watchpoint;
+
+                    (*state->mem_access_trigger_irq_times_count)[addr] = 0;
                     printf("add memory access watchpoint irq %d addr %x\n",irq,addr);
                 }
                 
@@ -255,9 +259,8 @@ void load_model(char *model_filename, IRQ_N_MODEL **models)
 
     fclose(f);
     
+
 }
-
-
 void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, IRQ_N_MODEL **models)
 {
     char *state_filename;

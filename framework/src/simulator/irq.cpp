@@ -28,7 +28,7 @@ IRQ_N_STATE *get_void_state()
     IRQ_N_STATE* state = new IRQ_N_STATE();
     state->isr = 0;
     state->toend = false;
-    state->mem_access_trigger_irq_times_count = 0;
+    state->mem_access_trigger_irq_times_count = new map<hw_addr,int>();
     state->mem_addr = new map<hw_addr,WATCHPOINT*>();
     state->dependency_nullptr = new set<void*>();
     state->func_nullptr = new map<hw_addr,WATCHPOINT*>();
@@ -59,7 +59,13 @@ __attribute__((always_inline)) void set_vec_watchpoint(irq_val irq,hw_addr addr)
     models[irq]->vec_watchpoints->insert(addr);
 }
 
-
+__attribute__((always_inline)) void reset_irq_mem_access(IRQ_N_STATE *state)
+{
+    for(auto it = state->mem_access_trigger_irq_times_count->begin(); it != state->mem_access_trigger_irq_times_count->end(); it++)
+    {
+        it->second = 0;
+    }
+}
 void set_state(IRQ_N_STATE *state,irq_val irq)
 {
     for(auto it = state->func_nullptr->begin() ; it!= state->func_nullptr->end(); it++)
@@ -74,7 +80,7 @@ void set_state(IRQ_N_STATE *state,irq_val irq)
     }
     
     
-    state->mem_access_trigger_irq_times_count = 0;
+    reset_irq_mem_access(state);
 }
 void clear_state(IRQ_N_STATE *state)
 {
@@ -147,6 +153,12 @@ void irq_set_isr(irq_val irq, hw_addr vec_addr)
     if(!is_isr_modeled(irq,isr))
     {
         dump_prcoess_load_model(irq,isr,isr, models);
+    }
+
+    if(models[irq]->state->find(isr) == models[irq]->state->end())
+    {
+        printf("unable to find irq model for id %x\n",isr);
+        terminate_simulation();
     }
 
     switch_state(current_id,isr, irq);  
@@ -269,11 +281,11 @@ void irq_on_mem_access(int irq,hw_addr addr)
 
     
 
-    state->mem_access_trigger_irq_times_count++;
-    if(state->mem_access_trigger_irq_times_count > (state->mem_addr->size() << 5))
+    (*state->mem_access_trigger_irq_times_count)[addr] ++;
+    if((*state->mem_access_trigger_irq_times_count)[addr] > 16)
     {
         insert_irq = insert_nvic_intc(irq);
-        state->mem_access_trigger_irq_times_count = 0;
+        reset_irq_mem_access(state);
         if(insert_irq) 
         {
             #ifdef DBG
@@ -316,7 +328,7 @@ void irq_on_idel()
         
         if(insert_irq)
         {
-            state->mem_access_trigger_irq_times_count = 0;
+            reset_irq_mem_access(state);
             #ifdef DBG
         
         
@@ -355,13 +367,15 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
         printf("resolved irq %d addr %x value %x\n",irq,addr,val);
         dump_prcoess_load_model(irq, new_id ,isr , models);
     }
+
     if(models[irq]->state->find(new_id) == models[irq]->state->end())
     {
         printf("unable to find irq model for id %x\n",new_id);
         terminate_simulation();
     }
+
     IRQ_N_STATE *new_state = (*models[irq]->state)[new_id];
-    
+
     new_state->func_resolved_ptrs->clear();
     new_state->func_resolved_ptrs->insert(tmp_func_resolved_ptrs.begin(), tmp_func_resolved_ptrs.end());
 
