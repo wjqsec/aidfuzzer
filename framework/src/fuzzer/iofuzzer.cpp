@@ -1,13 +1,10 @@
 #include <vector>
-#include <set>
 #include <map>
 #include <poll.h>
 #include <sched.h>
 #include <stdint.h>
 #include <cmath>
 #include <stdlib.h>
-#include <stdio.h>
-#include <linux/limits.h>
 #include <sys/types.h>
 #include <string.h>
 #include <algorithm>         /* Definition of AT_* constants */
@@ -28,6 +25,7 @@
 #include <unistd.h>
 #include <set>
 #include <sys/wait.h>
+#include <libgen.h>
 #include <linux/limits.h>
 #include <time.h>
 #include <stdio.h>
@@ -43,23 +41,21 @@
 using namespace std;
 
 
-void clean_fuzzer_shm(FuzzState *state);
-
 
 FuzzState global_state;
 bool terminate_next = false;
 
 
 string project_dir;
-char  in_dir[PATH_MAX];
+string output_dir;
+string config;
+
 char  out_dir[PATH_MAX];
 
 char  queue_dir[PATH_MAX];
+
 char  crash_dir[PATH_MAX];
-
 char  log_dir[PATH_MAX];
-
-char  config[PATH_MAX];
 
 char  dump_dir[PATH_MAX];
 char  dump_backup_dir[PATH_MAX];
@@ -72,13 +68,18 @@ string pool_file;
 string simulator_bin;
 string cov_log;
 string valid_bbl;
+string plot_log;
 
 bool use_fuzzware = true;
 bool model_infinite_loop = true;
 int max_bbl_exec = MAX_BBL_EXEC;
 int mode = -1;
 
-
+void clean_fuzzer_shm(FuzzState *state)
+{
+  shmdt(state->shared_stream_data);
+  shmctl(state->shm_id_streampool, IPC_RMID, 0);
+}
 void clean_fuzzer()
 {
   show_stat(&global_state);
@@ -91,9 +92,6 @@ void clean_fuzzer()
     save_queues(&global_state,queue_dir);
     save_freed_streams(&global_state,queue_dir);
   }
-  
-  
-
   clean_fuzzer_shm(&global_state);
 }
 void fuzzer_terminate(FuzzState *state) 
@@ -162,13 +160,11 @@ void show_stat(FuzzState *state)
   uint64_t minutes = (time_fuzzed - hour * 3600) / 60;
   uint64_t seconds = time_fuzzed - hour * 3600 - minutes * 60;
 
-  // u32 edges = count_covered_bbl(state->virgin_bits, state->map_size);
   sprintf(output,"[%02lu:%02lu:%02lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu\n",
   hour,
   minutes,
   seconds,
   state->total_exec,
-  // edges,
   state->total_unique_bbls,
   state->entries->size(),
   state->shared_stream_used,
@@ -180,7 +176,7 @@ void show_stat(FuzzState *state)
   );
   
   fputs(output,stdout);
-  fputs(output,global_state.flog);
+  fputs(output,state->flog);
   
   
 }
@@ -192,10 +188,8 @@ void save_coverage(FuzzState *state)
 }
 
 
-void sync_state(FuzzState *state)
+void init_fuzz(FuzzState *state)
 {
-
-
   Simulator *simulator;
 
   simulator = get_avaliable_simulator(state);
@@ -217,24 +211,8 @@ void sync_state(FuzzState *state)
   }
   
   show_stat(state);
-  printf("**********************sync state done**********************\n");
+  printf("**********************init fuzz done**********************\n");
 
-}
-
-EXIT_INFO run_input(FuzzState *state,queue_entry* fuzz_entry,Simulator **out_simulator)
-{
-
-  EXIT_INFO exit_info;
-  Simulator *simulator;
-
-  simulator = get_avaliable_simulator(state);  
-  simulator_task(simulator,fuzz_entry,0,0);
-  fuzz_start(simulator);
-  fuzz_exit(simulator,&exit_info);
-  simulator_classify_count(simulator);
-  if (out_simulator)
-    *out_simulator = simulator;
-  return exit_info;
 }
 
 u64 get_fuzz_round_scale(u64 times)
@@ -374,7 +352,7 @@ void trim_mutation(FuzzState *state,queue_entry* base_entry,queue_entry* fuzz_en
 }
 
 
-void init_entry_state(FuzzState *state,queue_entry*q, Simulator *simulator,u32 exit_reason)
+void init_entry_state(FuzzState *state,queue_entry*q,queue_entry* base_entry, Simulator *simulator,u32 exit_reason)
 {
   q->edges = count_trace_covered_bbl(simulator->trace_bits, simulator->map_size);
   q->fuzztimes = 0;
@@ -386,10 +364,16 @@ void init_entry_state(FuzzState *state,queue_entry*q, Simulator *simulator,u32 e
     // q->priority = q->priority / 10 + 1;
   q->create_time = (get_cur_time() / 1000) - state->start_time;
 
-  if(simulator->task.base_entry)
-    q->depth = simulator->task.base_entry->depth + 1;
+  if(base_entry)
+  {
+    q->depth = base_entry->depth + 1;
+  }
+    
   else
+  {
     q->depth = 1;
+  }
+    
 }
 
 
@@ -441,17 +425,20 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   EXIT_INFO exit_info;
   if(simulator->status == STATUS_FREE)
     return false;
+  
+
 
   while(1)
   {
     fuzz_exit(simulator,&exit_info);
+    
     
     if(exit_info.exit_code == EXIT_FUZZ_STREAM_NOTFOUND)
     {
       
       if(state->models->find(exit_info.stream_info.exit_stream_id) == state->models->end())
       {
-        if(use_fuzzware)
+        if(use_fuzzware && state->models->size() <= MAX_FUZZWARE_MODEL)
         {
           run_modelling(state,simulator);
           sync_models(state,simulator);
@@ -490,7 +477,8 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     break;
   }
   
-
+  
+  
   simulator_classify_count(simulator);
   int r = has_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size);
 
@@ -516,31 +504,34 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     save_coverage(state);
     state->total_unique_bbls = exit_info2.unique_bbls;
     
-    init_entry_state(state,fuzz_entry, out_simulator,exit_info2.exit_code);
+    init_entry_state(state,fuzz_entry,base_entry, out_simulator,exit_info2.exit_code);
 
     
-
     insert_queue(state,fuzz_entry);
 
     ret = true;
   }
 
+  
   if(unlikely(exit_info.exit_code == EXIT_FUZZ_CRASH))
   {
-    crash_info info;
-    info.pc = exit_info.exit_pc;
-    info.lr = exit_info.exit_lr;
-    if(!find_crash(state, &info) && state->crashes->size() < 100)
+    EXIT_INFO exit_info2 = run_input(state,fuzz_entry,0); // verify if it is really a crash
+    if (likely(exit_info2.exit_code == EXIT_FUZZ_CRASH))
     {
-
-      insert_crash(state,info);
-      save_crash(fuzz_entry,crash_dir);
-      save_crash_pool(state,crash_dir,fuzz_entry->cksum);
+      crash_info info;
+      info.pc = exit_info2.exit_pc;
+      info.lr = exit_info2.exit_lr;
+      if(!find_crash(state, &info) && state->crashes->size() < 100)
+      {
+        insert_crash(state,info);
+        init_entry_state(state,fuzz_entry,base_entry, simulator,exit_info.exit_code);
+        save_crash(fuzz_entry,crash_dir);
+        save_crash_pool(state,crash_dir,fuzz_entry->cksum);
+      }
     }
-
   }
   
-  if(likely(!r))
+  if(likely(!r || exit_info.exit_code == EXIT_FUZZ_CRASH))
   {
     free_queue(state,fuzz_entry);
     ret = false;
@@ -628,15 +619,14 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   {
     add_random(state, fuzz_entry);
   }
-
-
-
+  
   simulator = get_avaliable_simulator(state);  
-
   fuzz_one_post(state,simulator);
-
+  
+  
   simulator_task(simulator,fuzz_entry,entry,selected_streams);
   fuzz_start(simulator);
+  
 
   if(terminate_next)
       fuzzer_terminate(state);
@@ -689,7 +679,7 @@ inline queue_entry* select_entry(FuzzState *state)
 void fuzz_loop(FuzzState *state)
 { 
     queue_entry* entry;
-    sync_state(state);
+    init_fuzz(state);
     int times = 0;
     
     while(1)
@@ -698,7 +688,7 @@ void fuzz_loop(FuzzState *state)
         entry = select_entry(state);
 
         fuzz_queue(state,entry);
-
+  
         if((times & 0xff) == 0)
         {
           show_stat(state);
@@ -721,6 +711,9 @@ void fuzz_runonce(FuzzState *state)
   Simulator *simulator;
   load_default_pool(state,queue_dir);
   load_queues(state,queue_dir);
+  std::sort(state->entries->begin(), state->entries->end(), sort_queue);
+
+  FILE *f = fopen(plot_log.c_str(),"w");
   for(queue_entry *q : *state->entries)
   {
     EXIT_INFO exit_info = run_input(state,q,&simulator);
@@ -729,9 +722,14 @@ void fuzz_runonce(FuzzState *state)
     {
       printf("pc %x queue %x not found stream %x\n",exit_info.exit_pc,q->cksum,exit_info.stream_info.exit_stream_id);
     }
-    // update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+    if(f)
+      fprintf(f,"%lu %d\n",q->create_time,state->total_unique_bbls);
     show_stat(state);
+    if(terminate_next)
+      fuzzer_terminate(state);
   }
+  if(f)
+    fclose(f);
 }
 void fuzz_run_oneseed(FuzzState *state,const char *pool_file,const char *seed_file)
 {
@@ -742,18 +740,17 @@ void fuzz_run_oneseed(FuzzState *state,const char *pool_file,const char *seed_fi
   queue_entry *q = load_queue(&global_state,seed_file);
   exit_info = run_input(state,q,&simulator);
   state->total_unique_bbls = exit_info.unique_bbls;
-  // update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
+  
   show_stat(state);
 }
 
 
 void init_dir(void)
 {
-  sprintf(in_dir,"%s/in",project_dir.c_str());
-  sprintf(out_dir,"%s/out",project_dir.c_str());
-  sprintf(config,"%s/config.yml",project_dir.c_str());
 
-  sprintf(queue_dir,"%s/",in_dir);
+  sprintf(out_dir,"%s/out",output_dir.c_str());
+  sprintf(queue_dir,"%s/queue/",output_dir.c_str());
+
   sprintf(crash_dir,"%s/crash/",out_dir);
   sprintf(log_dir,"%s/log/",out_dir);
   sprintf(dump_dir,"%s/dump/",out_dir);
@@ -761,7 +758,7 @@ void init_dir(void)
   sprintf(dump_backup_dir,"%s/dump_backup/",out_dir);
   sprintf(coverage_file,"%s/coverage.bin",out_dir);
 
-  mkdir(in_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  mkdir(output_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(out_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(queue_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(crash_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
@@ -773,11 +770,7 @@ void init_dir(void)
 
 
 
-void clean_fuzzer_shm(FuzzState *state)
-{
-  shmdt(state->shared_stream_data);
-  shmctl(state->shm_id_streampool, IPC_RMID, 0);
-}
+
 
 
 void prepare_terminate(int signal)
@@ -822,49 +815,60 @@ void init()
 int main(int argc, char **argv)
 {
   int affinity = -1;
-  int status;
-  Simulator *simulator;
-  string mode_str;
-  int opt;
   int cores = 1;
   init();
 
   auto fuzz_cli = ( 
     clipp::command("fuzz").set(mode,MODE_FUZZ),
-    clipp::value("dir",project_dir),
+    clipp::value("dir",config),
     clipp::value("bin",simulator_bin),
 
+    clipp::option("-output")& clipp::value("output",output_dir),
     clipp::option("-no_use_fuzzware").set(use_fuzzware,false),
     clipp::option("-max_bbl")& clipp::value("max",max_bbl_exec),
     clipp::option("-core") & clipp::value("core",cores) ,
-    clipp::option("-affinity") & clipp::value("affinity",affinity)
-    
+    clipp::option("-affinity") & clipp::value("affinity",affinity),
+    clipp::option("-filter")& clipp::value("filter",valid_bbl)
+
   );
   auto run_cli = (
     clipp::command("run").set(mode,MODE_RUN),
-    clipp::value("dir",project_dir),
+    clipp::value("dir",config),
     clipp::value("bin",simulator_bin),
     
+    clipp::option("-output")& clipp::value("output",output_dir),
     clipp::option("-max_bbl")& clipp::value("max",max_bbl_exec),
     clipp::option("-cov_log")& clipp::value("cov",cov_log),
-    clipp::option("-filter")& clipp::value("filter",valid_bbl)
+    clipp::option("-filter")& clipp::value("filter",valid_bbl),
+    clipp::option("-plot")& clipp::value("plot",plot_log)
+    
   );
   auto debug_cli = (
     clipp::command("debug").set(mode,MODE_DEBUG),
-    clipp::value("dir",project_dir),
+    clipp::value("dir",config),
     clipp::value("bin",simulator_bin),
-    clipp::value("-queue",seed_file),
-    clipp::value("-pool",pool_file)
+    clipp::value("queue",seed_file),
+    clipp::value("pool",pool_file),
+    clipp::option("-output")& clipp::value("output",output_dir),
+    clipp::option("-max_bbl")& clipp::value("max",max_bbl_exec)
   );
   auto cli = ( 
     (fuzz_cli | run_cli | debug_cli)
   );
-  parse(argc, argv, cli);
 
-
-  if(mode == MODE_DEBUG || mode == MODE_RUN)
+  if (!parse(argc, argv, cli))
   {
-    cores = 1;
+      puts("usage error");
+      exit(0);
+  }
+  project_dir = string(dirname(strdup(config.c_str())));
+  if(valid_bbl == "")
+  {
+    valid_bbl = project_dir + "/valid_basic_blocks.txt";
+  }
+  if(output_dir == "")
+  {
+    output_dir = project_dir + "/aidfuzzer";
   }
     
   init_dir();
@@ -885,7 +889,7 @@ int main(int argc, char **argv)
           simulator_bin.c_str(),
           cores,
           mode,
-          config);
+          config.c_str());
 
   
   fuzzer_init(&global_state,FUZZ_COVERAGE_SIZE, SHARE_FUZZDATA_SIZE);

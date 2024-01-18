@@ -124,13 +124,13 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
     if(stream->ptr->mode == MODEL_CONSTANT)
     {
       stream->ptr->element_size = 4;
-      stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
+      stream->ptr->len = stream->ptr->element_size;
       *(u32*)stream->ptr->data = model->constant_val;
     }
     if(stream->ptr->mode == MODEL_PASSTHROUGH)
     {
       stream->ptr->element_size = 4;
-      stream->ptr->len = DEFAULT_PASSTHROUGH_CONSTANT_LEN;
+      stream->ptr->len = stream->ptr->element_size;
     }
     if(stream->ptr->mode == MODEL_BIT_EXTRACT)
     {
@@ -157,6 +157,14 @@ input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)
 
 input_stream * allocate_enough_space_stream(FuzzState *state,u32 id, s32 len)
 {
+  if(state->models->find(id) != state->models->end())
+  {
+    input_model *model = (*state->models)[id];
+    if(model->mode == MODEL_CONSTANT || model->mode == MODEL_PASSTHROUGH)
+    {
+      len = 4;
+    }
+  }
   input_stream * ret;
   ret = allocate_freed_enough_space_stream(state,id,len);
   if(!ret)

@@ -15,7 +15,7 @@ ARMM_SNAPSHOT* arm_take_snapshot()
 
     for(auto it = config->segs->begin(); it != config->segs->end(); it++)
     {
-        if(!(*it)->readonly && (*it)->type == SEG_RAM)
+        if((*it)->type == SEG_RAM)
         {
             snap->mems->push_back(new SNAPSHOT_MEM_SEG());
             snap->mems->back()->len = (*it)->size;

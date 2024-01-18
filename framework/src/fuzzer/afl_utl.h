@@ -90,22 +90,7 @@ inline static void update_virgin(u8* virgin_map, u8 *trace_bits, u32 size)
   while (i--) {
 
     if (unlikely(*current) && unlikely(*current & *virgin)) {
-
-      // if (likely(ret < 2)) {
-
-      //   u8* cur = (u8*)current;
-      //   u8* vir = (u8*)virgin;
-
-      //   if ((cur[0] && vir[0] == 0xff) || (cur[1] && vir[1] == 0xff) ||
-      //       (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff) ||
-      //       (cur[4] && vir[4] == 0xff) || (cur[5] && vir[5] == 0xff) ||
-      //       (cur[6] && vir[6] == 0xff) || (cur[7] && vir[7] == 0xff)) ret = 2;
-      //   else ret = 1;
-
-      // }
-
       *virgin &= ~*current;
-
     }
 
     current++;
@@ -247,30 +232,6 @@ inline static void init_count_class16(void) {
 
 }
 
-// inline static u32 count_bits(u8* mem, u32 size) {
-
-//   u32* ptr = (u32*)mem;
-//   u32  i   = (size >> 2);
-//   u32  ret = 0;
-
-//   while (i--) {
-
-//     u32 v = *(ptr++);
-
-//     if (v == 0xffffffff) {
-//       ret += 32;
-//       continue;
-//     }
-
-//     v -= ((v >> 1) & 0x55555555);
-//     v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
-//     ret += (((v + (v >> 4)) & 0xF0F0F0F) * 0x01010101) >> 24;
-
-//   }
-
-//   return ret;
-
-// }
 inline static u32 count_trace_covered_bbl(u8* mem, u32 size) {
 
 

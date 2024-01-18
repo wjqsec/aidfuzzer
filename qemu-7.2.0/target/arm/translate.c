@@ -9867,7 +9867,7 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
              * The helper doesn't necessarily throw an exception, but we
              * must go back to the main loop to check for interrupts anyway.
              */
-            tcg_gen_exit_tb(NULL, 0);
+            // tcg_gen_exit_tb(NULL, 0);
             break;
         case DISAS_WFE:
             gen_helper_wfe(cpu_env);

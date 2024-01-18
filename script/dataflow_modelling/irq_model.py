@@ -16,9 +16,9 @@ import traceback
 from colorful_print import *
 import time
 
-
+logging.getLogger('angr').setLevel('ERROR')
 MAX_LOOP_TIMES = 0x20
-TIMEOUT_SECONDS = 60 * 5
+TIMEOUT_SECONDS = 60 * 3
 
 config = Configs()
 stack_size = 0x4000
@@ -328,7 +328,6 @@ def mem_read_after(state):
     if type(value) is tuple:
         value = value[1]
     
-    
     # read_type = get_read_type(state)
     
     nullptr_ast = try_get_null_access(state,addr)
@@ -341,8 +340,7 @@ def mem_read_after(state):
     
 
     concrete_pointers = state.irqplugin.syms.get_concrete_value_for_pointers(addr)
-    if state.addr == 0x8028B3d:
-        print(addr,value,concrete_pointers)
+
     for concrete_pointer in concrete_pointers:
         state.add_constraints(concrete_pointer[0] == concrete_pointer[1])
         state.solver.reload_solver()
@@ -374,6 +372,7 @@ def mem_read_after(state):
     except Exception as e:
         return 
     
+
     if is_ast_stack_address(state,concrete_value) or is_ast_mmio_address(state, concrete_value) or is_pointer(concrete_value):
         state.inspect.mem_read_expr = state.solver.BVV(concrete_value,state.inspect.mem_read_length * 8)
         return
@@ -383,7 +382,7 @@ def mem_read_after(state):
         state.inspect.mem_read_expr = state.solver.BVS(f"mem_sym_{hex(state.addr)}", state.inspect.mem_read_length * 8)
         state.irqplugin.syms.addr_value_map[address] = state.inspect.mem_read_expr
         state.irqplugin.syms.value_concrete_value_map[state.inspect.mem_read_expr] = concrete_value
-        if state.inspect.mem_read_length == 4 and concrete_value == 0:
+        if state.inspect.mem_read_length == 4 and (concrete_value == 0 or concrete_value == 0xffffffff):
             state.irqplugin.syms.null_values.add(state.inspect.mem_read_expr)
             state.irqplugin.syms.value_addr_map[state.inspect.mem_read_expr] = address
     
@@ -397,17 +396,19 @@ def mem_write_after(state):
     if type(value) is tuple:
         value = value[1]
     
+
     if addr in state.irqplugin.syms.null_values:
         return
     if not is_ast_only_eval_one_value(state,addr):
         return
 
-    # if state.addr == 0x8001741:
-    #     print(addr)
+    
     get_memory_access(state,state.addr,addr,state.inspect.mem_read_length)
 
     state.irqplugin.syms.init_addr(state.solver.eval_one(addr))
     state.memory.store(state.solver.eval_one(addr),value,disable_actions=True,inspect=False, endness='Iend_LE')
+
+
 
 
 not_call_ins = set()
@@ -423,25 +424,32 @@ def call_statement_before(state):
         inses = md.disasm(disassembly_block, pc_addr)
         for ins in inses:
             if ("bx" in ins.mnemonic or "blx" in ins.mnemonic) and "lr" not in ins.op_str:
-                # print("0x%x:\t%s\t%s" %(ins.address, ins.mnemonic, ins.op_str))
                 if ins.address != pc_addr:
                     break
                 
                 addr = getattr(state.regs,ins.op_str)
                 
+                
                 if not addr.symbolic:
                     break
                 
+                
                 if addr in state.irqplugin.syms.null_values:
+                    
+
                     if state.irqplugin.syms.value_addr_map[addr] not in nullptr_func_check_mem:
+                        if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:
+                            break
+
                         print_colorful_text("add null funcptr pc " + hex(state.addr) + "  " + hex(state.irqplugin.syms.value_addr_map[addr]) + "  " + str(addr),foreground_color = TextColor.BLUE)
                         nullptr_func_check_mem.add(state.irqplugin.syms.value_addr_map[addr])
                     # try_get_null_access(state,addr)
                     break
+                
                 if addr in state.irqplugin.syms.value_concrete_value_map and state.irqplugin.syms.value_concrete_value_map[addr] != 0:
                     if pc_addr not in  unsolved_func_ptr_addr:
                         unsolved_func_ptr_addr.add(pc_addr)
-                        print_colorful_text("resolve a function at " + hex(pc_addr) + "  to pointer " + hex(state.irqplugin.syms.value_concrete_value_map[addr]), foreground_color = TextColor.YELLOW)
+                        print_colorful_text("resolve a function at " + hex(pc_addr) + "  "  + str(addr) + "  to pointer " + hex(state.irqplugin.syms.value_concrete_value_map[addr]), foreground_color = TextColor.YELLOW)
                     state.add_constraints(addr == state.irqplugin.syms.value_concrete_value_map[addr])
                     state.solver.reload_solver()
                     break
@@ -499,6 +507,7 @@ def mrs_write_after(state):
     global project
     if not is_ast_only_eval_one_value(state,state.regs.pc):
         return
+
     address = state.solver.eval_one(state.regs.pc)
     len_ = 4
     if address == fix_lr or address in not_mrs_ins:
@@ -516,7 +525,8 @@ def mrs_write_after(state):
             break
 
     except Exception as e:
-        print(hex(address))
+        pass
+
 
 def ins_ret(state):
     original_r0 = state.regs.r0
@@ -527,13 +537,10 @@ def ins_ret(state):
     except Exception as e:
         pass
     
-
-    
     state.irqplugin.syms.return_state = True
 
 def new_cons(state):
     pass
-    # print(hex(state.addr),state.inspect.added_constraints)
 
 def is_memory_action(action):
     return isinstance(action, angr.state_plugins.sim_action.SimActionData) and action.type == 'mem'
@@ -617,6 +624,8 @@ def main():
     initial_state.inspect.b("instruction",when=angr.BP_AFTER, action=mrs_write_after)
     initial_state.inspect.b("statement",when=angr.BP_BEFORE, action=call_statement_before)
     initial_state.inspect.b("return",when=angr.BP_AFTER, action=ins_ret)
+    # initial_state.inspect.b("reg_write",when=angr.BP_AFTER, action=reg_write_after)
+    
     
     
     
@@ -635,11 +644,14 @@ def main():
     
     pending_loop_states = []
     start_time = time.time()
+
+    s_state = None
     while True:
         states_to_add = []
 
         for state in simgr.active:
-
+            if state.addr == 0x34488:
+                print(state)
             visited_bbls_addrs.add(state.addr)
             if state.addr == fix_lr:
                 model.toend = "y"
@@ -647,23 +659,32 @@ def main():
 
             if not is_text_pointer(state.addr):
                 continue
-
+            
+            
             if state.addr not in state.irqplugin.syms.bbl_hit_counts:
                 state.irqplugin.syms.bbl_hit_counts[state.addr] = 1
             else:
                 state.irqplugin.syms.bbl_hit_counts[state.addr] += 1
             if state.irqplugin.syms.bbl_hit_counts[state.addr] > MAX_LOOP_TIMES:
                 continue
+            
             if state.irqplugin.syms.return_state:
                 if state.addr in visited_ret_addrs:
                     pending_loop_states.append(state)
-                    continue
                 else: 
                     visited_ret_addrs.add(state.addr)
+                    states_to_add.append(state)
                 state.irqplugin.syms.bbl_hit_counts.clear()
                 state.irqplugin.syms.return_state = False
+                continue
+                
+
+            try:
+                succ = state.step()
+            except Exception as e:
+                continue
             
-            succ = state.step()
+            
             
             if len(succ.successors) == 0:
                 pass
@@ -682,7 +703,8 @@ def main():
                 succ1 = succ.successors[0]
                 succ2 = succ.successors[1]
                 
-                # print(state,succ1,succ2)
+                
+                
                 succesors1 = []
                 succesors2 = []
 
@@ -696,19 +718,19 @@ def main():
                         states_to_add.append(succ1)
                     succesors1 = [succ_grand_child.addr for succ_grand_child in succ1.step(thumb=True).successors]
                 except Exception as e:
-                    # print(state,succ1,succ2)
+
                     succ1_erro = True
  
                 try:
                     if succ2.addr == fix_lr:
                         states_to_add.append(succ2)
                     succesors2 = [succ_grand_child.addr for succ_grand_child in succ2.step(thumb=True).successors]
-                    # print(state,succ1,succ2)
+
                 except Exception as e:
                     succ2_erro = True
 
 
-                
+
 
                 if succ1_erro and succ2_erro:
                     continue
@@ -719,16 +741,21 @@ def main():
                     states_to_add.append(succ1)
                     continue
                     
-                
                 if succ2.addr == state.addr:
                     dominator = succ1
                 elif succ1.addr == state.addr:
                     dominator = succ2
+                elif succ1.addr >= succ2.addr and succ1.addr < succ2.addr + succ2.block().size:
+                    dominator = succ2
+                elif succ2.addr >= succ1.addr and succ2.addr < succ1.addr + succ1.block().size:
+                    dominator = succ1
                 else:
                     if succ1.addr in succesors2:
                         dominator = succ2
                     elif succ2.addr in succesors1:
                         dominator = succ1
+                
+                
 
                 if dominator != None:
                     if dominator.addr not in visited_bbls_addrs:
@@ -751,10 +778,8 @@ def main():
 
         # print(simgr.active)        
         
-        
         simgr.active.clear()
         for state in states_to_add:
-            # print("add",state)
             simgr.active.append(state)
         if len(simgr.active) == 0:
             for i in range(50):
@@ -762,12 +787,8 @@ def main():
                     simgr.active.append(pending_loop_states.pop(0))
         if len(simgr.active) == 0:
             break
-        if (time.time() - start_time) >  TIMEOUT_SECONDS:
+        if (time.time() - start_time) >  TIMEOUT_SECONDS and len(states_to_add) == 0:
             break
-
-        
-        
-        
 
 
     

@@ -36,8 +36,6 @@ using namespace clipp;
 
 // #define ROUND_ROBIN
 
-int mode;
-
 SIMULATOR_CONFIG* config;
 
 
@@ -53,10 +51,10 @@ int fd_to_fuzzer, fd_from_fuzzer;
 FILE *flog;
 FILE *f_crash_log;
 FILE *f_irq_log;
-FILE *f_cov_log;
 
 uint64_t nommio_executed_bbls;
 uint64_t max_bbl_exec;
+uint64_t infinite_loop_exec;
 
 
 EXIT_INFO exit_info;
@@ -74,7 +72,6 @@ string fuzzware_config_filename;
 string cov_log;
 string cov_filter;
 
-bool use_fuzzware = true;
 
 
 extern ARMM_SNAPSHOT *org_snap,*new_snap;
@@ -92,8 +89,6 @@ CMD_INFO exit_with_code_get_cmd()
 
     #ifdef DBG
     fprintf(flog,"%d->exit pc:%x %s\n",run_index,get_arm_pc(),get_fuzz_exit_name(exit_info.exit_code));
-    if (f_cov_log)
-        fprintf(f_cov_log,"\n-------------------------\n");
     #endif
 
     exit_info.unique_bbls = total_unique_bbls.size();
@@ -105,11 +100,11 @@ CMD_INFO exit_with_code_get_cmd()
 
     } while (bytes_received != sizeof(CMD_INFO));
    
-
-    
     
     if(unlikely(cmd_info.cmd == CMD_TERMINATE))
     {
+        if (cov_log != "")
+            dump_coverage(cov_log.c_str());
         printf("received terminate cmd from fuzzer\n");
         terminate_simulation();
     }
@@ -121,6 +116,7 @@ void start_new()
 {
     arm_restore_snapshot(new_snap);
     nommio_executed_bbls = 0;
+    infinite_loop_exec = 0;
     run_index++;
     
     collect_streams();
@@ -171,7 +167,7 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
     if(!stream->avaliable)
     {
         
-        if(!stream->dumped && use_fuzzware)
+        if(!stream->dumped)
         {
             stream->dumped = true;
             dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir.c_str());
@@ -306,17 +302,13 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
     return false;
 }
 
-void insert_idel_irq()
-{
-    irq_on_idel();
 
-}
 void wfie_ins()
 {
     #ifdef DBG
     fprintf(flog,"%d->wfi/wfe\n",run_index);
     #endif
-    insert_idel_irq();
+    irq_on_idel(0);
     return;
 }
 void enable_arm_intc()
@@ -324,7 +316,7 @@ void enable_arm_intc()
     #ifdef DBG
             fprintf(flog,"%d->cpie\n",run_index);
     #endif
-    insert_idel_irq();
+    irq_on_idel(7);
 }
 
 void nostop_watchpoint_exec_overwrite_vec(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
@@ -363,10 +355,27 @@ void disenable_nvic(irq_val irq)
 
 bool arm_exec_loop_bbl(hw_addr pc,uint32_t id)
 {
+    CMD_INFO cmd_info;
+    if(unlikely(infinite_loop_exec >= MAX_INFINITE_LOOP_EXEC))
+    {
+        prepare_exit(EXIT_FUZZ_TIMEOUT);
+        cmd_info = exit_with_code_get_cmd();
+        if(cmd_info.cmd == CMD_FUZZ)
+        {
+            start_new();
+            return true;
+        }
+        else
+        {
+            printf("cmd %d after timeout not support\n",cmd_info.cmd);
+            terminate_simulation();
+        }
+    }
+    infinite_loop_exec++;
     #ifdef DBG
-            fprintf(flog,"%d->infinite loop\n",run_index);
+    fprintf(flog,"%d->infinite loop\n",run_index);
     #endif
-    insert_idel_irq();
+    irq_on_idel(7);
     return false;
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
@@ -427,9 +436,9 @@ void post_thread_exec(int exec_ret)
     if(exec_ret == EXCP_HLT || exec_ret == EXCP_HALTED)
     {
         #ifdef DBG
-            fprintf(flog,"%d->wfi/wfe\n",run_index);
+            fprintf(flog,"%d->post wfi/wfe\n",run_index);
         #endif
-        insert_idel_irq();
+        irq_on_idel(0);
         return;
     }
         
@@ -511,6 +520,10 @@ void cleanup()
 }
 void terminate_simulation()
 {
+    fclose(flog);
+    fclose(f_crash_log);
+    fclose(f_irq_log);
+
     cleanup();
     prepare_exit(EXIT_CTL_TERMINATE);
     write(fd_to_fuzzer , &exit_info,sizeof(EXIT_INFO));  //forkserver up
@@ -560,18 +573,11 @@ void init_log()
     sprintf(path_buffer,"%s/simulator_crash.txt",log_dir.c_str());
     f_crash_log = fopen(path_buffer,"w");
     sprintf(path_buffer,"%s/simulator_irq.txt",log_dir.c_str());
-    f_irq_log = fopen(path_buffer,"w");
+    f_irq_log = fopen(path_buffer,"a");
 
-    setbuf(flog,0);
-    setbuf(f_crash_log,0);
-    setbuf(f_irq_log,0);
-
-    if(cov_log != "")
-    {
-        f_cov_log = fopen(cov_log.c_str(),"w");
-        setbuf(f_cov_log,0);
-
-    }
+    // setbuf(flog,0);
+    // setbuf(f_crash_log,0);
+    // setbuf(f_irq_log,0);
 }
 
 void init(int argc, char **argv)
@@ -587,10 +593,8 @@ void init(int argc, char **argv)
     value("layout",fuzzware_config_filename),
 
     option("-max_bbl") & value("max bbl timeout",max_bbl_exec) ,
-    option("-mode") & value("mode",mode),
     option("-cov") & value("cov",cov_log),
-    option("-filter") & value("filter",cov_filter),
-    option("-no_use_fuzzware").set(use_fuzzware,false)
+    option("-filter") & value("filter",cov_filter)
     
     );
     parse(argc, argv, cli);

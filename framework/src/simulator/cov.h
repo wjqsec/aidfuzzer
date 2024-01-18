@@ -9,4 +9,5 @@ using namespace std;
 
 void init_bbl_filter(string *filter_file);
 void translate_bbl(hw_addr pc,bbl_id id);
+void dump_coverage(const char *filename);
 #endif

@@ -444,7 +444,7 @@ static void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
     uint32_t cflags = cpu->cluster_index << CF_CLUSTER_SHIFT;
     cflags |= parallel ? CF_PARALLEL : 0;
     cflags |= icount_enabled() ? CF_USE_ICOUNT : 0;
-    cflags |= CF_SINGLE_STEP;
+    // cflags |= CF_SINGLE_STEP;
     cpu->tcg_cflags = cflags;
 }
 

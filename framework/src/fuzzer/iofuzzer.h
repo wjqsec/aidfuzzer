@@ -142,7 +142,10 @@ struct FuzzState
     u32 total_unique_bbls;
 };
 
-
+static bool sort_queue(const queue_entry* l, const queue_entry* r) 
+{
+    return l->create_time < r->create_time;
+}
 
 
 bool fuzz_one_post(FuzzState *state,Simulator *simulator);
@@ -155,6 +158,8 @@ void clean_fuzzer_shm(FuzzState *state);
 extern bool terminate_next;
 
 extern string project_dir;
+extern string config;
+
 extern char  in_dir[PATH_MAX];
 extern char  out_dir[PATH_MAX];
 
@@ -163,7 +168,7 @@ extern char  crash_dir[PATH_MAX];
 
 extern char  log_dir[PATH_MAX];
 
-extern char  config[PATH_MAX];
+
 
 extern char  dump_dir[PATH_MAX];
 extern char  dump_backup_dir[PATH_MAX];

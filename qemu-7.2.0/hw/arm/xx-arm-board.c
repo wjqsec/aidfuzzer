@@ -13,6 +13,7 @@
 #include "hw/arm/stm32f205_soc.h"
 #include "hw/arm/boot.h"
 #include "sysemu/reset.h"
+#include "hw/intc/armv7m_nvic.h"
 #include "xx.h"
 
 #define SYSCLK_FRQ 25000000
@@ -160,13 +161,13 @@ static void machine_xx_arm_init(MachineState *mch)
     mms->refclk = clock_new(OBJECT(mch), "REFCLK");
     clock_set_hz(mms->refclk, REFCLK_FRQ);
 
+
     object_initialize_child(OBJECT(mms), "armv7m", &mms->armv7m, TYPE_ARMV7M);
     armv7m = DEVICE(&mms->armv7m);
 
     qdev_connect_clock_in(armv7m, "cpuclk", mms->sysclk);
     qdev_connect_clock_in(armv7m, "refclk", mms->refclk);
     qdev_prop_set_string(armv7m, "cpu-type", mc->default_cpu_type);
-
     object_property_set_link(OBJECT(&mms->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     sysbus_realize(SYS_BUS_DEVICE(&mms->armv7m), &error_fatal);

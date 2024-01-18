@@ -91,6 +91,8 @@ void init_streams()
 int get_stream_status(SHARED_STREAM * stream)
 {
     int status = STREAM_STATUS_OK;
+    if (stream->metadata->mode == MODEL_CONSTANT ||stream->metadata->mode ==  MODEL_PASSTHROUGH)
+        return status;
     if( stream->metadata->len < stream->metadata->element_size + *stream->used)
     {
         status = STREAM_STATUS_OUTOF;
@@ -112,6 +114,7 @@ void get_fuzz_data(SHARED_STREAM * stream, uint64_t *out)
             uint32_t tmp = 0;
             memcpy(&tmp,stream->metadata->data + *stream->used,stream->metadata->element_size);
             *out = stream->metadata->value_set[tmp % stream->metadata->value_set_size];
+            *stream->used += stream->metadata->element_size;
             break;
         }
         case MODEL_CONSTANT:
@@ -126,6 +129,7 @@ void get_fuzz_data(SHARED_STREAM * stream, uint64_t *out)
 
             memcpy(out,stream->metadata->data + *stream->used,stream->metadata->element_size);
             *out = *out << stream->metadata->left_shift;
+            *stream->used += stream->metadata->element_size;
             break;
         }
         
@@ -141,7 +145,7 @@ void get_fuzz_data(SHARED_STREAM * stream, uint64_t *out)
         }
     } 
     nommio_executed_bbls = 0;
-    *stream->used += stream->metadata->element_size;
+    
 }
 void set_queue_addr(void *ptr)
 {

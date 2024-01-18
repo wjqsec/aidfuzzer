@@ -43,7 +43,7 @@ void irq_on_mmio_access(int irq,uint32_t addr);
 void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val);
 void irq_on_enable_nvic_irq(int irq);
 void irq_on_disable_nvic_irq(int irq);
-void irq_on_idel();
+void irq_on_idel(int skip_count);
 void irq_on_new_run();
 void irq_on_init();
 void irq_on_snapshot();

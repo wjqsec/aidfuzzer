@@ -73,6 +73,21 @@ void fuzz_start(Simulator *simulator)
 
 
 }
+EXIT_INFO run_input(FuzzState *state,queue_entry* fuzz_entry,Simulator **out_simulator)
+{
+
+  EXIT_INFO exit_info;
+  Simulator *simulator;
+
+  simulator = get_avaliable_simulator(state);  
+  simulator_task(simulator,fuzz_entry,0,0);
+  fuzz_start(simulator);
+  fuzz_exit(simulator,&exit_info);
+  simulator_classify_count(simulator);
+  if (out_simulator)
+    *out_simulator = simulator;
+  return exit_info;
+}
 void fuzz_continue_stream_notfound(Simulator *simulator,input_stream *new_stream)
 {
   CMD_INFO cmd_info;
@@ -298,14 +313,12 @@ void allocate_new_simulator(FuzzState *state, int affinity)
 
   child_arg[i++] = alloc_printf("%d",start_fd + 1);
 
-  child_arg[i++] =  config;
+  child_arg[i++] =  strdup(config.c_str());
   child_arg[i++] = (char*)"-max_bbl";
   child_arg[i++] =  alloc_printf("%d",max_bbl_exec);
   child_arg[i++] = (char*)"-mode";
   child_arg[i++] =  alloc_printf("%d",mode);
 
-  if(!use_fuzzware)
-    child_arg[i++] = (char*)"-no_use_fuzzware";
   if (cov_log != "")
   {
     child_arg[i++] = (char*)"-cov";
@@ -354,7 +367,7 @@ void allocate_new_simulator(FuzzState *state, int affinity)
 
   if(exit_info.exit_code != EXIT_CTL_FORKSRV_UP)
   {
-    printf("fork server is not up got %s\n",fuzzer_exit_names[exit_info.exit_code]);
+    printf("fork server is not up got %s pc: %x lr:%x\n",fuzzer_exit_names[exit_info.exit_code],exit_info.exit_pc,exit_info.exit_lr);
     cleanup_simulator(state,pid);
     clean_fuzzer_shm(state);
     exit(0);

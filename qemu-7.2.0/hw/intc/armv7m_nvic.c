@@ -2378,16 +2378,19 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
         /* Generate BusFault for unprivileged accesses */
         return MEMTX_ERROR;
     }
+    
     switch (offset) {
     case 0x100 ... 0x13f: /* NVIC Set enable */
         offset += 0x80;
         setval = 1;
         /* fall through */
     case 0x180 ... 0x1bf: /* NVIC Clear enable */
+        
         startvec = 8 * (offset - 0x180) + NVIC_FIRST_IRQ;
         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
             if (value & (1 << i) &&
                 (attrs.secure || s->itns[startvec + i])) {
+                
                 s->vectors[startvec + i].enabled = setval;
                 if(setval == 1)
                 {
@@ -2608,7 +2611,7 @@ static const VMStateDescription vmstate_nvic = {
 
 static Property props_nvic[] = {
     /* Number of external IRQ lines (so excluding the 16 internal exceptions) */
-    DEFINE_PROP_UINT32("num-irq", NVICState, num_irq, 64),
+    DEFINE_PROP_UINT32("num-irq", NVICState, num_irq, NVIC_MAX_IRQ),
     DEFINE_PROP_END_OF_LIST()
 };
 

@@ -45,7 +45,7 @@ __attribute__((always_inline)) hw_addr get_current_isr(irq_val irq)
 {
     return (*models[irq]->state)[get_current_id(irq)]->isr;
 }
-__attribute__((always_inline)) bool is_isr_modeled(irq_val irq,hw_addr id)
+__attribute__((always_inline)) bool is_id_modeled(irq_val irq,hw_addr id)
 {
     return models[irq]->state->find(id) != models[irq]->state->end();
 }
@@ -141,27 +141,39 @@ void irq_set_isr(irq_val irq, hw_addr vec_addr)
 {
     hw_addr isr;
     hw_addr current_id = get_current_id(irq);
+    hw_addr new_id;
         
     if (vec_addr != INVALID_VECADDR)
         read_ram(vec_addr,sizeof(isr),&isr);
     else
         isr = 0;
-    
+    new_id = isr;
     if (vec_addr != INVALID_VECADDR && !is_vec_watchpoint_set(irq,vec_addr))
         set_vec_watchpoint(irq,vec_addr);
 
-    if(!is_isr_modeled(irq,isr))
+    if(!is_id_modeled(irq,new_id))
     {
-        dump_prcoess_load_model(irq,isr,isr, models);
+        dump_prcoess_load_model(irq,new_id,isr, models);
     }
 
-    if(models[irq]->state->find(isr) == models[irq]->state->end())
+    if(models[irq]->state->find(new_id) == models[irq]->state->end())
     {
         printf("unable to find irq model for id %x\n",isr);
         terminate_simulation();
     }
 
-    switch_state(current_id,isr, irq);  
+    switch_state(current_id,new_id, irq);  
+
+    IRQ_N_STATE *new_state = (*models[irq]->state)[new_id];
+
+    for(auto it = new_state->func_nullptr->begin(); it != new_state->func_nullptr->end(); it++)
+    {
+        hw_addr addr = it->first;
+        uint32_t val;
+        read_ram(addr,4,&val);   
+        irq_on_unsolved_func_ptr_write(irq, addr, val);
+    }
+
 }
 hw_addr get_current_vec_addr(irq_val irq)
 {
@@ -282,7 +294,7 @@ void irq_on_mem_access(int irq,hw_addr addr)
     
 
     (*state->mem_access_trigger_irq_times_count)[addr] ++;
-    if((*state->mem_access_trigger_irq_times_count)[addr] > 16)
+    if((*state->mem_access_trigger_irq_times_count)[addr] > NUM_IRQ_MEM_ACCESS_TIMES)
     {
         insert_irq = insert_nvic_intc(irq);
         reset_irq_mem_access(state);
@@ -296,21 +308,21 @@ void irq_on_mem_access(int irq,hw_addr addr)
 }
 
 
-void irq_on_idel()
+void irq_on_idel(int skip_count)
 {   
     int irq;
+    
+    if (skip_count)
+    {
+        idle_count++;
+        if (idle_count <= skip_count)
+        {
+            return;
+        }
+    }
     if(get_arm_v7m_is_handler_mode() != 0)
         return;
-
-    // if (use_count)
-    // {
-    //     idle_count++;
-    //     if ((idle_count & 0x7) != 0)
-    //         return;
-    // }
-    
-
-        
+    idle_count = 0;    
     for(int i = 0 ; i < enabled_irqs.size(); i++)
     {
         irq = enabled_irqs[i];

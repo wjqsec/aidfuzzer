@@ -17,4 +17,5 @@ void simulator_classify_count(Simulator * simulator);
 void simulator_task(Simulator *simulator,queue_entry* fuzz_entry,queue_entry* base_entry, set<u32> *fuzz_streams);
 void cleanup_simulator(FuzzState *state,int pid);
 void allocate_new_simulator(FuzzState *state, int affinity);
+EXIT_INFO run_input(FuzzState *state,queue_entry* fuzz_entry,Simulator **out_simulator);
 #endif

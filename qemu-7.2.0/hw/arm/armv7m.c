@@ -271,6 +271,7 @@ static void armv7m_instance_init(Object *obj)
     memory_region_init(&s->container, obj, "armv7m-container", UINT64_MAX);
 
     object_initialize_child(obj, "nvic", &s->nvic, TYPE_NVIC);
+
     object_property_add_alias(obj, "num-irq",
                               OBJECT(&s->nvic), "num-irq");
 
@@ -288,6 +289,8 @@ static void armv7m_instance_init(Object *obj)
 
     s->refclk = qdev_init_clock_in(DEVICE(obj), "refclk", NULL, NULL, 0);
     s->cpuclk = qdev_init_clock_in(DEVICE(obj), "cpuclk", NULL, NULL, 0);
+
+    
 }
 
 static void armv7m_realize(DeviceState *dev, Error **errp)
