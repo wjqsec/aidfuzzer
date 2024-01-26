@@ -2319,7 +2319,7 @@ static inline void QEMU_ALWAYS_INLINE
 store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
              MemOpIdx oi, uintptr_t retaddr, MemOp op)
 {
-
+    
     const size_t tlb_off = offsetof(CPUTLBEntry, addr_write);
     const unsigned a_bits = get_alignment_bits(get_memop(oi));
     const size_t size = memop_size(op);
@@ -2352,7 +2352,6 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
         }
         tlb_addr = tlb_addr_write(entry) & ~TLB_INVALID_MASK;
     }
-
     /* Handle anything that isn't just a straight memory access.  */
     if (unlikely(tlb_addr & ~TARGET_PAGE_MASK)) {
         CPUTLBEntryFull *full;

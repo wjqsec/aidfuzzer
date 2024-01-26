@@ -1,7 +1,7 @@
 #include "stream_loader.h"
 
 
-void save_pool_file(FuzzState *state,char *filename)
+void save_pool_file(FuzzState *state,const char *filename)
 {
   FILE *f_pool = fopen(filename,"wb");
   fwrite(state->shared_stream_data,state->shared_stream_used,1,f_pool);
@@ -19,7 +19,7 @@ void load_pool_file(FuzzState *state,const char *filename)
   fclose(f_pool);
   update_stream_ptr(state, size);
 }
-void save_default_pool(FuzzState *state,char *queue_dir)
+void save_default_pool(FuzzState *state,const char *queue_dir)
 {
   if(state->shared_stream_used == 0)
     return;
@@ -28,7 +28,7 @@ void save_default_pool(FuzzState *state,char *queue_dir)
   save_pool_file(state,filename);
   
 }
-void load_default_pool(FuzzState *state,char *queue_dir)
+void load_default_pool(FuzzState *state,const char *queue_dir)
 {
   char filename[PATH_MAX];
   
@@ -36,7 +36,7 @@ void load_default_pool(FuzzState *state,char *queue_dir)
   load_pool_file(state,filename);
 }
 
-void save_crash_pool(FuzzState *state,char *crash_dir, u32 id)
+void save_crash_pool(FuzzState *state,const char *crash_dir, u32 id)
 {
   char filename[PATH_MAX];
   sprintf(filename,"%s/pool_%x.bin",crash_dir,id);
@@ -46,7 +46,7 @@ void load_crash_pool(FuzzState *state,const char *filename)
 {
   load_pool_file(state,filename);
 }
-void save_queue(queue_entry *q,char *dir)
+void save_queue(queue_entry *q,const char *dir)
 {
   char filename[PATH_MAX];
   sprintf(filename,"%s/queue_%08x_%d_%d_%d",dir,q->cksum,q->depth,q->edges,q->exit_reason);
@@ -61,7 +61,7 @@ void save_queue(queue_entry *q,char *dir)
 
   fclose(f_queue);
 }
-void save_crash(queue_entry *q,char *crash_dir)
+void save_crash(queue_entry *q,const char *crash_dir)
 {
   save_queue(q,crash_dir);
 }
@@ -92,7 +92,7 @@ queue_entry *load_queue(FuzzState *state,const char *seedfile)
   return q;
 }
 
-void save_queues(FuzzState *state,char *queue_dir)
+void save_queues(FuzzState *state,const char *queue_dir)
 {
   for(queue_entry *q : *state->entries)
   {
@@ -100,7 +100,7 @@ void save_queues(FuzzState *state,char *queue_dir)
   }
 }
 
-void load_queues(FuzzState *state,char *queue_dir)
+void load_queues(FuzzState *state,const char *queue_dir)
 {
   u32 cksum;
   DIR* dir;
@@ -108,8 +108,6 @@ void load_queues(FuzzState *state,char *queue_dir)
   queue_entry *q;
   char filename[PATH_MAX];
   
-
-
   dir = opendir(queue_dir);
   if (dir == NULL) {
     fatal("opendir error");
@@ -127,44 +125,9 @@ void load_queues(FuzzState *state,char *queue_dir)
   closedir(dir);
 }
 
-void clean_queues(FuzzState *state,char *queue_dir)
+void clean_queues(const char *queue_dir)
 {
   char cmd[PATH_MAX];
   sprintf(cmd,"rm -rf %s/*",queue_dir);
   system(cmd);
-}
-void save_freed_streams(FuzzState *state,char *queue_dir)
-{
-  char filename[PATH_MAX];
-  sprintf(filename,"%s/%s",queue_dir,FREED_STREAMS_FILENAME);
-  FILE *f_freed_streams = fopen(filename,"wb");
-  vector<input_stream*>* streams;
-  for(auto it = state->freed_streams->begin(); it != state->freed_streams->end(); it++)
-  {
-    streams = it->second;
-    for(input_stream* stream: *streams)
-    {
-      fwrite(stream,offsetof(input_stream,offset_to_save),1,f_freed_streams);
-    }
-  }
-  fclose(f_freed_streams);
-}
-void load_freed_streams(FuzzState *state,char *queue_dir)
-{
-  char filename[PATH_MAX];
-  sprintf(filename,"%s/%s",queue_dir,FREED_STREAMS_FILENAME);
-  FILE *f_freed_streams = fopen(filename,"rb");
-  if(!f_freed_streams)
-    return;
-  input_stream* stream;
-  while(true)
-  {
-    stream = new input_stream();
-    if(!fread(stream,offsetof(input_stream,offset_to_save),1,f_freed_streams))
-      break;
-    stream->ptr = (stream_metadata*) (state->shared_stream_data + stream->offset_to_stream_area);
-    free_stream(state,stream);
-  }
-  delete stream;
-  fclose(f_freed_streams);
 }

@@ -34,7 +34,7 @@ using namespace clipp;
 //#define DBG
 #define CRASH_DBG
 
-// #define ROUND_ROBIN
+
 
 SIMULATOR_CONFIG* config;
 
@@ -60,6 +60,7 @@ uint64_t infinite_loop_exec;
 EXIT_INFO exit_info;
 bool next_bbl_should_exit = false;
 
+uint32_t crash_times = 0;
 
 uint32_t run_index;
 
@@ -166,11 +167,12 @@ uint64_t mmio_read_common(void *opaque,hw_addr addr,unsigned size)
 
     if(!stream->avaliable)
     {
-        
-        if(!stream->dumped)
+        static int num_dumped = 0;
+        if(!stream->dumped && num_dumped < (MAX_FUZZWARE_MODEL + 10))
         {
+            num_dumped++;
             stream->dumped = true;
-            dump_state(stream_id,MMIO_STATE_PREFIX,dump_dir.c_str());
+            dump_state(stream_id,MMIO_STATE_PREFIX);
             
         }
 
@@ -271,10 +273,68 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
     #ifdef ROUND_ROBIN
     if ((bbls % ROUNDROBIN_IRQ_BBLS) == 0)
     {
-        
+        uint32_t stream_id = IRQ_STREAM_ID;
+        uint64_t ret = 0;
+        SHARED_STREAM * stream =  get_stream(stream_id);
+        if(!stream->avaliable)
+        {
+
+            prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,pc,0,stream_id,0,1);
+            cmd_info = exit_with_code_get_cmd();
+            if (cmd_info.cmd == CMD_CONTINUE_ADD_STREAM)
+            {
+                add_stream(cmd_info.added_stream_index);
+                if(!stream->avaliable)
+                {
+                    printf("stream not added by fuzzer id:%x\n",stream_id);
+                    terminate_simulation();
+                    return true;
+                }
+            }
+            else if(cmd_info.cmd == CMD_FUZZ)
+            {
+                start_new();
+                return true;
+            }
+            else
+            {
+                printf("cmd %d after stream not found not support\n",cmd_info.cmd);
+                terminate_simulation();
+            }
+        }
+
+        int stream_status = get_stream_status(stream);
+       
+        if(likely(stream_status == STREAM_STATUS_OK))
+        {
+            get_fuzz_data(stream, &ret);  
+        }
+        else if(stream_status == STREAM_STATUS_OUTOF)
+        {
+            prepare_exit(EXIT_FUZZ_OUTOF_STREAM,pc,0,stream_id,0,0);
+            cmd_info = exit_with_code_get_cmd();
+            if (cmd_info.cmd == CMD_FUZZ)
+            {
+                start_new();
+                return true;
+            }
+            else
+            {
+                printf("cmd %d after stream outof not support\n",cmd_info.cmd);
+                terminate_simulation();
+            }
+            
+        }
+        else
+        {
+            printf("stream status %d not found\n",stream_status);
+            terminate_simulation();
+        }
+
+
         irq_val *irqs;
         irq_val num_irqs =  get_enabled_nvic_irq(&irqs);
-        int index = (bbls / ROUNDROBIN_IRQ_BBLS) % (num_irqs - ARMV7M_EXCP_SYSTICK + 1);
+        int index = ret % (num_irqs - ARMV7M_EXCP_SYSTICK + 1);
 
         bool insert  = insert_nvic_intc(irqs[index + ARMV7M_EXCP_SYSTICK -1]);
         
@@ -316,7 +376,7 @@ void enable_arm_intc()
     #ifdef DBG
             fprintf(flog,"%d->cpie\n",run_index);
     #endif
-    irq_on_idel(7);
+    irq_on_idel(NUM_IRQ_CPIE_TIMES);
 }
 
 void nostop_watchpoint_exec_overwrite_vec(hw_addr vaddr,hw_addr len,uint32_t val, void *data)
@@ -375,7 +435,7 @@ bool arm_exec_loop_bbl(hw_addr pc,uint32_t id)
     #ifdef DBG
     fprintf(flog,"%d->infinite loop\n",run_index);
     #endif
-    irq_on_idel(7);
+    irq_on_idel(NUM_IRQ_LOOP_TIMES);
     return false;
 }
 bool arm_cpu_do_interrupt_hook(int32_t exec_index)
@@ -407,9 +467,14 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     }
 
     #ifdef CRASH_DBG
-    fprintf(f_crash_log,"%d->crash ",run_index);
-    append_full_ctx_string(f_crash_log);
-    fprintf(f_crash_log,"\n");
+    if(crash_times < 10000)
+    {
+        fprintf(f_crash_log,"%d->crash ",run_index);
+        append_full_ctx_string(f_crash_log);
+        fprintf(f_crash_log,"\n");
+        crash_times++;
+    }
+    
     #endif
 
     prepare_exit(EXIT_FUZZ_CRASH,get_arm_pc(),get_arm_lr(),0,0,0);
@@ -473,7 +538,8 @@ void post_thread_exec(int exec_ret)
 
 void mem_access_log(hw_addr vaddr,uint32_t val,uint32_t flag)
 {
-    fprintf(flog,"%d->memory access pc:%x addr:%x value:%x flag:%d\n",run_index,get_arm_precise_pc(),vaddr,val,flag);
+    const char *op = flag == QEMU_PLUGIN_MEM_R_ ? "read" : "write";
+    fprintf(flog,"%d->memory %s pc:%x addr:%x value:%x\n",run_index,op,get_arm_precise_pc(),vaddr,val);
 }
 
 //-----------------------------------------------------------
@@ -679,8 +745,6 @@ int run_config()
     model_all_infinite_loop();
 
     #endif
-    
-
     exec_simulator(simulator);
     return 1;
 }

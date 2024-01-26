@@ -12,11 +12,9 @@
 std::vector<char *> dictionary;
 #define HAVOC_BLK_SMALL     64
 #define HAVOC_BLK_MEDIUM    128
-#define HAVOC_BLK_LARGE     256
-#define HAVOC_BLK_XL        512
-#define HAVOC_BLK_XXL        1024
+#define HAVOC_BLK_LARGE     2048
+#define HAVOC_BLK_XL        (1 << 15)
 
-#define HAVOC_BLK_HUGE        0x1000
 
 #define MAX_FILE            (100 * 0x1000)
 #ifndef MIN
@@ -86,7 +84,7 @@ static u32 choose_block_len(u32 limit,u32 align) {
 
   u32 ret;
   u32 min_value, max_value;
-  u32 rlim = 4;
+  u32 rlim = 3;
 
 
   switch (UR(rlim)) {
@@ -98,20 +96,17 @@ static u32 choose_block_len(u32 limit,u32 align) {
     case 1:  min_value = HAVOC_BLK_SMALL;
              max_value = HAVOC_BLK_MEDIUM;
              break;
-    case 2:  min_value = HAVOC_BLK_MEDIUM;
-             max_value = HAVOC_BLK_LARGE;
-             break;
     default: 
 
              if (UR(5)) {
 
-               min_value = HAVOC_BLK_LARGE;
-               max_value = HAVOC_BLK_XL;
+               min_value = HAVOC_BLK_MEDIUM;
+               max_value = HAVOC_BLK_LARGE;
 
              } else {
 
-               min_value = HAVOC_BLK_XL;
-               max_value = HAVOC_BLK_XXL;
+               min_value = HAVOC_BLK_LARGE;
+               max_value = HAVOC_BLK_XL;
 
              }
 
@@ -326,12 +321,12 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
   u8 *data = stream->ptr->data;
   s32 len = stream->ptr->len;
   input_stream* ret = stream;
-  if (len + HAVOC_BLK_XXL < MAX_FILE) {
+  if (len + HAVOC_BLK_XL < MAX_FILE) {
 
           u32 clone_from, clone_to, clone_len;
           input_stream *new_stream;
 
-          clone_len = choose_block_len(HAVOC_BLK_XXL,stream->ptr->element_size);
+          clone_len = choose_block_len(HAVOC_BLK_XL,stream->ptr->element_size);
           clone_from = 0;
 
 
@@ -344,13 +339,25 @@ inline input_stream* havoc_insert(FuzzState *state,input_stream* stream)
           memcpy(new_stream->ptr->data, data, clone_to);
 
           /* Inserted part */
-          if (!UR(5))
-            memset(new_stream->ptr->data + clone_to,0,clone_len);
-          else if (!UR(5))
-            memset(new_stream->ptr->data + clone_to,0xff,clone_len);
-          else
-            rand_memset(new_stream->ptr->data + clone_to,clone_len);
 
+          switch(UR(5))
+          {
+            case 0:
+            memset(new_stream->ptr->data + clone_to,0,clone_len);
+            break;
+            case 1:
+            memset(new_stream->ptr->data + clone_to,0xff,clone_len);
+            break;
+            case 2:
+            memset(new_stream->ptr->data + clone_to,UR(0X100),clone_len);
+            break;
+            case 3:
+            // rand_ascii(new_stream->ptr->data + clone_to, clone_len,new_stream->ptr->element_size);
+            // break;
+            default:
+            rand_memset(new_stream->ptr->data + clone_to,clone_len);
+            break;
+          }
           /* Tail */
           memcpy(new_stream->ptr->data + clone_to + clone_len, data + clone_to,
                   len - clone_to);
@@ -659,12 +666,24 @@ void add_random(FuzzState *state, queue_entry *q)
     new_stream = resize_stream(state,it->second,it->second->ptr->len + len);
 
 
-    if (!UR(5))
+    switch(UR(5))
+    {
+      case 0:
       memset(new_stream->ptr->data + it->second->ptr->len,0,len);
-    else if (!UR(5))
+      break;
+      case 1:
       memset(new_stream->ptr->data + it->second->ptr->len,0xff,len);
-    else
+      break;
+      case 2:
+      memset(new_stream->ptr->data + it->second->ptr->len,UR(0X100),len);
+      break;
+      case 3:
+      // rand_ascii(new_stream->ptr->data + it->second->ptr->len, len,new_stream->ptr->element_size);
+      // break;
+      default:
       rand_memset(new_stream->ptr->data + it->second->ptr->len,len);
+      break;
+    }
     
     new_streams[it->second->ptr->stream_id] = new_stream;
     

@@ -31,7 +31,14 @@ void free_stream(FuzzState *state,input_stream *stream)
   freed_streams->push_back(stream);
 
 }
-
+void clear_free_stream(FuzzState *state)
+{
+  for(auto it = state->freed_streams->begin(); it != state->freed_streams->end(); it++)
+  {
+    delete it->second;
+  }
+  state->freed_streams->clear();
+}
 input_stream * allocate_freed_enough_space_stream(FuzzState *state,u32 id, s32 len)
 {
   
@@ -61,33 +68,40 @@ input_stream * allocate_freed_enough_space_stream(FuzzState *state,u32 id, s32 l
 
 void rearrange_pool(FuzzState *state)
 {
-  void *tmp_buf;
-  map<input_stream *,void*> all_streams;
+  uint8_t *tmp_buf;
+  map<input_stream *,uint8_t*> all_streams;
   for(auto it = state->entries->begin(); it != state->entries->end(); it++)
   {
-    for(auto s = (*it)->streams->begin(); s != (*it)->streams->begin(); s++)
+    for(auto s = (*it)->streams->begin(); s != (*it)->streams->end(); s++)
     {
       if(all_streams.find(s->second) != all_streams.end())
         continue;
       int len = sizeof(stream_metadata) + s->second->ptr->len;
-      tmp_buf = (uint8_t *)malloc(len);
-      memcpy(tmp_buf,s->second->ptr,len);
+      tmp_buf = (uint8_t*)malloc(len + sizeof(int));
+      *(int*)tmp_buf = len;
+      memcpy(tmp_buf + sizeof(int),s->second->ptr,len);
       all_streams[s->second] = tmp_buf;
     }
   }
+
   zero_stream_ptr(state);
   for(auto it = all_streams.begin(); it != all_streams.end(); it++)
   {
-    int len = sizeof(stream_metadata) + it->first->ptr->len;
+    int len = *(int*)(it->second);
+
     it->first->offset_to_stream_area = get_stream_used(state);
+
     it->first->ptr = (stream_metadata*)(state->shared_stream_data + it->first->offset_to_stream_area);
-    
-    memcpy(it->first->ptr,it->second,len);
+
+    memcpy(it->first->ptr,it->second + sizeof(int),len);
+
     it->first->ptr->initial_len = len;
+
     free(it->second);
+
     update_stream_ptr(state, len);
   }
-  state->freed_streams->clear();
+  clear_free_stream(state);
 }
 
 input_stream *allocate_new_stream(FuzzState *state,u32 id , u32 len)

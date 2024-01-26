@@ -9,24 +9,23 @@
 #include "afl_utl.h"
 #include "mis_utl.h"
 #include <sys/stat.h>
-void save_default_pool(FuzzState *state,char *queue_dir);
+void save_default_pool(FuzzState *state,const char *queue_dir);
 
-void load_default_pool(FuzzState *state,char *queue_dir);
-void save_crash_pool(FuzzState *state,char *crash_dir, u32 id);
+void load_default_pool(FuzzState *state,const char *queue_dir);
+void save_crash_pool(FuzzState *state,const char *crash_dir, u32 id);
 void load_crash_pool(FuzzState *state,const char *filename);
 
 
-void save_queue(queue_entry *q,char *dir);
+void save_queue(queue_entry *q,const char *dir);
 
-void save_crash(queue_entry *q,char *crash_dir);
+void save_crash(queue_entry *q,const char *crash_dir);
 
-queue_entry *load_queue(FuzzState *state,const char *seedfile);
+queue_entry *load_queue(FuzzState *state, const char *seedfile);
 
-void save_queues(FuzzState *state,char *queue_dir);
+void save_queues(FuzzState *state,const char *queue_dir);
 
 
-void load_queues(FuzzState *state,char *queue_dir);
-void save_freed_streams(FuzzState *state,char *queue_dir);
-void load_freed_streams(FuzzState *state,char *queue_dir);
-void clean_queues(FuzzState *state,char *queue_dir);
+void load_queues(FuzzState *state,const char *queue_dir);
+
+void clean_queues(const char *queue_dir);
 #endif

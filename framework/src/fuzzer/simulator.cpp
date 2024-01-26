@@ -129,10 +129,6 @@ void fuzz_exit(Simulator *simulator,EXIT_INFO *exit_info)
   read(simulator->fd_ctl_from_simulator, exit_info,sizeof(EXIT_INFO));
   
   simulator->status = STATUS_FREE;
-  simulator->state->total_exec++;
-  simulator->state->exit_reason[exit_info->exit_code]++;
-
-
 }
 void fuzz_exit_timeout(Simulator *simulator,EXIT_INFO *exit_info, u32 seconds, bool *timeout)
 {
@@ -150,7 +146,6 @@ void fuzz_exit_timeout(Simulator *simulator,EXIT_INFO *exit_info, u32 seconds, b
     *timeout = false;
     read(simulator->fd_ctl_from_simulator, exit_info,sizeof(EXIT_INFO));
   } 
-  simulator->status = STATUS_FREE;
 }
 void fuzz_terminate(Simulator *simulator)
 {
@@ -158,9 +153,6 @@ void fuzz_terminate(Simulator *simulator)
   cmd_info.cmd = CMD_TERMINATE;
 
   int ret = write(simulator->fd_ctl_to_simulator, &cmd_info,sizeof(CMD_INFO));
-  simulator->status = STATUS_EXIT;
-
-
 }
 void wait_forkserver_terminate(Simulator * simulator)
 {
@@ -174,6 +166,7 @@ void wait_forkserver_terminate(Simulator * simulator)
     else if(exit_info.exit_code == EXIT_CTL_TERMINATE)
       break;
   }
+  simulator->status = STATUS_EXIT;
 }
 Simulator* get_avaliable_simulator(FuzzState *state)
 {
@@ -233,8 +226,17 @@ void kill_simulator(Simulator * simulator)
   printf("simualtor pid:%d killed\n",simulator->pid);
   simulator->status = STATUS_KILLED;
 }
-
-void cleanup_simulator(FuzzState *state,int pid)
+void wait_all_simualtor_finish_task(FuzzState *state)
+{
+  EXIT_INFO exit_info;
+  for(auto s = state->simulators->begin(); s != state->simulators->end(); s++)
+  {
+    if((*s)->status == STATUS_FREE)
+      continue;
+    fuzz_exit(*s,&exit_info);
+  }
+}
+void kill_cleanup_simulator(FuzzState *state,int pid)
 {
   int status;
   for(Simulator * simulator : (*state->simulators))
@@ -257,7 +259,6 @@ void allocate_new_simulator(FuzzState *state, int affinity)
   EXIT_INFO exit_info;
 
   Simulator *simulator = new Simulator();
-  simulator->state = state;
   simulator->map_size = state->map_size;
   simulator->task.id_queue_idx_mapping = new map<u32,int>();
 
@@ -293,46 +294,33 @@ void allocate_new_simulator(FuzzState *state, int affinity)
   
 	char *child_arg[1000];
   i = 0;
-  child_arg[i++] = strdup(simulator_bin.c_str());
+  child_arg[i++] = strdup(state->file_info.simulator_bin.c_str());
 
-  simulator->simulator_dump_dir = alloc_printf("%s/simulator_%d",dump_dir,cpu);
-  simulator->simulator_model_dir =  alloc_printf("%s/simulator_%d",model_dir,cpu);
-  simulator->simulator_log_dir = alloc_printf("%s/simulator_%d",log_dir,cpu);
-  mkdir(simulator->simulator_dump_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-  mkdir(simulator->simulator_model_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-  mkdir(simulator->simulator_log_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  char *simulator_log_dir = alloc_printf("%s/simulator_%d",state->dir_info.simulator_log_dir.c_str(),cpu);
+  mkdir(simulator_log_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 
 
-  child_arg[i++] =  simulator->simulator_dump_dir;
+  child_arg[i++] =  strdup(state->dir_info.state_dump_model_dir.c_str());
 
-  child_arg[i++] = simulator->simulator_model_dir;
+  child_arg[i++] = strdup(state->dir_info.state_dump_model_dir.c_str());
 
-  child_arg[i++] = simulator->simulator_log_dir;
+  child_arg[i++] = simulator_log_dir;
 
   child_arg[i++] = alloc_printf("%d",start_fd);
 
   child_arg[i++] = alloc_printf("%d",start_fd + 1);
 
-  child_arg[i++] =  strdup(config.c_str());
+  child_arg[i++] =  strdup(state->file_info.config.c_str());
+
   child_arg[i++] = (char*)"-max_bbl";
-  child_arg[i++] =  alloc_printf("%d",max_bbl_exec);
-  child_arg[i++] = (char*)"-mode";
-  child_arg[i++] =  alloc_printf("%d",mode);
+  child_arg[i++] =  alloc_printf("%d",state->max_bbl_exec);
 
-  if (cov_log != "")
-  {
-    child_arg[i++] = (char*)"-cov";
-    child_arg[i++] =  strdup(cov_log.c_str());
-  }
+  child_arg[i++] = (char*)"-cov";
+  child_arg[i++] =  strdup(state->file_info.cov_log.c_str());
 
-  if (valid_bbl != "")
-  {
-    child_arg[i++] = (char*)"-filter";
-    child_arg[i++] =  strdup(valid_bbl.c_str());
-  }
-
+  child_arg[i++] = (char*)"-filter";
+  child_arg[i++] =  strdup(state->file_info.valid_bbl.c_str());
   
-   
 
 
   child_arg[i++] = NULL;
@@ -368,14 +356,14 @@ void allocate_new_simulator(FuzzState *state, int affinity)
   if(exit_info.exit_code != EXIT_CTL_FORKSRV_UP)
   {
     printf("fork server is not up got %s pc: %x lr:%x\n",fuzzer_exit_names[exit_info.exit_code],exit_info.exit_pc,exit_info.exit_lr);
-    cleanup_simulator(state,pid);
+    kill_cleanup_simulator(state,pid);
     clean_fuzzer_shm(state);
     exit(0);
   }
   printf("pid:%d fork server is up\n",simulator->pid);
   simulator_classify_count(simulator);
   update_virgin(state->virgin_bits, simulator->trace_bits, simulator->map_size);
-  sync_models(state,simulator);
+
   
   start_fd += 2;
   cpu++;

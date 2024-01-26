@@ -81,8 +81,9 @@ bool exec_bbl_snapshot(hw_addr pc,uint32_t id)
     static bool returned = false;
     if(snapshot_point == pc)
     {
-        
+        #ifndef ROUND_ROBIN
         irq_on_snapshot();
+        #endif
         register_exec_bbl_hook(arm_exec_bbl);
         
         for(auto it = config->segs->begin(); it != config->segs->end(); it++)

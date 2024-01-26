@@ -356,4 +356,28 @@ inline void rand_memset(void* ptr, int len)
   }
 }
 
+inline void rand_ascii(void* ptr, int len,int element_size)
+{
+  if (element_size != 1 && element_size != 2 && element_size != 4)
+    return;
+  
+  int count = len / element_size;
+  
+  for(int i = 0 ; i < count;i++)
+  {
+    if(element_size == 1)
+    {
+      *(uint8_t*)((uint8_t*)ptr + i * element_size) = 0x20 + UR(0x80 - 0x20);
+    }
+    else if(element_size == 2)
+    {
+      *(uint16_t*)((uint8_t*)ptr + i * element_size) = 0x20 + UR(0x80 - 0x20);
+    }
+    else
+    {
+      *(uint32_t*)((uint8_t*)ptr + i * element_size) = 0x20 + UR(0x80 - 0x20);
+    }
+  }
+}
+
 #endif

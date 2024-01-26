@@ -85,10 +85,6 @@ struct Simulator
     int cpu;
     int pid;
 
-    char *simulator_dump_dir;
-    char *simulator_model_dir;
-    char *simulator_log_dir;
-
 #define STATUS_RUNNING 0
 #define STATUS_FREE 1
 #define STATUS_EXIT 2
@@ -102,10 +98,6 @@ struct Simulator
         set<u32> * fuzz_streams;
         map<u32,int> *id_queue_idx_mapping;
     } task;
-    
-
-
-    FuzzState *state;
 
 };
 struct FuzzState
@@ -140,6 +132,39 @@ struct FuzzState
 
     u64 start_time;
     u32 total_unique_bbls;
+
+    bool use_fuzzware;
+    int max_bbl_exec;
+    int mode;
+
+    struct 
+    {
+        
+        string project_dir;
+        string fuzzer_dir;
+        string corpus_dir;
+
+        string queue_dir;
+        string crash_queue_dir;
+        string simulator_log_dir;
+        string state_dump_model_dir;
+    }dir_info;
+
+    struct 
+    {
+        string config;
+        string simulator_bin;
+        string seed_file;
+        string pool_file;
+        string cov_log;
+        string valid_bbl;
+        string plot_log;
+        string fuzzer_log;
+        string mmio_model_file;
+        string realtime_coverage_bin;
+    }file_info;
+    
+    
 };
 
 static bool sort_queue(const queue_entry* l, const queue_entry* r) 
@@ -147,47 +172,6 @@ static bool sort_queue(const queue_entry* l, const queue_entry* r)
     return l->create_time < r->create_time;
 }
 
-
-bool fuzz_one_post(FuzzState *state,Simulator *simulator);
-void show_stat(FuzzState *state);
-void save_coverage(FuzzState *state);
 void clean_fuzzer_shm(FuzzState *state);
 
-
-
-extern bool terminate_next;
-
-extern string project_dir;
-extern string config;
-
-extern char  in_dir[PATH_MAX];
-extern char  out_dir[PATH_MAX];
-
-extern char  queue_dir[PATH_MAX];
-extern char  crash_dir[PATH_MAX];
-
-extern char  log_dir[PATH_MAX];
-
-
-
-extern char  dump_dir[PATH_MAX];
-extern char  dump_backup_dir[PATH_MAX];
-extern char  model_dir[PATH_MAX];
-extern char  model_file[PATH_MAX];
-extern char  coverage_file[PATH_MAX];
-
-extern string seed_file;
-extern string pool_file;
-extern string imulator_bin;
-extern string simulator_bin;
-extern string cov_log;
-extern string valid_bbl;
-
-extern bool fresh_run;
-extern bool model_systick;
-extern bool use_fuzzware;
-extern int max_bbl_exec;
-extern int mode;
-
-extern bool model_infinite_loop;
 #endif

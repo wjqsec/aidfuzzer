@@ -28,7 +28,6 @@ void start_new();
 
 
 
-extern int mode;
 
 extern SIMULATOR_CONFIG* config;
 

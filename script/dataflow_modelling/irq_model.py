@@ -17,8 +17,8 @@ from colorful_print import *
 import time
 
 logging.getLogger('angr').setLevel('ERROR')
-MAX_LOOP_TIMES = 0x20
-TIMEOUT_SECONDS = 60 * 3
+MAX_LOOP_TIMES = 0x50
+TIMEOUT_SECONDS = 60 * 2
 
 config = Configs()
 stack_size = 0x4000
@@ -438,7 +438,37 @@ def call_statement_before(state):
                     
 
                     if state.irqplugin.syms.value_addr_map[addr] not in nullptr_func_check_mem:
-                        if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:
+                        # if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:  #ex for  ffd_ncp rfd_ncp
+                        #     break
+                        
+                        # if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008ec:  #ex for  no bcn ffd_ncp  no bcn rfd_ncp
+                        #     break
+
+                        # if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008e8:  #ex for app eddemo
+                        #     break
+
+                        # if pc_addr == 0x139b and state.irqplugin.syms.value_addr_map[addr] >= 0x20000A7C:  #ex for coord ncp
+                        #     break
+
+                        # if pc_addr == 0x15b3 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:  #ex for ctr ncp
+                        #     break
+
+                        # if pc_addr == 0x134b and state.irqplugin.syms.value_addr_map[addr] >= 0x200004C8:  #ex for mac no beacon sleep
+                        #     break
+
+                        # if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008f0:  #ex for peer2peer
+                        #     break
+
+                        # if pc_addr == 0x15b3 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:  #ex for serial if ncp
+                        #     break
+
+                        # if pc_addr == 0x149f and state.irqplugin.syms.value_addr_map[addr] >= 0x200004C8:  #ex for single button ctr ncp
+                        #     break
+
+                        # if pc_addr == 0x15b3 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:  #ex for tgt ncp
+                        #     break
+
+                        if pc_addr == 0x80065Db and state.irqplugin.syms.value_addr_map[addr] >= 0x20000E24:  #ex for taulab
                             break
 
                         print_colorful_text("add null funcptr pc " + hex(state.addr) + "  " + hex(state.irqplugin.syms.value_addr_map[addr]) + "  " + str(addr),foreground_color = TextColor.BLUE)
@@ -648,10 +678,9 @@ def main():
     s_state = None
     while True:
         states_to_add = []
-
+        print(simgr.active) 
         for state in simgr.active:
-            if state.addr == 0x34488:
-                print(state)
+
             visited_bbls_addrs.add(state.addr)
             if state.addr == fix_lr:
                 model.toend = "y"
@@ -689,7 +718,8 @@ def main():
             if len(succ.successors) == 0:
                 pass
             elif len(succ.successors) == 1:
-
+                if not is_ast_only_eval_one_value(succ.successors[0],succ.successors[0].regs.pc):
+                    continue
                 if succ.successors[0].addr == state.addr:
                     continue
                 if succ.successors[0].addr not in visited_bbls_addrs:
@@ -699,11 +729,8 @@ def main():
     
             elif len(succ.successors) == 2:
 
-                
                 succ1 = succ.successors[0]
                 succ2 = succ.successors[1]
-                
-                
                 
                 succesors1 = []
                 succesors2 = []
@@ -716,21 +743,32 @@ def main():
                 try:
                     if succ1.addr == fix_lr:
                         states_to_add.append(succ1)
-                    succesors1 = [succ_grand_child.addr for succ_grand_child in succ1.step(thumb=True).successors]
+                    simgr = project.factory.simgr(succ1)
+                    for i in range(2):
+                        if state.addr in [state.addr for state in simgr.active]:
+                            break
+                        succesors1 += [state for state in simgr.active]
+                        simgr.step()
+                        # succesors1 = [succ_grand_child.addr for succ_grand_child in succ1.step(thumb=True).successors]
                 except Exception as e:
-
                     succ1_erro = True
  
                 try:
                     if succ2.addr == fix_lr:
                         states_to_add.append(succ2)
-                    succesors2 = [succ_grand_child.addr for succ_grand_child in succ2.step(thumb=True).successors]
+                    simgr = project.factory.simgr(succ2)
+                    for i in range(2):
+                        if state.addr in [state.addr for state in simgr.active]:
+                            break
+                        succesors2 += [state for state in simgr.active]
+                        simgr.step()
+                    # succesors2 = [succ_grand_child.addr for succ_grand_child in succ2.step(thumb=True).successors]
 
                 except Exception as e:
                     succ2_erro = True
 
-
-
+                
+                
 
                 if succ1_erro and succ2_erro:
                     continue
@@ -750,12 +788,10 @@ def main():
                 elif succ2.addr >= succ1.addr and succ2.addr < succ1.addr + succ1.block().size:
                     dominator = succ1
                 else:
-                    if succ1.addr in succesors2:
+                    if any([succ1.addr >= state.addr and succ1.addr < state.addr + state.block().size for state in succesors2]):
                         dominator = succ2
-                    elif succ2.addr in succesors1:
+                    elif any([succ2.addr >= state.addr and succ2.addr < state.addr + state.block().size for state in succesors1]):
                         dominator = succ1
-                
-                
 
                 if dominator != None:
                     if dominator.addr not in visited_bbls_addrs:
@@ -776,7 +812,7 @@ def main():
                 print("why more than 2 successors, exit")
                 exit(0)
 
-        # print(simgr.active)        
+               
         
         simgr.active.clear()
         for state in states_to_add:

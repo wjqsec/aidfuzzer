@@ -31,7 +31,7 @@ void ihex_flush_buffer(struct ihex_state *ihex,char *buffer, char *eptr)
     fputs(buffer,state_file);
 }
 
-char* dump_state(uint32_t mmio_id, const char * prefix, const char *dir)
+char* dump_state(uint32_t id, const char * prefix)
 {
     int i;
     uint8_t *buf;
@@ -39,10 +39,12 @@ char* dump_state(uint32_t mmio_id, const char * prefix, const char *dir)
     ARM_CPU_STATE state;
     struct ihex_state ihex;
 
-    
-
+    sprintf(state_filename,"%s/%s%08x",dump_dir.c_str(),prefix,id);
+    if(access(state_filename,F_OK) == 0)
+    {
+        return strdup(state_filename);
+    }
     get_arm_cpu_state(&state);
-    sprintf(state_filename,"%s/%s%08x",dir,prefix,mmio_id);
     state_file = fopen(state_filename,"w");
     fprintf(state_file, "r0=0x%08x\n"
                         "r1=0x%08x\n"
@@ -56,7 +58,7 @@ char* dump_state(uint32_t mmio_id, const char * prefix, const char *dir)
                         "r9=0x%08x\n"
                         "r10=0x%08x\n"
                         "r11=0x%08x\n"
-                        "r12=0x%08x\n"
+                        "r12=0x%08x\n"  
                         "lr=0x%08x\n"
                         "pc=0x%08x\n"
                         "sp=0x%08x\n"
@@ -111,7 +113,7 @@ void model_all_infinite_loop()
     
     if(access(model_filename,F_OK) != 0)
     {
-        state_filename = dump_state(0,LOOP_STATE_PREFIX,dump_dir.c_str());
+        state_filename = dump_state(0,LOOP_STATE_PREFIX);
         sprintf(cmd,"python3  ../../script/dataflow_modelling/infinite_loop.py -s %s -o %s -c %s > /dev/null 2>&1",state_filename,model_filename,fuzzware_config_filename.c_str());
         puts(cmd);
         system(cmd);
@@ -269,7 +271,7 @@ void dump_prcoess_load_model(int irq,hw_addr id ,hw_addr isr, IRQ_N_MODEL **mode
     
     sprintf(model_filename,"%s/%s",model_dir.c_str(),IRQ_MODEL_FILENAME);
 
-    state_filename = dump_state(id,IRQ_STATE_PREFIX,dump_dir.c_str());
+    state_filename = dump_state(id,IRQ_STATE_PREFIX);
 
     sprintf(cmd,"pc: %x  irq_entry: %x   ",(uint32_t)get_arm_pc(),isr);
     printf("%s",cmd);

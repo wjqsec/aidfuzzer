@@ -1922,7 +1922,7 @@ static void nvic_writel(NVICState *s, uint32_t offset, uint32_t value,
         if (region >= cpu->pmsav7_dregion) {
             return;
         }
-
+        
         cpu->env.pmsav7.drbar[region] = value & ~0x1f;
         tlb_flush(CPU(cpu));
         break;

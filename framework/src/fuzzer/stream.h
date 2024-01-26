@@ -13,4 +13,5 @@ void insert_stream(FuzzState *state,queue_entry* q,input_stream *stream);
 void replace_stream(FuzzState *state,queue_entry* q,u32 id, input_stream *new_tream);
 bool stream_shouldnot_mutate(input_stream *stream);
 input_stream *resize_stream(FuzzState *state,input_stream *stream,u32 new_len);
+void rearrange_pool(FuzzState *state);
 #endif

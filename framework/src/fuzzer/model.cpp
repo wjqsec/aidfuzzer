@@ -8,41 +8,21 @@
 
 extern char  out_dir[PATH_MAX];
 extern char  dump_backup_dir[PATH_MAX];
-void run_modelling(FuzzState *state,Simulator *simulator)
+void run_modelling(FuzzState *state,uint32_t id)
 {
-  DIR* dir;
   char cmd[PATH_MAX];
-  char tmp[PATH_MAX];
-  struct dirent* dir_entry;
-  dir = opendir(simulator->simulator_dump_dir);
-  if (dir == NULL) {
-      fatal("opendir error");
-  }
-  
-  while ((dir_entry = readdir(dir)) != NULL) 
-  {
-    if (dir_entry->d_type == DT_REG  && strstr(dir_entry->d_name,MMIO_STATE_PREFIX)) 
-    {
-      u32 id = strtol(dir_entry->d_name + strlen(MMIO_STATE_PREFIX),0,16);
-      if(state->models->find(id) == state->models->end())
-      {
-        printf("start model file:%s\n",dir_entry->d_name);
-        sprintf(cmd,"%s/run_docker.sh %s fuzzware model ./dump/simulator_%d/%s -c ./model/simulator_%d/%s > /dev/null",
-        FUZZWARE_PATH,
-        out_dir,
-        simulator->cpu,
-        dir_entry->d_name,
-        simulator->cpu,
-        MMIO_MODEL_FILENAME);
-        puts(cmd);
-        system(cmd);
-        printf("model file done:%s\n",dir_entry->d_name);
-      }
-      sprintf(cmd,"mv %s/%s %s/",simulator->simulator_dump_dir,dir_entry->d_name,dump_backup_dir);
-      system(cmd);
-    }
-  }
-  closedir(dir);
+
+  char state_filename[PATH_MAX];
+  sprintf(state_filename,"%s%08x",MMIO_STATE_PREFIX,id);
+
+
+  printf("start model file:%s\n",state_filename);
+  sprintf(cmd,"docker run -i --rm --mount type=bind,source=%s,target=/home/user/fuzzware/targets fuzzware:latest fuzzware model %s -c %s > /dev/null 2>&1",
+  state->dir_info.state_dump_model_dir.c_str(),
+  state_filename,
+  MMIO_MODEL_FILENAME);
+  system(cmd);
+  printf("model file done\n");
 }
 void add_default_model(FuzzState *state,u32 id, u32 element_size, u32 mmio_pc, u32 mmio_addr)
 {
@@ -53,15 +33,24 @@ void add_default_model(FuzzState *state,u32 id, u32 element_size, u32 mmio_pc, u
   model->pc_addr = mmio_pc;
   (*state->models)[id] = model;
 }
-void sync_models(FuzzState *state,Simulator *simulator)
+
+void add_irq_model(FuzzState *state)
+{
+  input_model *model = new input_model();
+  model->mode = MODEL_NONE;
+  model->access_size = 1;
+  model->mmio_addr = 0;
+  model->pc_addr = 0;
+  (*state->models)[IRQ_STREAM_ID] = model;
+}
+void sync_models(FuzzState *state)
 {
   u32 mmio_id;
   int mode;
   char line[PATH_MAX];
   input_model *model = NULL;
   set<u32> *vals = NULL;
-  sprintf(line,"%s/%s",simulator->simulator_model_dir,MMIO_MODEL_FILENAME);
-  FILE *fp = fopen(line , "r");
+  FILE *fp = fopen(state->file_info.mmio_model_file.c_str() , "r");
   if(fp == NULL) 
   {
     return;
