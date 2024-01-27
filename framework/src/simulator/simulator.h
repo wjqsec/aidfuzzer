@@ -47,6 +47,7 @@ extern FILE *f_irq_log;
 
 extern uint64_t nommio_executed_bbls;
 extern uint64_t max_bbl_exec;
+extern uint64_t mmio_times;
 
 extern std::set<hw_addr> total_unique_bbls;
 

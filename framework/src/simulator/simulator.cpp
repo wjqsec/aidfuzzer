@@ -55,12 +55,12 @@ FILE *f_irq_log;
 uint64_t nommio_executed_bbls;
 uint64_t max_bbl_exec;
 uint64_t infinite_loop_exec;
-
+uint64_t mmio_times;
 
 EXIT_INFO exit_info;
 bool next_bbl_should_exit = false;
 
-uint32_t crash_times = 0;
+
 
 uint32_t run_index;
 
@@ -117,6 +117,7 @@ void start_new()
 {
     arm_restore_snapshot(new_snap);
     nommio_executed_bbls = 0;
+    mmio_times = 0;
     infinite_loop_exec = 0;
     run_index++;
     
@@ -253,7 +254,7 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
         return true;
     }
 
-    if(unlikely(nommio_executed_bbls >= max_bbl_exec))
+    if(unlikely(nommio_executed_bbls >= MAX_NOMMIO_BBL_EXEC || mmio_times >= MAX_MMIO_TIMES))
     {
         prepare_exit(EXIT_FUZZ_TIMEOUT);
         cmd_info = exit_with_code_get_cmd();
@@ -467,6 +468,7 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     }
 
     #ifdef CRASH_DBG
+    static uint32_t crash_times = 0;
     if(crash_times < 10000)
     {
         fprintf(f_crash_log,"%d->crash ",run_index);
@@ -658,7 +660,6 @@ void init(int argc, char **argv)
 
     value("layout",fuzzware_config_filename),
 
-    option("-max_bbl") & value("max bbl timeout",max_bbl_exec) ,
     option("-cov") & value("cov",cov_log),
     option("-filter") & value("filter",cov_filter)
     

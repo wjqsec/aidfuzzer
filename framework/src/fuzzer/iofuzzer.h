@@ -134,7 +134,6 @@ struct FuzzState
     u32 total_unique_bbls;
 
     bool use_fuzzware;
-    int max_bbl_exec;
     int mode;
 
     struct 

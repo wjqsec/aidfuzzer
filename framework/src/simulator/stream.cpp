@@ -144,6 +144,7 @@ void get_fuzz_data(SHARED_STREAM * stream, uint64_t *out)
             break;
         }
     } 
+    mmio_times++;
     nommio_executed_bbls = 0;
     
 }

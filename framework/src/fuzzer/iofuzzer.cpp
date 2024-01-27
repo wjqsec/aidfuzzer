@@ -141,7 +141,6 @@ void fuzzer_init(FuzzState *state, u32 coverage_size, u32 share_size)
     state->start_time = get_cur_time() / 1000;
 
     state->use_fuzzware = true;
-    state->max_bbl_exec = MAX_BBL_EXEC;
     state->mode = -1;
 }
 
@@ -481,7 +480,6 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     
     init_entry_state(state,fuzz_entry,base_entry, out_simulator,exit_info2.exit_code);
 
-    
     insert_queue(state,fuzz_entry);
 
   }
@@ -529,7 +527,6 @@ u32 select_stream(FuzzState *state,queue_entry* entry, bool uniformly)
     total += priority;
     tmp_priority[it->first] = priority; 
   }
- 
   s32 random_number =  UR(total);
   s32 weight_sum = 0;
   for(auto it = tmp_priority.begin(); it!= tmp_priority.end(); it++)
@@ -557,17 +554,18 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   
   entry->fuzztimes++;
 
-  
+
   fuzz_entry = new_queue(state);
   selected_streams = new set<u32>();
 
   copy_queue_streams(state,entry,fuzz_entry);
 
-  
+
   if (fuzz_entry->streams->size() <= 8)
   {
     use_stacking = (1 << (1 + UR(5)));   // afl ur(7) hoedur ur(5)
   }
+
   else if(fuzz_entry->streams->size() <= 32)
   {
     use_stacking = (1 << (1 + UR(6)));
@@ -576,6 +574,7 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
   {
     use_stacking = (1 << (1 + UR(7)));
   }
+
   for(int i = 0; i < use_stacking; i++)
   {
 
@@ -586,22 +585,21 @@ inline void fuzz_queue(FuzzState *state,queue_entry* entry)
     fuzz_stream = havoc(state,(*fuzz_entry->streams)[fuzz_stream_id]);
 
     replace_stream(state,fuzz_entry,fuzz_stream_id,fuzz_stream);
-
+    
   }
+
   if(!UR(5))
   {
     add_random(state, fuzz_entry);
   }
-  
+
   simulator = get_avaliable_simulator(state);  
+  
   fuzz_one_post(state,simulator);
   
-  
+
   simulator_task(simulator,fuzz_entry,entry,selected_streams);
   fuzz_start(simulator);
-  
-
-  
 
 }
 
@@ -656,11 +654,10 @@ void fuzz_loop(FuzzState *state)
     
     while(1)
     {
-       
         entry = select_entry(state);
 
         fuzz_queue(state,entry);
-  
+
         if((times & 0xff) == 0)
         {
           show_stat(state);
@@ -679,7 +676,7 @@ void fuzz_loop(FuzzState *state)
           wait_all_simualtor_finish_task(state);
           rearrange_pool(state);
         }
-          
+
         
         times++;
             
@@ -744,11 +741,11 @@ void init_dir(FuzzState *state)
   state->dir_info.queue_dir = state->dir_info.corpus_dir + "/queue/";
   state->dir_info.crash_queue_dir = state->dir_info.corpus_dir + "/crash/";
 
-  state->dir_info.simulator_log_dir = state->dir_info.fuzzer_dir + "/log/";
+  state->dir_info.simulator_log_dir = state->dir_info.corpus_dir + "/log/";
   state->dir_info.state_dump_model_dir = state->dir_info.fuzzer_dir + "/model/";
 
   state->file_info.mmio_model_file = state->dir_info.state_dump_model_dir + MMIO_MODEL_FILENAME;
-  state->file_info.realtime_coverage_bin = state->dir_info.fuzzer_dir + "/coverage.bin";
+  state->file_info.realtime_coverage_bin = state->dir_info.corpus_dir + "/coverage.bin";
 
   mkdir(state->dir_info.fuzzer_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(state->dir_info.corpus_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
@@ -757,7 +754,7 @@ void init_dir(FuzzState *state)
   mkdir(state->dir_info.simulator_log_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   mkdir(state->dir_info.state_dump_model_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   
-  state->flog = fopen((state->dir_info.fuzzer_dir + "/fuzzer.log").c_str(),"w");
+  state->flog = fopen((state->dir_info.corpus_dir + "/fuzzer.log").c_str(),"w");
   if(!state->flog)
     fatal("create fuzzer log file error\n");
 }
@@ -820,7 +817,6 @@ int main(int argc, char **argv)
 
     clipp::option("-corpus")& clipp::value("corpus",global_state.dir_info.corpus_dir),
     clipp::option("-no_use_fuzzware").set(global_state.use_fuzzware,false),
-    clipp::option("-max_bbl")& clipp::value("max",global_state.max_bbl_exec),
     clipp::option("-core") & clipp::value("core",cores) ,
     clipp::option("-affinity") & clipp::value("affinity",affinity),
     clipp::option("-filter")& clipp::value("filter",global_state.file_info.valid_bbl)
@@ -832,7 +828,6 @@ int main(int argc, char **argv)
     clipp::value("emulator",global_state.file_info.simulator_bin),
     
     clipp::option("-corpus")& clipp::value("corpus",global_state.dir_info.corpus_dir),
-    clipp::option("-max_bbl")& clipp::value("max",global_state.max_bbl_exec),
     clipp::option("-cov_log")& clipp::value("cov",global_state.file_info.cov_log),
     clipp::option("-filter")& clipp::value("filter",global_state.file_info.valid_bbl),
     clipp::option("-plot")& clipp::value("plot",global_state.file_info.plot_log)
@@ -844,9 +839,8 @@ int main(int argc, char **argv)
     clipp::value("emulator",global_state.file_info.simulator_bin),
 
     clipp::value("pool",global_state.file_info.pool_file),
-    clipp::value("queue",global_state.file_info.seed_file),
+    clipp::value("queue",global_state.file_info.seed_file)
     
-    clipp::option("-max_bbl")& clipp::value("max",global_state.max_bbl_exec)
   );
   auto cli = ( 
     (fuzz_cli | run_cli | debug_cli)

@@ -312,9 +312,6 @@ void allocate_new_simulator(FuzzState *state, int affinity)
 
   child_arg[i++] =  strdup(state->file_info.config.c_str());
 
-  child_arg[i++] = (char*)"-max_bbl";
-  child_arg[i++] =  alloc_printf("%d",state->max_bbl_exec);
-
   child_arg[i++] = (char*)"-cov";
   child_arg[i++] =  strdup(state->file_info.cov_log.c_str());
 
