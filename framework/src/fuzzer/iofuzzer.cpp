@@ -103,6 +103,12 @@ void fuzzer_terminate(FuzzState *state)
   exit(0);
 }
 
+void update_exit_info(FuzzState *state, EXIT_INFO *exit_info)
+{
+  state->total_unique_bbls = exit_info->unique_bbls;
+  state->total_exec++;
+  state->exit_reason[exit_info->exit_code]++;
+}
 
 
 void fuzzer_init(FuzzState *state, u32 coverage_size, u32 share_size) 
@@ -450,8 +456,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   }
   
   
-  state->total_exec++;
-  state->exit_reason[exit_info.exit_code]++;
+  update_exit_info(state, &exit_info);
 
   simulator_classify_count(simulator);
   int r = has_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size);
@@ -459,7 +464,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   if(fuzz_streams)
     increase_schedule_times(state,fuzz_streams);
 
-  if(unlikely(r && exit_info.exit_code != EXIT_FUZZ_CRASH))
+  if(unlikely(r && exit_info.exit_code == EXIT_FUZZ_OUTOF_STREAM))
   {
     u8 * new_bits = (u8 *)malloc(simulator->map_size);
     get_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size, new_bits);
@@ -476,7 +481,6 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     update_virgin(state->virgin_bits, out_simulator->trace_bits, out_simulator->map_size); 
 
     save_coverage(state);
-    state->total_unique_bbls = exit_info2.unique_bbls;
     
     init_entry_state(state,fuzz_entry,base_entry, out_simulator,exit_info2.exit_code);
 
@@ -695,13 +699,12 @@ void fuzz_runonce(FuzzState *state)
   for(queue_entry *q : *state->entries)
   {
     EXIT_INFO exit_info = run_input(state,q,&simulator);
-    state->total_unique_bbls = exit_info.unique_bbls;
+    
     if(exit_info.exit_code == EXIT_DBG_STREAM_NOTFOUND)
     {
       printf("pc %x queue %x not found stream %x\n",exit_info.exit_pc,q->cksum,exit_info.stream_info.exit_stream_id);
     }
-    state->total_exec++;
-    state->exit_reason[exit_info.exit_code]++;
+    update_exit_info(state,&exit_info);
     if(f)
       fprintf(f,"%lu %d\n",q->create_time,state->total_unique_bbls);
     show_stat(state);
@@ -719,7 +722,7 @@ void fuzz_run_oneseed(FuzzState *state)
   load_crash_pool(state,state->file_info.pool_file.c_str());
   queue_entry *q = load_queue(state,state->file_info.seed_file.c_str());
   exit_info = run_input(state,q,&simulator);
-  state->total_unique_bbls = exit_info.unique_bbls;
+  update_exit_info(state, &exit_info);
   show_stat(state);
 }
 
