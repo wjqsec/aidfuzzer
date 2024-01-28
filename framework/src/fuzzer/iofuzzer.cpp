@@ -338,8 +338,8 @@ void init_entry_state(FuzzState *state,queue_entry*q,queue_entry* base_entry, Si
   q->cksum = hash32(simulator->trace_bits,simulator->map_size);
   q->exit_reason = exit_reason;
   q->priority = q->edges + 1;
-  if(exit_reason == EXIT_FUZZ_TIMEOUT)
-    q->priority = 1;
+  if(exit_reason != EXIT_FUZZ_OUTOF_STREAM)
+    q->priority = 0;
     // q->priority = q->priority / 10 + 1;
   q->create_time = (get_cur_time() / 1000) - state->start_time;
 
@@ -464,7 +464,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   if(fuzz_streams)
     increase_schedule_times(state,fuzz_streams);
 
-  if(unlikely(r && exit_info.exit_code == EXIT_FUZZ_OUTOF_STREAM))
+  if(unlikely(r && exit_info.exit_code != EXIT_FUZZ_CRASH))
   {
     u8 * new_bits = (u8 *)malloc(simulator->map_size);
     get_new_bits(state->virgin_bits, simulator->trace_bits, simulator->map_size, new_bits);
