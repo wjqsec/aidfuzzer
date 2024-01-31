@@ -55,7 +55,7 @@ void show_stat(FuzzState *state)
   uint64_t minutes = (time_fuzzed - hour * 3600) / 60;
   uint64_t seconds = time_fuzzed - hour * 3600 - minutes * 60;
 
-  sprintf(output,"[%02lu:%02lu:%02lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu\n",
+  sprintf(output,"[%02lu:%02lu:%02lu] total exec %d bbl:%d paths:%lu used pool:%x timeout:%lu outofseed:%lu crash:%lu unique crash:%lu dbg_notfound:%lu bkp:%lu dbg:%lu intc:%lu yie:%lu ato:%lu\n",
   hour,
   minutes,
   seconds,
@@ -67,7 +67,12 @@ void show_stat(FuzzState *state)
   state->exit_reason[EXIT_FUZZ_OUTOF_STREAM],
   state->exit_reason[EXIT_FUZZ_CRASH],
   state->crashes->size(),
-  state->exit_reason[EXIT_DBG_STREAM_NOTFOUND]
+  state->exit_reason[EXIT_DBG_STREAM_NOTFOUND],
+  state->exit_reason[EXIT_FUZZ_BKP],
+  state->exit_reason[EXIT_FUZZ_EXCP_DEBUG],
+  state->exit_reason[EXIT_FUZZ_EXCP_INTERRUPT],
+  state->exit_reason[EXIT_FUZZ_EXCP_YIELD],
+  state->exit_reason[EXIT_FUZZ_EXCP_ATOMIC]
   );
   
   fputs(output,stdout);
@@ -340,7 +345,6 @@ void init_entry_state(FuzzState *state,queue_entry*q,queue_entry* base_entry, Si
   q->priority = q->edges + 1;
   if(exit_reason != EXIT_FUZZ_OUTOF_STREAM)
     q->priority = 0;
-    // q->priority = q->priority / 10 + 1;
   q->create_time = (get_cur_time() / 1000) - state->start_time;
 
   if(base_entry)

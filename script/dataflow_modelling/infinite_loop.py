@@ -52,16 +52,19 @@ def find_all_infinite_loop(project, initial_state,global_cfg):
 
     md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB+capstone.CS_MODE_MCLASS)
     for i in range(0,memseg.size,2):
-        disassembly_block = project.factory.block(memseg.start + i, size=4)
-        instruction_bytes = disassembly_block.bytes
-        
-        for insn in md.disasm(instruction_bytes, memseg.start + i):
-            if "b" == insn.mnemonic and "lr" not in insn.op_str:
-                print("0x%x:\t%s\t%s" %(insn.address, insn.mnemonic, insn.op_str))
-                is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i)
-                if is_loop:
-                    all_loops.add(bbl_addr)
-            break
+        try:
+            disassembly_block = project.factory.block(memseg.start + i, size=4)
+            instruction_bytes = disassembly_block.bytes
+            
+            for insn in md.disasm(instruction_bytes, memseg.start + i):
+                if "b" == insn.mnemonic and "lr" not in insn.op_str:
+                    print("0x%x:\t%s\t%s" %(insn.address, insn.mnemonic, insn.op_str))
+                    is_loop,bbl_addr = is_infinite_loop(project,initial_state,memseg.start + i)
+                    if is_loop:
+                        all_loops.add(bbl_addr)
+                break
+        except Exception as e:
+            pass
 
                     
     return all_loops

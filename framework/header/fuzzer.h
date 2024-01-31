@@ -41,7 +41,7 @@ typedef int64_t  s64;
 #define MAX_INFINITE_LOOP_EXEC 300
 #define MAX_FUZZWARE_MODEL 200
 
-
+#define RUN_IN_DOCKER
 
 #define NUM_QUEUE_STREAMS 0x1000000
 #define SHARE_FUZZDATA_SIZE 1 << 30

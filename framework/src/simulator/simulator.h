@@ -62,6 +62,7 @@ extern string model_dir;
 extern string log_dir;
 extern string fuzzware_config_filename;
 extern string cov_log;
+extern string model_log;
 
 
 #endif

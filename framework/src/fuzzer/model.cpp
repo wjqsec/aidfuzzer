@@ -5,22 +5,33 @@
 #include <dirent.h>
 #include <linux/limits.h>
 #include <string.h>
+#include "fuzzer.h"
 
 extern char  out_dir[PATH_MAX];
 extern char  dump_backup_dir[PATH_MAX];
 void run_modelling(FuzzState *state,uint32_t id)
 {
   char cmd[PATH_MAX];
-
   char state_filename[PATH_MAX];
+  #ifdef RUN_IN_DOCKER
+
+  char model_filename[PATH_MAX];
+  sprintf(state_filename,"%s/%s%08x",state->dir_info.state_dump_model_dir.c_str(), MMIO_STATE_PREFIX,id);
+  sprintf(model_filename,"%s/%s",state->dir_info.state_dump_model_dir.c_str(),MMIO_MODEL_FILENAME);
+  sprintf(cmd,"fuzzware model %s -c %s > /dev/null 2>&1",
+  state_filename,
+  model_filename);
+  #else
+  
   sprintf(state_filename,"%s%08x",MMIO_STATE_PREFIX,id);
-
-
-  printf("start model file:%s\n",state_filename);
+  
   sprintf(cmd,"docker run -i --rm --mount type=bind,source=%s,target=/home/user/fuzzware/targets fuzzware:latest fuzzware model %s -c %s > /dev/null 2>&1",
   state->dir_info.state_dump_model_dir.c_str(),
   state_filename,
   MMIO_MODEL_FILENAME);
+  
+  #endif
+  printf("start model file:%s\n",state_filename);
   system(cmd);
   printf("model file done\n");
 }

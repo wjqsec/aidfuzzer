@@ -312,11 +312,18 @@ void allocate_new_simulator(FuzzState *state, int affinity)
 
   child_arg[i++] =  strdup(state->file_info.config.c_str());
 
-  child_arg[i++] = (char*)"-cov";
-  child_arg[i++] =  strdup(state->file_info.cov_log.c_str());
-
-  child_arg[i++] = (char*)"-filter";
-  child_arg[i++] =  strdup(state->file_info.valid_bbl.c_str());
+  if (state->file_info.cov_log != "")
+  {
+    child_arg[i++] = (char*)"-cov";
+    child_arg[i++] =  strdup(state->file_info.cov_log.c_str());
+  }
+  
+  if (state->file_info.valid_bbl != "")
+  {
+    child_arg[i++] = (char*)"-filter";
+    child_arg[i++] =  strdup(state->file_info.valid_bbl.c_str());
+  }
+  
   
 
 

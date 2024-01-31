@@ -453,8 +453,8 @@ def call_statement_before(state):
                         # if pc_addr == 0x15b3 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008F4:  #ex for ctr ncp
                         #     break
 
-                        # if pc_addr == 0x134b and state.irqplugin.syms.value_addr_map[addr] >= 0x200004C8:  #ex for mac no beacon sleep
-                        #     break
+                        if pc_addr == 0x134b and state.irqplugin.syms.value_addr_map[addr] >= 0x200004C8:  #ex for mac no beacon sleep
+                            break
 
                         # if pc_addr == 0x1427 and state.irqplugin.syms.value_addr_map[addr] >= 0x200008f0:  #ex for peer2peer
                         #     break
@@ -855,7 +855,7 @@ def main():
 
     write_model_to_file(models,args.output)
     end_time = time.time()
-    logging.info("irq total time: {}".format(end_time-start_time))
+    print("irq total time: {}".format(end_time-start_time))
     
 
 if __name__ == '__main__':

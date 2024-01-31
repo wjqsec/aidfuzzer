@@ -9,6 +9,7 @@
 #include "model.h"
 #include "simulator.h"
 #include "config.h"
+#include "fuzzer.h"
 #include <stdio.h>
 
 using namespace std;
@@ -151,6 +152,14 @@ void irq_set_isr(irq_val irq, hw_addr vec_addr)
     if (vec_addr != INVALID_VECADDR && !is_vec_watchpoint_set(irq,vec_addr))
         set_vec_watchpoint(irq,vec_addr);
 
+
+    #ifdef RUN_IN_DOCKER
+    if(models[irq]->state->find(new_id) == models[irq]->state->end())
+    {
+         printf("unable to find irq model for id %x use old one\n",isr);
+        return;
+    }
+    #else
     if(!is_id_modeled(irq,new_id))
     {
         dump_prcoess_load_model(irq,new_id,isr, models);
@@ -161,6 +170,7 @@ void irq_set_isr(irq_val irq, hw_addr vec_addr)
         printf("unable to find irq model for id %x\n",isr);
         terminate_simulation();
     }
+    #endif
 
     switch_state(current_id,new_id, irq);  
 
@@ -373,19 +383,26 @@ void irq_on_unsolved_func_ptr_write(int irq, uint32_t addr, uint32_t val)
     {
         new_id ^= hash_32_ext(it->second);
     }
-
+    
+    #ifdef RUN_IN_DOCKER
+    if(models[irq]->state->find(new_id) == models[irq]->state->end())
+    {
+        printf("unable to find irq model for id %x use old one\n",isr);
+        return;
+    }
+    #else
     if(models[irq]->state->find(new_id) == models[irq]->state->end())
     {
         printf("resolved irq %d addr %x value %x\n",irq,addr,val);
         dump_prcoess_load_model(irq, new_id ,isr , models);
     }
-
+    
     if(models[irq]->state->find(new_id) == models[irq]->state->end())
     {
-        printf("unable to find irq model for id %x\n",new_id);
+        printf("unable to find irq model for id %x use old model\n",new_id);
         terminate_simulation();
     }
-
+    #endif
     IRQ_N_STATE *new_state = (*models[irq]->state)[new_id];
 
     new_state->func_resolved_ptrs->clear();

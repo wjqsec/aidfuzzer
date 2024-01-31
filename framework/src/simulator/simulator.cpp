@@ -72,7 +72,7 @@ string log_dir;
 string fuzzware_config_filename;
 string cov_log;
 string cov_filter;
-
+string model_log;
 
 
 extern ARMM_SNAPSHOT *org_snap,*new_snap;
@@ -602,6 +602,8 @@ void init_log()
     sprintf(path_buffer,"%s/simulator_irq.txt",log_dir.c_str());
     f_irq_log = fopen(path_buffer,"a");
 
+    model_log = log_dir + "/model_log.txt";
+    remove(model_log.c_str());
     // setbuf(flog,0);
     // setbuf(f_crash_log,0);
     // setbuf(f_irq_log,0);
@@ -631,8 +633,6 @@ void init(int argc, char **argv)
         printf("generate config error\n");
         terminate_simulation();
     }
-        
-    
     init_log();
     init_bbl_filter(&cov_filter);
     init_signal_handler();
