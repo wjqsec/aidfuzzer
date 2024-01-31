@@ -667,9 +667,10 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
                  * Lockup condition due to a guest bug. We don't model
                  * Lockup, so report via cpu_abort() instead.
                  */
-                cpu_abort(&s->cpu->parent_obj,
-                          "Lockup: can't escalate %d to HardFault "
-                          "(current priority %d)\n", irq, running);
+                // cpu_abort(&s->cpu->parent_obj,
+                //           "Lockup: can't escalate %d to HardFault "
+                //           "(current priority %d)\n", irq, running);
+                return;
             }
 
             /* HF may be banked but there is only one shared HFSR */
