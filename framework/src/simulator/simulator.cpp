@@ -433,7 +433,18 @@ bool arm_cpu_do_interrupt_hook(int32_t exec_index)
     fprintf(flog,"\n");
     #endif
     CMD_INFO cmd_info;
-    if(exec_index != EXCP_PREFETCH_ABORT && exec_index != EXCP_DATA_ABORT && exec_index != EXCP_HYP_TRAP && exec_index != EXCP_BKPT)
+    if(exec_index != EXCP_PREFETCH_ABORT 
+    && exec_index != EXCP_DATA_ABORT 
+    && exec_index != EXCP_HYP_TRAP 
+    && exec_index != EXCP_BKPT
+    && exec_index != EXCP_UDEF
+    && exec_index != EXCP_NOCP
+    && exec_index != EXCP_INVSTATE
+    && exec_index != EXCP_STKOF
+    && exec_index != EXCP_LAZYFP
+    && exec_index != EXCP_LSERR
+    && exec_index != EXCP_UNALIGNED
+    && exec_index != EXCP_DIVBYZERO)
     {
         return true;
     }
