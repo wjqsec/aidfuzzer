@@ -59,11 +59,11 @@ def main():
             if len(fuzz_tasks) != 0:
                 task = fuzz_tasks.pop(0)
                 proc = run_fuzz(task[0],task[1],task[2],i)
-                cov_runs.append((taks[0],task[1],task[2],proc))
+                cov_runs.append((task[0],task[1],task[2],proc))
         time.sleep(one_day)
         for cov_run in cov_runs:
             os.kill(cov_run[3].pid, signal.SIGINT)
-            os.wait(cov_run[3].pid)
+            os.waitpid(cov_run[3].pid,0)
             run_cov(cov_run[0],cov_run[1],cov_run[2])
         
 
