@@ -27,7 +27,10 @@ def get_min_max_mediand(xs,ys):
     max_y = []
     min_y = []
     median_y = []
-    x_ax = list(set(chain(*xs)))
+    x_ax = []
+    for x in xs:
+        x_ax = list(set([*x_ax,*x]))
+    x_ax.sort()
     for i in range(len(x_ax)):
         for j in range(len(xs)):
             if x_ax[i] not in xs[j]:
@@ -38,10 +41,11 @@ def get_min_max_mediand(xs,ys):
         tmp_v = []
         for j in range(len(ys)):
             tmp_v.append(ys[j][i])
-        sorted = tmp_v.sorted()
-        max_y.append(sorted[-1])
-        min_y.append(sorted[0])
-        median_y.append(sorted[len(sorted) / 2])
+        
+        tmp_v.sort()
+        max_y.append(tmp_v[-1])
+        min_y.append(tmp_v[0])
+        median_y.append(tmp_v[int(len(tmp_v) / 2)])
 
     return x_ax,max_y,min_y,median_y
         
@@ -61,7 +65,8 @@ def get_fuzzware_cov(filename):
                 continue
             tmp = re.findall(r'\d+',line)
             if x[-1] == int(tmp[0]):
-                continue
+                x.pop()
+                y.pop() 
             x.append(int(tmp[0]))
             y.append(int(tmp[1]))
     
@@ -78,36 +83,16 @@ def get_hoedur_cov(filename):
         for point in json_object["coverage_translation_blocks"]:
             if int(point["x"]) > day_seconds:
                 break
-            if x[-1] == int(point["x"]):
-                continue
+            if len(x) != 0 and x[-1] == int(point["x"]):
+                x.pop()
+                y.pop()
             x.append(int(point["x"]))
             y.append(int(point["y"]))
     return append_first_last_plot(x,y)   
 
 
 
-
-def get_aid_second(line):
-    return int(line.split("[")[1].split("]")[0])
-def get_aid_bbl(line):
-    return int(line.split("bbl:")[1].split(" ")[0])
-def get_aid_cov(filename):
-    if filename == "":
-        return [],[]
-    x = []
-    y = []
-    with open(filename,"r") as f:
-        first_line = f.readline()
-        start_second = get_aid_second(first_line)
-        for line in f.readlines():
-            if x[-1] == get_aid_second(line) - start_second:
-                continue
-            x.append(get_aid_second(line) - start_second)
-            y.append(get_aid_second(line))
-    return append_first_last_plot(x,y)
-
-
-def plot_one(axe, fuzzware_inputs, hoedur_inputs, aid_inputs):
+def plot_one(axe,name, fuzzware_inputs_files, hoedur_inputs_files, aid_inputs_files):
     fuzzware_xs = []
     fuzzware_ys = []
 
@@ -117,31 +102,31 @@ def plot_one(axe, fuzzware_inputs, hoedur_inputs, aid_inputs):
     aid_xs = []
     aid_ys = []
 
-    for i in fuzzware_inputs:
+    for i in fuzzware_inputs_files:
         x,y = get_fuzzware_cov(i)
         fuzzware_xs.append(x)
         fuzzware_ys.append(y)
-    for i in hoedur_inputs:
+    for i in hoedur_inputs_files:
         x,y = get_hoedur_cov(i)
         hoedur_xs.append(x)
         hoedur_ys.append(y)
-    for i in aid_inputs:
-        x,y = get_aid_cov(i)
+    for i in aid_inputs_files:
+        x,y = get_fuzzware_cov(i)
         aid_xs.append(x)
         aid_ys.append(y)
     
-    fuzzware_x, fuzzware_max,fuzzware_min, fuzzware_median = get_min_max_mediand(fuzzware_xs,fuzzware_ys)
+    # fuzzware_x, fuzzware_max,fuzzware_min, fuzzware_median = get_min_max_mediand(fuzzware_xs,fuzzware_ys)
     hoedur_x , hoedur_max, hoedur_min , hoedur_median = get_min_max_mediand(hoedur_xs,hoedur_ys)
-    aid_x, aid_max, aid_min, aid_median = get_min_max_mediand(aid_xs,aid_ys)
+    # aid_x, aid_max, aid_min, aid_median = get_min_max_mediand(aid_xs,aid_ys)
     
-    axe.plot(fuzzware_x,fuzzware_median)
-    axe.fill_between(fuzzware_x,fuzzware_min,fuzzware_max)
+    # axe.plot(fuzzware_x,fuzzware_median)
+    # axe.fill_between(fuzzware_x,fuzzware_min,fuzzware_max)
 
     axe.plot(hoedur_x,hoedur_median)
-    axe.fill_between(fuzzware_x,hoedur_min,hoedur_max)
+    axe.fill_between(hoedur_x,hoedur_min,hoedur_max,alpha=0.2)
 
-    axe.plot(aid_x,aid_median)
-    axe.fill_between(aid_x,aid_min,aid_max)
+    # axe.plot(aid_x,aid_median)
+    # axe.fill_between(aid_x,aid_min,aid_max)
         
 
     
@@ -149,12 +134,13 @@ def plot_one(axe, fuzzware_inputs, hoedur_inputs, aid_inputs):
 def main():
     parser = argparse.ArgumentParser(description="plot coverage",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-o", "--output", help="output dir")
+    parser.add_argument("-o", "--output", help="output file")
     args = parser.parse_args()
 
-    fig, axs = plt.subplots(nrows=2, ncols=5)
+    fig, axs = plt.subplots(nrows=1, ncols=1)
 
-    plot_one(axs[0][1],0,0,0)
+    hh = ["/home/w/hd/paper_data/iofuzzer/plot/json/TARGET-aid-fuzzer-3dprinter-FUZZER-hoedur-RUN-{}-DURATION-1d-MODE-fuzzware.json".format(str(r).zfill(2)) for r in range(1,10)]
+    plot_one(axs,"xx", [], hh, [])
 
     
     plt.savefig(args.output, format="pdf")

@@ -283,7 +283,6 @@ bool arm_exec_bbl(hw_addr pc,uint32_t id)
         SHARED_STREAM * stream =  get_stream(stream_id);
         if(!stream->avaliable)
         {
-
             prepare_exit(EXIT_FUZZ_STREAM_NOTFOUND,pc,0,stream_id,0,1);
             cmd_info = exit_with_code_get_cmd();
             if (cmd_info.cmd == CMD_CONTINUE_ADD_STREAM)

@@ -177,10 +177,19 @@ void init_fuzz(FuzzState *state)
   Simulator *simulator;
 
   simulator = get_avaliable_simulator(state);
-  queue_entry *q = new_queue(state);
-  simulator_task(simulator,q,0,0);
-  fuzz_start(simulator);
-  fuzz_one_post(state,simulator);
+  queue_entry *q;
+  for(int i = 0 ; i < 20 ; i++)
+  {
+    q = new_queue(state);
+    simulator_task(simulator,q,0,0);
+    fuzz_start(simulator);
+    fuzz_one_post(state,simulator);
+    if(state->entries->size() != 0)
+      break;
+    else
+      printf("cannot generate init queue, try %d times\n",i+1);
+  }
+  
 
   if(q->streams->size() == 0)
   {
@@ -414,7 +423,6 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
   {
     fuzz_exit(simulator,&exit_info);
     
-    
     if(exit_info.exit_code == EXIT_FUZZ_STREAM_NOTFOUND)
     {
       
@@ -459,7 +467,7 @@ bool fuzz_one_post(FuzzState *state,Simulator *simulator)
     break;
   }
   
-  
+
   update_exit_info(state, &exit_info);
 
   simulator_classify_count(simulator);
@@ -616,7 +624,7 @@ inline queue_entry* select_entry(FuzzState *state)
   static u32 last_num = 0;
   static u32 repeat_times = 0;
 
-  if(UR(7))
+  if(0)
   {
     if(last_num != state->entries->size())
     {

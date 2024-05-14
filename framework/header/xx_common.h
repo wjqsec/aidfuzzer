@@ -4,7 +4,7 @@
 #include <glib.h>
 
 #define MEMORY_ACCESS_CALLBACK
-// #define MEMORY_ACCESS_LOG
+//#define MEMORY_ACCESS_LOG
 
 
 #ifdef MEMORY_ACCESS_LOG
