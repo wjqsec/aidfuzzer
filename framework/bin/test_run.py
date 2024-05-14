@@ -14,7 +14,7 @@ def run_fuzz(name,config_file,idx,affinity):
     return proc
  
 def run_cov(name,config_file,idx):
-    proc = subprocess.Popen(["./iofuzz", "run", config_file,"./simulator","-corpus","/root/corpus/{}_{}/".format(name,idx),"-plot",],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(["./iofuzz", "run", config_file,"./simulator","-corpus","/root/corpus/{}_{}/".format(name,idx),"-plot","/root/cov/{}_{}".format(name,idx)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     return proc
 
 
