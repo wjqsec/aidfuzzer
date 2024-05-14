@@ -20,9 +20,21 @@ def run_cov(name,config_file,idx):
 
 
 def main():
-    one_day = 24 * 60 * 60
+    one_day = 10
     runs = 5
-    configs = [                                                        
+    configs = [
+            ("6lowpan_recv","/root/target/plc/config.yml")
+            ("6lowpan_trans","/root/target/6lowpan_trans/config.yml")
+            ("drone","/root/target/drone/config.yml")
+            ("nxp_http","/root/target/nxp_http/config.yml")
+            ("plc","/root/target/plc/config.yml")
+            ("samr_http","/root/target/samr_http/config.yml")
+            ("stm_plc","/root/target/stm_plc/config.yml")
+            ("tcp_echoclient","/root/target/tcp_echoclient/config.yml")
+            ("tcp_echoserver","/root/target/tcp_echoserver/config.yml")
+            ("udp_echoclient","/root/target/udp_echoclient/config.yml")
+            ("udp_echoserver","/root/target/udp_echoserver/config.yml")
+            ("wycinwyc","/root/target/wycinwyc/config.yml")
         #("3dprinter","/root/target/3dprinter/fuzzware_config.yml"),
         #("bcn_ffd_ncp","/root/target/bcn_ffd_ncp/fuzzware_config.yml"),
         #("blehci","/root/target/blehci/aidfuzzer_config.yml"),
@@ -71,8 +83,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
