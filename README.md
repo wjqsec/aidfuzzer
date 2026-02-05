@@ -2,8 +2,8 @@ Source code for Usenix Security 2025 paper: AidFuzzer: Adaptive Interrupt-Driven
 
 ### Quick start
 
-docker pull wjqsec555/aidfuzz
-docker run -it wjqsec555/aidfuzz bash
-cd ~/xxfuzzer/framework/bin
-./iofuzz fuzz /root/target/printer/config.yml ./simulator -corpus  /root/corpus/print_24
+1. docker pull wjqsec555/aidfuzz
+2. docker run -it wjqsec555/aidfuzz bash
+3. cd ~/xxfuzzer/framework/bin
+4. ./iofuzz fuzz /root/target/printer/config.yml ./simulator -corpus  /root/corpus/print_24
 
