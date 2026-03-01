@@ -7,3 +7,5 @@ Source code for Usenix Security 2025 paper: AidFuzzer: Adaptive Interrupt-Driven
 3. cd ~/xxfuzzer/framework/bin
 4. ./iofuzz fuzz /root/target/printer/config.yml ./simulator -corpus  /root/corpus/print_24
 
+For the evaluation dataset, please download from https://drive.google.com/file/d/1is_ciHOwMTDXXPlHnENW1fmjx5oTlEou/view?usp=sharing
+
